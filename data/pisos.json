@@ -29,7 +29,9 @@
   "estado": "ok",
   "aviso": "",
   "barrio": "Herlev · Bakkekæret",
-  "ubic": "edificio nuevo Vasekær 1A–1D (Lejebolig no muestra el número)"
+  "ubic": "edificio nuevo Vasekær 1A–1D (Lejebolig no muestra el número)",
+  "st": "nuevo",
+  "stF": "2026-10-21"
  },
  {
   "id": "5436882",
@@ -61,7 +63,9 @@
   "estado": "ok",
   "aviso": "",
   "barrio": "Herlev · Bakkekæret",
-  "ubic": "exacta (Hørkær 8K)"
+  "ubic": "exacta (Hørkær 8K)",
+  "st": "nuevo",
+  "stF": "2026-10-21"
  },
  {
   "id": "1899646",
@@ -93,7 +97,9 @@
   "estado": "ok",
   "aviso": "",
   "barrio": "Søborg · Tobaksbyen",
-  "ubic": "calle (Rosendal; Lejebolig no muestra el número)"
+  "ubic": "calle (Rosendal; Lejebolig no muestra el número)",
+  "st": "nuevo",
+  "stF": "2026-10-21"
  },
  {
   "id": "5677213",
@@ -125,7 +131,9 @@
   "estado": "ok",
   "aviso": "",
   "barrio": "Søborg · Gyngemose",
-  "ubic": "exacta (Gyngemose Parkvej 2E)"
+  "ubic": "exacta (Gyngemose Parkvej 2E)",
+  "st": "nuevo",
+  "stF": "2026-10-21"
  },
  {
   "id": "1912010",
@@ -157,7 +165,9 @@
   "estado": "ok",
   "aviso": "",
   "barrio": "Søborg · Gyngemose",
-  "ubic": "calle (Lejebolig no muestra el número)"
+  "ubic": "calle (Lejebolig no muestra el número)",
+  "st": "nuevo",
+  "stF": "2026-10-21"
  },
  {
   "id": "1917125",
@@ -189,7 +199,9 @@
   "estado": "ok",
   "aviso": "",
   "barrio": "Søborg · Gyngemose",
-  "ubic": "calle (Lejebolig no muestra el número)"
+  "ubic": "calle (Lejebolig no muestra el número)",
+  "st": "nuevo",
+  "stF": "2026-10-21"
  },
  {
   "id": "5629725",
@@ -221,7 +233,9 @@
   "estado": "ok",
   "aviso": "",
   "barrio": "Sydhavn · Teglholmen",
-  "ubic": "exacta (Teglholm Tværvej 6)"
+  "ubic": "exacta (Teglholm Tværvej 6)",
+  "st": "nuevo",
+  "stF": "2026-10-21"
  },
  {
   "id": "1870169",
@@ -253,7 +267,9 @@
   "estado": "warn",
   "aviso": "Anuncio retirado en Lejebolig («Rented», 21-10-2026). Confirma con el casero si sigue libre.",
   "barrio": "Lyngby · centro",
-  "ubic": "calle (Mortonsvej; anuncio retirado, sin número)"
+  "ubic": "calle (Mortonsvej; anuncio retirado, sin número)",
+  "st": "nuevo",
+  "stF": "2026-10-21"
  },
  {
   "id": "1915064",
@@ -285,6 +301,8 @@
   "estado": "warn",
   "aviso": "Anuncio retirado en Lejebolig («Rented», 21-10-2026). Confirma con el casero si sigue libre.",
   "barrio": "Sydhavn · Sluseholmen",
-  "ubic": "calle (Molestien; anuncio retirado, sin número)"
+  "ubic": "calle (Molestien; anuncio retirado, sin número)",
+  "st": "nuevo",
+  "stF": "2026-10-21"
  }
 ]
