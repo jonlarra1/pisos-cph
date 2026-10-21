@@ -296,6 +296,19 @@ def main():
         print(f"[aviso] fuentes con error: {', '.join(errors)}")
 
 
+def cron_status():
+    """Copia al buzón el estado de las tareas de pisos de Lares (solo piso-*), para el panel.
+    Así el backend no necesita leer la carpeta cron de Lares."""
+    try:
+        jobs = json.loads(Path("/opt/data/profiles/lares/cron/jobs.json").read_text(encoding="utf-8"))
+        jobs = jobs if isinstance(jobs, list) else jobs.get("jobs", [])
+        keep = ("name", "enabled", "state", "last_status", "last_run_at", "next_run_at", "last_error", "last_delivery_error", "schedule_display")
+        out = [{k: j.get(k) for k in keep} for j in jobs if str(j.get("name", "")).startswith("piso")]
+        write_json(BRIDGE / "lares_cron.json", {"copiado": datetime.now(timezone.utc).isoformat(timespec="seconds"), "jobs": out})
+    except Exception:
+        pass
+
+
 def run_log(**kw):
     """Una línea por pasada en pisos-bridge/lares_runs.jsonl (lo lee el panel de estado)."""
     rec = {"ts": datetime.now().astimezone().isoformat(timespec="seconds"), "t": round(datetime.now(timezone.utc).timestamp(), 1), **kw}
@@ -314,6 +327,7 @@ if __name__ == "__main__":
     try:
         STATS.clear(); main()
         run_log(ok=True, seg=round(_t.time()-_t0, 1), **STATS)
+        cron_status()
     except Exception as e:
         run_log(ok=False, seg=round(_t.time()-_t0, 1), msg=f"{type(e).__name__}: {e}", errores=[traceback.format_exc(limit=2)[-300:]])
         raise

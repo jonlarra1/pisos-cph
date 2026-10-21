@@ -84,7 +84,7 @@ def _read(path, maxbytes=400_000):
 def tail(kind, n=50):
     """Últimas n líneas del tipo, mirando hoy y, si hace falta, días anteriores."""
     out = []
-    for path in sorted(glob.glob(os.path.join(LOGDIR, kind, "*.jsonl*")), reverse=True)[:3]:
+    for path in sorted(glob.glob(os.path.join(LOGDIR, kind, "*.jsonl*")), key=os.path.getmtime, reverse=True)[:3]:   # el más reciente primero
         try:
             out = [json.loads(x) for x in _read(path)] + out
         except Exception:
@@ -223,7 +223,9 @@ def img_proxy(u):
     """Foto de un anuncio desde los portales (con su Referer), cacheada en disco. Devuelve (bytes, content-type)."""
     pu = urllib.parse.urlparse(u)
     if pu.scheme != "https" or pu.hostname not in IMG_HOSTS: raise ValueError("host no permitido")
-    if pu.hostname.startswith("s3.") and not pu.path.startswith("/lejeboligdata/"): raise ValueError("ruta no permitida")
+    raw = urllib.parse.unquote(pu.path)
+    if ".." in raw or "\\" in raw or pu.username or pu.password or pu.port not in (None, 443): raise ValueError("ruta no permitida")
+    if pu.hostname.startswith("s3.") and not raw.startswith("/lejeboligdata/images/"): raise ValueError("ruta no permitida")
     key = hashlib.sha1(u.encode()).hexdigest(); path = os.path.join(IMG_DIR, key)
     if os.path.exists(path):
         IMG_STATS["hit"] += 1
@@ -251,15 +253,35 @@ def img_proxy(u):
         log("events", level="info", src="img", msg=f"caché de fotos limpiada ({total//1048576} MB)")
     return data, ctype, "portal:" + ("boligportal" if "boligportal" in pu.hostname else "lejebolig")
 
-def limited(ip, cap=30):  # max `cap` requests per minute per client/key
+_rl_logged = {}
+def limited(key, cap=30, glob_key=None, glob_cap=None):
+    """Ventana de 60 s. `key` = límite por IP; `glob_key` = límite global (todas las IPs juntas)."""
     now = time.time()
     with lock:
-        q = [t for t in hits.get(ip, []) if now-t < 60]
-        if len(q) >= cap: hits[ip] = q; return True
-        q.append(now); hits[ip] = q; return False
+        if len(hits) > 5000:                                   # que la tabla no crezca sin fin con muchas IPs
+            for k in [k for k, v in hits.items() if not v or now - v[-1] > 60]: hits.pop(k, None)
+            if len(hits) > 5000: hits.clear()
+        for k, c in ((key, cap), (glob_key, glob_cap)):
+            if not k: continue
+            q = [t for t in hits.get(k, []) if now-t < 60]
+            if len(q) >= c:
+                hits[k] = q
+                if now - _rl_logged.get(k, 0) > 60:          # un aviso por minuto y límite, no uno por petición
+                    _rl_logged[k] = now
+                    threading.Thread(target=log, args=("events",), kwargs={"level": "warn", "src": "limite",
+                                     "msg": f"límite de peticiones alcanzado: {k} ({c}/min)"}, daemon=True).start()
+                return True
+        for k in (key, glob_key):
+            if k: hits.setdefault(k, []).append(now); hits[k] = [t for t in hits[k] if now-t < 60]
+    return False
 
 class H(BaseHTTPRequestHandler):
     server_version = "pisos/1"
+    def client_ip(self):
+        """IP real del cliente. Por Funnel/serve, tailscaled AÑADE la IP al final de X-Forwarded-For,
+        así que solo vale el último valor (los anteriores los puede inventar quien hace la petición)."""
+        xff = self.headers.get("X-Forwarded-For", "")
+        return xff.split(",")[-1].strip() if xff else self.client_address[0]
     def log_message(self, fmt, *a): pass
     def handle_one_request(self):
         self._t0 = time.time(); self._code = None; self._note = ""
@@ -288,9 +310,10 @@ class H(BaseHTTPRequestHandler):
         self.send_response(204); self.cors(); self.send_header("Content-Length", "0"); self.end_headers()
     def do_GET(self):
         if self.path == "/api/health": return self.reply(200, {"ok": True})
+        if limited("get:" + self.client_ip(), 300, "get:*", 2000): return self.reply(429, {"error": "too many requests"})
         if self.path.startswith("/api/img?"):
-            ip = self.headers.get("X-Forwarded-For", self.client_address[0]).split(",")[0].strip()
-            if limited("img:"+ip, 120): return self.reply(429, {"error": "too many requests"})
+            ip = self.client_ip()
+            if limited("img:"+ip, 120, "img:*", 600): return self.reply(429, {"error": "too many requests"})
             u = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query).get("u", [""])[0]
             try:
                 data, ctype, self._note = img_proxy(u)
@@ -311,7 +334,7 @@ class H(BaseHTTPRequestHandler):
     def do_POST(self):
         if self.path == "/api/clientlog":    # errores de la página de los usuarios
             n = int(self.headers.get("Content-Length") or 0)
-            ip = self.headers.get("X-Forwarded-For", self.client_address[0]).split(",")[0].strip()
+            ip = self.client_ip()
             if n <= 0 or n > 2048: return self.reply(400, {"error": "bad size"})
             if limited("log:"+ip): return self.reply(429, {"error": "too many requests"})
             try: d = json.loads(self.rfile.read(n))
@@ -322,8 +345,8 @@ class H(BaseHTTPRequestHandler):
         if KEY and self.headers.get("X-Pisos-Key") != KEY: return self.reply(403, {"error": "forbidden"})
         o = self.headers.get("Origin", "")
         if o and o not in ORIGINS: return self.reply(403, {"error": "origin"})
-        ip = self.headers.get("X-Forwarded-For", self.client_address[0]).split(",")[0].strip()
-        if limited(ip): return self.reply(429, {"error": "too many requests"})
+        ip = self.client_ip()
+        if limited("w:"+ip, 30, "w:*", 120): return self.reply(429, {"error": "too many requests"})
         n = int(self.headers.get("Content-Length") or 0)
         if n <= 0 or n > 1024: return self.reply(413, {"error": "bad size"})
         try: d = json.loads(self.rfile.read(n))
@@ -408,8 +431,9 @@ def check_lares_runs():
     return ok, f"última pasada hace {age:.1f} h · {last.get('leidos', {})} anuncios · {last.get('candidatos', 0)} candidatos" + (f" · errores: {errs}" if errs else "")
 
 def check_lares_cron():
-    jobs = json.load(open(LARES_CRON, encoding="utf-8"))
-    jobs = jobs if isinstance(jobs, list) else jobs.get("jobs", [])
+    """Estado de las tareas de pisos de Lares, que Lares copia al buzón en cada pasada (lares_cron.json)."""
+    d = json.load(open(os.path.join(BRIDGE, "lares_cron.json"), encoding="utf-8"))
+    jobs = d.get("jobs", [])
     out, ok = [], True
     for j in jobs:
         if not str(j.get("name", "")).startswith("piso"): continue
@@ -443,6 +467,20 @@ def check_img():
     tot = sum(IMG_STATS.values()); err = IMG_STATS["error"]
     return (tot == 0 or err / tot < 0.3), f"{len(files)} fotos en caché ({mb:.0f} MB) · desde el arranque: {IMG_STATS['hit']} de caché, {IMG_STATS['fetch']} descargadas, {err} errores"
 
+# destinos internos que el contenedor NO debe alcanzar (cortafuegos pisos-firewall en la Pi)
+ISOLATION_TARGETS = [t for t in os.environ.get("ISOLATION_TARGETS", "172.31.250.1:9443,172.31.250.1:22,10.20.15.232:22,100.72.170.60:22,172.17.0.1:9000").split(",") if t]
+def check_isolation():
+    """Intenta conectar desde el contenedor a servicios internos: si alguno responde, el aislamiento ha fallado."""
+    abiertos = []
+    for t in ISOLATION_TARGETS:
+        host, port = t.rsplit(":", 1)
+        try:
+            with socket.create_connection((host, int(port)), timeout=2): abiertos.append(t)
+        except OSError:
+            pass
+    if abiertos: return False, f"¡el contenedor PUEDE llegar a {', '.join(abiertos)}! (¿cortafuegos desactivado?)"
+    return True, f"bloqueado: {len(ISOLATION_TARGETS)} destinos internos (Portainer, SSH, LAN, Tailscale) inalcanzables desde el contenedor"
+
 def check_storage():
     def du(p):
         tot = 0
@@ -459,7 +497,7 @@ def check_storage():
 def monitor():
     while True:
         for name, fn in (("funnel_publico", check_funnel), ("web_github", check_site), ("lares_pasadas", check_lares_runs),
-                         ("lares_cron", check_lares_cron), ("buzon_compartido", check_bridge), ("api_errores", check_api_errors), ("fotos", check_img), ("almacenamiento", check_storage)):
+                         ("lares_cron", check_lares_cron), ("buzon_compartido", check_bridge), ("api_errores", check_api_errors), ("fotos", check_img), ("almacenamiento", check_storage), ("aislamiento_red", check_isolation)):
             chk(name, fn)
         time.sleep(300)
 
@@ -505,7 +543,7 @@ class Admin(BaseHTTPRequestHandler):
             items.sort(key=lambda r: r.get("t", 0))
             return self.send(200, json.dumps({"now": time.time(), "checks": CHECKS, "items": items[-400:]}, ensure_ascii=False), "application/json; charset=utf-8")
         if self.path == "/checknow":
-            threading.Thread(target=lambda: [chk(n, f) for n, f in (("funnel_publico", check_funnel), ("web_github", check_site), ("lares_pasadas", check_lares_runs), ("lares_cron", check_lares_cron), ("buzon_compartido", check_bridge), ("api_errores", check_api_errors), ("fotos", check_img), ("almacenamiento", check_storage))], daemon=True).start()
+            threading.Thread(target=lambda: [chk(n, f) for n, f in (("funnel_publico", check_funnel), ("web_github", check_site), ("lares_pasadas", check_lares_runs), ("lares_cron", check_lares_cron), ("buzon_compartido", check_bridge), ("api_errores", check_api_errors), ("fotos", check_img), ("almacenamiento", check_storage), ("aislamiento_red", check_isolation))], daemon=True).start()
             return self.send(200, '{"ok":true}', "application/json")
         self.send(404, "not found", "text/plain")
 

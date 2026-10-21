@@ -34,6 +34,18 @@ The user is Jon. He works at Nordic Solar (Hellerup). He prefers short, simple, 
 - Photos: `fotos` (list, floor plan first when `fotoPlano`) per flat, shown through the backend image proxy `/api/img?u=` (allow-listed hosts, disk cache 300 MB).
 - Right column «🔎 Búsqueda (Lares)» = search params stored on the Pi (`/api/filtros`, zones) → config.json → Lares. Any change to «Búsqueda» (filters, zones) MUST ask for confirmation with a pop-up whose first line is «⚠️ ESTE CAMBIO ES DE BÚSQUEDA, NO DE VISUALIZACIÓN» (it changes what Lares searches for everyone). «👁 Visualización» = map-only view settings (states shown, «Barrios y municipios» layer, colour by Estado/Coste/Barrios — «Tu prioridad» removed), per browser.
 - UI settings per browser in localStorage: `ui` (day, colour mode, barrio filter, lines off, route option, open panels), `perfiles`, `tripTime`, `yo`, `destinos`, `cardPos`.
+- Seguridad del backend (2026-10-21):
+  - Contenedor pisos-api: usuario propio 10002, read_only, cap_drop ALL, no-new-privileges, pids 100, 128 MB; solo monta /data y /bridge
+    (buzón con grupo 10002, 2775). Ya NO monta la carpeta cron de Lares: Lares copia su estado a pisos-bridge/lares_cron.json.
+  - Red fija 172.31.250.0/24 (br-pisos). Cortafuegos `pisos-firewall.service` → /usr/local/sbin/pisos-firewall.sh (copia en backend/firewall/):
+    cadenas PISOS-EGRESS (en DOCKER-USER) y PISOS-HOST (en INPUT) — el contenedor sale a internet pero no a LAN, Tailscale, otras redes Docker
+    ni a la propia Pi. Comprobación «aislamiento_red» del monitor lo verifica cada 5 min.
+  - Límite de peticiones con la IP real (último valor de X-Forwarded-For, lo añade tailscaled): escrituras 30/min por IP y 120/min global,
+    lecturas 300/min por IP y 2000/min global, fotos 120/min por IP y 600 global; eventos «limite» en el log.
+  - /api/img: solo https a image-lambda.boligportal.dk y s3…/lejeboligdata/images/, sin `..`, userinfo ni puertos raros.
+  - Clave de escritura por persona (passkeys/Face ID): aplazado a propósito.
+  - Ojo con ACL en la Pi: varias carpetas de Hermes tienen ACL con máscara restrictiva; `setfacl -m` recalcula la máscara y puede reactivar
+    permisos de otros usuarios (pasó con lares/cron/jobs.json, revertido). Comprobar `getfacl` antes y después.
 - Hosting: GitHub Pages (fixed link for flatmates). Commit + push to update.
 
 ## Estado (2026-10-21, 21:10) y pendientes

@@ -1,0 +1,12 @@
+[Unit]
+Description=Aislamiento de red del contenedor pisos-api (pisos-cph)
+After=docker.service network-online.target
+Wants=docker.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/pisos-firewall.sh
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target
