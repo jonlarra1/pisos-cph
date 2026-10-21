@@ -16,7 +16,7 @@ DEST = [("gn", "GN · Lautrupbjerg 7, Ballerup", 55.738723, 12.387155),
         ("ns", "Nordic Solar · Strandvejen 102E, Hellerup", 55.733318, 12.575586),
         ("dtu", "DTU · Anker Engelunds Vej 1, Lyngby", 55.7858465, 12.5214443)]
 TIMES = ["07:30", "08:00", "08:30", "09:00", "09:30", "10:00"]   # "llegar antes de"
-LIMITS = [5, 10, 15, 20]          # max minutes walking per walking leg
+LIMITS = [5, 10, 15, 20, 25, 30]   # max minutes walking or biking per leg (profile setting)
 V, DET, CHG = 1.33, 1.25, 90      # walk speed m/s, detour factor, change buffer s
 VB, DETB = 20/3.6, 1.3            # bike speed m/s (20 km/h, Jon), detour factor
 PARK, BOARD = 0, 0                # no time counted for locking / boarding with the bike

@@ -14,7 +14,8 @@ The user is Jon. He works at Nordic Solar (Hellerup). He prefers short, simple, 
   - `ST`, `LINES`, `MST`, `MLINES`, `LETB` — station lists per line; used for "nearest station" in each flat card. KEEP.
   - `WORK` — Jon's workplace = Nordic Solar, Strandvejen 102E, Hellerup. KEEP.
   - `RUTAS` — precomputed public-transport routes (GN, Nordic Solar, DTU) per weekday × arrival time × walking limit, from `tools/prep.py` + `tools/route.py` (see README). Deduplicated: `routes`, `paths`, index `ix[mode][day][time][limit][flatId][dest]`, mode = foot (walk + any transit) | bike (bike 20 km/h + S-tog/regional/Lokaltog only, no bus/metro, no lock time).
-  - `DMODE` — default mode per destination: ns=bike (Jon), gn=foot (Unai), dtu=foot. `DIRECTO` — bike-only / walk-only reference times.
+  - `PERF` — profiles shown in «Configuración» (right, under «Líneas»): Jon (bike, default 10 min) and Unai (foot, default 10 min); mode + max minutes per leg (5–30), saved per browser. `ROWS` — route rows: Nordic Solar→Jon, GN→Unai, DTU→Jon and DTU→Unai. `DIRECTO` — bike-only / walk-only reference times.
+  - Station dots/labels hide when all lines through them are switched off (`lineOn`, `updateStations`).
   - `HORARIOS` — saved schedule presets shown as "Mis horarios".
 - Flat status (`st` in PISOS, `stF` = date of last change): gusta (blue, we like it), nuevo (orange, new/undecided), contactado (green, landlord contacted), descartado (red; shown DESCARTE_DIAS=7 days, then auto-moved to «Descartados»). Default colour mode = Estado; pin label = monthly cost. Jon tells Claude status changes; update both `data/pisos.json` and `const PISOS` in index.html, then commit + push.
 - `data/pisos.json` — flat data (id, zona, barrio, calle, m2, vaer, dorm, alq, aconto, dep, pre, disp, link, lat, lon, ubic = location precision, estado/aviso = warnings).
