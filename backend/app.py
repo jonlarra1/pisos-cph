@@ -207,7 +207,10 @@ class H(BaseHTTPRequestHandler):
             u = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query).get("u", [""])[0]
             try:
                 data, ctype = img_proxy(u)
-            except Exception as e:
+            except ValueError as e:      # petición no válida (host/ruta no permitidos, no es imagen)
+                log("events", level="warn", src="img", msg=f"rechazada: {str(e)[:120]} · {u[:90]}")
+                return self.reply(400, {"error": str(e)[:80]})
+            except Exception as e:       # el portal no responde
                 IMG_STATS["error"] += 1; log("events", level="warn", src="img", msg=f"{type(e).__name__}: {str(e)[:120]} · {u[:90]}")
                 return self.reply(502, {"error": "imagen no disponible"})
             self.send_response(200); self.cors(); self.send_header("Content-Type", ctype); self.send_header("Content-Length", str(len(data)))
