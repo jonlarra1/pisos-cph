@@ -861,6 +861,9 @@ html,body{overflow-x:hidden}
 .warn-n{background:color-mix(in srgb,var(--mid) 18%,transparent);margin:8px 0}
 .out{padding:4px 14px 10px;font-size:12.5px}
 .out summary{cursor:pointer;font-weight:600;padding:6px 0;color:var(--muted)}
+.out-s{max-height:45vh;overflow:auto;overscroll-behavior:contain;padding-right:4px}
+.out-h{position:sticky;top:0;background:var(--panel);font:700 12px var(--f-display);color:var(--fg);padding:8px 0 4px;border-bottom:1px solid var(--line);z-index:1}
+.out-h small{color:var(--muted);font-weight:500;margin-left:4px}
 .out-i{display:flex;flex-direction:column;gap:2px;padding:6px 0;border-top:1px solid color-mix(in srgb,var(--fg) 10%,transparent)}
 .out-i a{color:var(--fg);font-weight:600;text-decoration:none}
 .out-i span{color:var(--muted)}
@@ -1530,7 +1533,12 @@ function renderList(){
      ${BAR[b].filter(visible).map(item).join("")}</section>`;}).join("");
 }
 function renderOut(){const el=document.getElementById("out");
-  el.innerHTML=`<details><summary>Descartados (${OUT.length})</summary>${OUT.map(o=>`<div class="out-i"><a href="${esc(o.link)}" target="_blank" rel="noopener">${esc(o.t)} ↗</a><span>${esc(o.r)}</span></div>`).join("")}</details>`;}
+  const zona=o=>{const z=o.t.split(" · ")[0].trim(); return z.startsWith("Rødovre")?"Rødovre":z;};
+  const G={}; OUT.forEach(o=>(G[zona(o)]??=[]).push(o));
+  const keys=Object.keys(G).sort((a,b)=>a.localeCompare(b,"da"));
+  const wasOpen=el.querySelector("details")?.open;
+  el.innerHTML=`<details${wasOpen?" open":""}><summary>Descartados (${OUT.length})</summary><div class="out-s">${keys.map(k=>`<div class="out-g"><div class="out-h">${esc(k)} <small>${G[k].length}</small></div>
+    ${G[k].map(o=>`<div class="out-i"><a href="${esc(o.link)}" target="_blank" rel="noopener">${esc(o.t.split(" · ").slice(1).join(" · ")||o.t)} ↗</a><span>${esc(o.r)}</span></div>`).join("")}</div>`).join("")}</div></details>`;}
 document.getElementById("list").addEventListener("click",e=>{const b=e.target.closest(".item");if(b)select(b.dataset.id,true);});
 function select(id,fly){
   const prev=selId; selId=id;
