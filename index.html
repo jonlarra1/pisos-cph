@@ -777,6 +777,16 @@ html,body{overflow-x:hidden}
 .leaflet-popup-tip{background:var(--panel)}
 .leaflet-popup-content{margin:14px 16px;min-width:230px}
 .leaflet-container a.leaflet-popup-close-button{color:var(--muted)}
+.fcard{position:absolute;z-index:650;left:56px;top:12px;width:310px;max-height:calc(100% - 24px);overflow:auto;background:var(--panel);color:var(--fg);border:1px solid var(--line);border-radius:12px;box-shadow:var(--shadow)}
+.fcard[hidden]{display:none}
+.fc-bar{position:sticky;top:0;z-index:1;display:flex;align-items:center;gap:8px;padding:5px 8px 5px 12px;background:var(--bg);border-bottom:1px solid var(--line);cursor:grab;touch-action:none;user-select:none;font-size:11.5px;color:var(--muted)}
+.fc-bar:active{cursor:grabbing}
+.fc-bar .grip{font-size:14px;letter-spacing:-1px}
+.fc-bar .fc-t{flex:1}
+.fc-bar .x{width:26px;height:26px;font-size:18px}
+.fc-body{padding:12px 14px 14px}
+.m-only{display:none}
+@media (max-width:760px){.fcard{left:8px;top:auto;bottom:8px;width:calc(100% - 16px);max-height:48%}.fcard.min .fc-body{display:none}.d-only{display:none}.m-only{display:inline}.fc-bar{cursor:pointer}}
 .pp-h{display:flex;gap:10px;align-items:center;margin-bottom:8px}
 .pp-h h3{font-family:var(--f-display);font-size:16px;margin:0;line-height:1.15}
 .pp-h p{margin:2px 0 0;color:var(--muted);font-size:12px}
@@ -916,6 +926,10 @@ html,body{overflow-x:hidden}
   <section class="mapwrap">
     <div id="map" aria-label="Mapa de pisos"></div>
     <details class="lines-card"><summary>Líneas</summary><div class="lines-body" id="lines"><b>S-tog</b></div></details>
+    <div class="fcard" id="card" hidden role="dialog" aria-label="Piso">
+      <div class="fc-bar" id="card-bar" title="Arrastra para moverla"><span class="grip">⠿</span><span class="fc-t"><span class="d-only">Arrastra para mover</span><span class="m-only">Toca aquí para plegar / desplegar</span></span><button class="x" id="card-x" aria-label="Cerrar">×</button></div>
+      <div class="fc-body" id="card-b"></div>
+    </div>
     <aside class="sheet" id="sheet" aria-hidden="true"></aside>
   </section>
 </div>
@@ -1172,10 +1186,12 @@ function drawRoute(id,k,fit){
       L.polyline(path,{renderer:routeR,color:css("--panel"),weight:9*w,opacity:.9*op,interactive:false}).addTo(routeLayer);
       L.polyline(path,{renderer:routeR,color:legCol(l),weight:5*w,opacity:op,dashArray:"10 8",lineCap:"butt",className:"route-ant",interactive:on})
        .bindTooltip(`${esc(l.m)} ${esc(l.line)} → ${esc(l.head)}`,{sticky:true}).addTo(routeLayer);});});
-  if(fit&&focusPts.length){const W=map.getSize().x, sh=sheet.classList.contains("open")?Math.min(460,W*.6):0, pop=!!document.querySelector(".leaflet-popup");
-    const ph=pop?document.querySelector(".leaflet-popup").offsetHeight+30:40;
-    const rgt=Math.max(sh, (W>700?280:20)+(pop?170:0));
-    map.flyToBounds(L.latLngBounds(focusPts),{duration:.6,maxZoom:14,paddingTopLeft:[pop?170:40,ph],paddingBottomRight:[rgt,40]});}
+  if(fit&&focusPts.length){const W=map.getSize().x, H=map.getSize().y, sh=sheet.classList.contains("open")?Math.min(460,W*.6):0;
+    let tl=[40,40], br=[Math.max(sh,W>700?280:20),40];
+    if(!card.hidden&&W>760){const mr=map.getContainer().getBoundingClientRect(), cr=card.getBoundingClientRect(), x0=cr.left-mr.left, x1=cr.right-mr.left;
+      if(x0+x1<W)tl[0]=Math.min(W*.6,x1+20); else br[0]=Math.max(br[0],Math.min(W*.6,W-x0+20));}
+    if(!card.hidden&&W<=760)br[1]=Math.min(H*.6,card.offsetHeight+20);
+    map.flyToBounds(L.latLngBounds(focusPts),{duration:.6,maxZoom:14,paddingTopLeft:tl,paddingBottomRight:br});}
   document.querySelectorAll("[data-route]").forEach(b=>b.classList.toggle("on",b.dataset.route===id+"|"+k));
 }
 const modeBtns=(id,k)=>`<span class="mtg" role="group" aria-label="Cómo te mueves">${[["foot","🚶","Andando + transporte (bus, metro, tren)"],["bike","🚲","Bici + tren (S-tog / regional)"]].map(([m,i,t])=>`<button data-mode="${id}|${k}|${m}" aria-pressed="${DMODE[k]===m}" title="${t}">${i}</button>`).join("")}</span>`;
@@ -1207,7 +1223,7 @@ function tripChanged(){try{localStorage.setItem("walkLim",walkLim);localStorage.
   renderWalk(); renderList();
   const id=sheet.classList.contains("open")?sheet.dataset.id:selId;
   if(id){drawRoute(id,routeDest,false); if(sheet.classList.contains("open"))openSheet(id);}
-  const pp=document.querySelector(".leaflet-popup"); if(pp&&selId)markers[selId].setPopupContent(popupHtml(PISOS.find(x=>x.id===selId)));}
+  if(!card.hidden)showCard(card.dataset.id);}
 document.querySelector(".trip").addEventListener("change",e=>{const t=e.target;
   if(t.id==="ttime")tripTime=t.value; if(t.id==="tday")tripDay=t.value; if(t.id==="walk")walkLim=+t.value; tripChanged();});
 document.getElementById("hor").addEventListener("click",e=>{const b=e.target.closest("[data-hor]");if(!b)return;
@@ -1240,11 +1256,30 @@ function popupHtml(p){
     <div class="pp-a"><button class="btn pri" data-open="${p.id}">Ver ficha</button>
       <a class="btn sec" href="${esc(p.link)}" target="_blank" rel="noopener">Anuncio ↗</a></div>`;}
 PISOS.forEach(p=>{
-  const m=L.marker([p.lat,p.lon],{icon:pinIcon(p),riseOnHover:true}).bindPopup(()=>popupHtml(p),{maxWidth:300});
-  m.on("click",()=>select(p.id,false));
+  const m=L.marker([p.lat,p.lon],{icon:pinIcon(p),riseOnHover:true,zIndexOffset:1000});
+  m.on("click",()=>{select(p.id,false);showCard(p.id);});
   markers[p.id]=m.addTo(map);
 });
 map.fitBounds(L.latLngBounds([...PISOS.map(p=>[p.lat,p.lon]),WORK.ll]).pad(.08));
+/* ---------- tarjeta flotante del piso (arrastrable) ---------- */
+const card=document.getElementById("card"), cardB=document.getElementById("card-b"), cardBar=document.getElementById("card-bar");
+let cardPos=null; try{cardPos=JSON.parse(localStorage.getItem("cardPos")||"null");}catch(e){}
+function placeCard(){if(!cardPos||innerWidth<=760){card.style.left=card.style.top="";return;}
+  const wrap=card.parentElement, W=wrap.clientWidth, H=wrap.clientHeight;
+  card.style.left=Math.max(4,Math.min(cardPos.x,W-card.offsetWidth-4))+"px"; card.style.top=Math.max(4,Math.min(cardPos.y,H-60))+"px";}
+function showCard(id){const p=PISOS.find(x=>x.id===id); if(!p)return; card.dataset.id=id;
+  cardB.innerHTML=popupHtml(p); card.hidden=false; placeCard();}
+function hideCard(){card.hidden=true;}
+document.getElementById("card-x").addEventListener("click",hideCard);
+addEventListener("resize",placeCard);
+{let drag=null;
+ cardBar.addEventListener("click",e=>{if(innerWidth<=760&&!e.target.closest("button"))card.classList.toggle("min");});
+ cardBar.addEventListener("pointerdown",e=>{if(e.target.closest("button")||innerWidth<=760)return;
+   drag={x:e.clientX,y:e.clientY,l:card.offsetLeft,t:card.offsetTop}; cardBar.setPointerCapture(e.pointerId); e.preventDefault();});
+ cardBar.addEventListener("pointermove",e=>{if(!drag)return; cardPos={x:drag.l+e.clientX-drag.x,y:drag.t+e.clientY-drag.y}; placeCard();});
+ const end=()=>{if(!drag)return; drag=null; try{localStorage.setItem("cardPos",JSON.stringify(cardPos));}catch(_){}};
+ cardBar.addEventListener("pointerup",end); cardBar.addEventListener("pointercancel",end);}
+L.DomEvent.disableClickPropagation(card); L.DomEvent.disableScrollPropagation(card);
 
 /* lines toggle card */
 const lc=document.getElementById("lines");
@@ -1313,11 +1348,11 @@ function select(id,fly){
   if(prev&&markers[prev])markers[prev].setIcon(pinIcon(PISOS.find(p=>p.id===prev)));
   const p=PISOS.find(p=>p.id===id); markers[id].setIcon(pinIcon(p,true));
   drawRoute(id,routeDest,false);
-  if(fly){map.flyTo([p.lat,p.lon],Math.max(map.getZoom(),13),{duration:.6});setTimeout(()=>markers[id].openPopup(),650);}
+  if(fly){map.flyTo([p.lat,p.lon],Math.max(map.getZoom(),13),{duration:.6});showCard(id);}
   renderList();
 }
 function setMode(m){mode=m;["prio","price","barrio"].forEach(k=>document.getElementById("m-"+k).setAttribute("aria-pressed",k===m));
-  PISOS.forEach(p=>markers[p.id].setIcon(pinIcon(p,p.id===selId)));renderList();}
+  PISOS.forEach(p=>markers[p.id].setIcon(pinIcon(p,p.id===selId)));renderList(); if(!card.hidden)showCard(card.dataset.id);}
 document.getElementById("m-prio").onclick=()=>setMode("prio");
 document.getElementById("m-price").onclick=()=>setMode("price");
 document.getElementById("m-barrio").onclick=()=>setMode("barrio");
@@ -1325,7 +1360,7 @@ document.getElementById("m-barrio").onclick=()=>setMode("barrio");
 /* ---------- detail sheet ---------- */
 const sheet=document.getElementById("sheet");
 function openSheet(id){
-  const p=PISOS.find(x=>x.id===id); map.closePopup();
+  const p=PISOS.find(x=>x.id===id); hideCard();
   const bar=(l,v,w)=>`<div class="bar"><span>${l} <small style="color:var(--muted)">${w}</small></span><i><em style="width:${Math.round(v*100)}%"></em></i><b>${Math.round(v*100)}</b></div>`;
   const row=(k,v)=>v==null||v===""?"":`<dt>${k}</dt><dd>${v}</dd>`;
   const isPortal=p.portal;
@@ -1371,7 +1406,7 @@ function openSheet(id){
 }
 function closeSheet(){sheet.classList.remove("open");sheet.setAttribute("aria-hidden","true");}
 document.addEventListener("click",e=>{const b=e.target.closest("[data-open]");if(b)openSheet(b.dataset.open);});
-document.addEventListener("keydown",e=>{if(e.key==="Escape")closeSheet();});
+document.addEventListener("keydown",e=>{if(e.key==="Escape"){if(sheet.classList.contains("open"))closeSheet();else hideCard();}});
 
 /* theme changes: restyle map */
 function restyle(){
