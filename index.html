@@ -1771,7 +1771,7 @@ function renderZonas(){const el=document.getElementById("zonas"); if(!el)return;
   el.innerHTML=ks.length?ks.map(z=>`<button class="chip zchip" data-zona="${esc(z)}" aria-pressed="${!!ZONASL[z]}">${esc(z)}</button>`).join(""):"<small>Sin conexión con la Raspberry Pi.</small>";}
 async function pullZonas(){try{const r=await fetch(API+"/api/zonas",{cache:"no-store"}); if(!r.ok)throw 0; ZONASL=await r.json();}catch(e){ZONASL={};} renderZonas();}
 document.getElementById("zonas").addEventListener("click",async e=>{const b=e.target.closest("[data-zona]"); if(!b)return; const z=b.dataset.zona, on=!!ZONASL[z];
-  if(!confirm(on?`¿Quitar la zona «${z}»?\nLares dejará de proponer pisos de ${z}.`:`¿Permitir la zona «${z}»?\nLares volverá a proponer pisos de ${z}.`))return;
+  if(!confirm(on?`⚠️ ESTE CAMBIO ES DE BÚSQUEDA, NO DE VISUALIZACIÓN\nCambia lo que Lares busca para todos (no solo lo que ves en el mapa).\n\n¿Quitar la zona «${z}»?\nLares dejará de proponer pisos de ${z}.`:`⚠️ ESTE CAMBIO ES DE BÚSQUEDA, NO DE VISUALIZACIÓN\nCambia lo que Lares busca para todos (no solo lo que ves en el mapa).\n\n¿Permitir la zona «${z}»?\nLares volverá a proponer pisos de ${z}.`))return;
   try{const r=await fetch(API+"/api/zona",{method:"POST",headers:{"Content-Type":"application/json","X-Pisos-Key":API_KEY},body:JSON.stringify({zona:z,permitida:!on,by:YO})});
     if(!r.ok)throw 0; ZONASL=await r.json(); renderZonas();}catch(err){alert("No se pudo guardar: la Raspberry Pi no responde.");}});
 pullCandidatos(); pullZonas(); setInterval(()=>{if(!document.hidden)pullCandidatos();},300000);
@@ -1791,7 +1791,7 @@ async function pullBusq(){try{const r=await fetch(API+"/api/filtros",{cache:"no-
   catch(e){document.getElementById("fbusq-m").textContent="Sin conexión con la Raspberry Pi.";}}
 document.getElementById("fbusq").addEventListener("submit",async e=>{e.preventDefault(); const f=e.target, m=document.getElementById("fbusq-m");
   const body={precio_max:+f.precio_max.value,dorm_min:+f.dorm_min.value,disp_desde:f.disp_desde.value,disp_hasta:f.disp_hasta.value,compartir:f.compartir.checked,contrato_largo:f.contrato_largo.checked,by:YO};
-  if(!confirm(`¿Guardar la búsqueda de Lares?\n\n• Precio máx.: ${fmt(body.precio_max)} kr/mes\n• Dormitorios mín.: ${body.dorm_min}\n• Entrada: ${body.disp_desde} → ${body.disp_hasta}\n• Compartir: ${body.compartir?"obligatorio":"da igual"}\n• Contrato largo: ${body.contrato_largo?"obligatorio":"da igual"}\n\nSe aplica desde la próxima pasada de Lares.`))return;
+  if(!confirm(`⚠️ ESTE CAMBIO ES DE BÚSQUEDA, NO DE VISUALIZACIÓN\nCambia lo que Lares busca para todos (no solo lo que ves en el mapa).\n\n¿Guardar la búsqueda de Lares?\n\n• Precio máx.: ${fmt(body.precio_max)} kr/mes\n• Dormitorios mín.: ${body.dorm_min}\n• Entrada: ${body.disp_desde} → ${body.disp_hasta}\n• Compartir: ${body.compartir?"obligatorio":"da igual"}\n• Contrato largo: ${body.contrato_largo?"obligatorio":"da igual"}\n\nSe aplica desde la próxima pasada de Lares.`))return;
   m.textContent="Guardando…";
   try{const r=await fetch(API+"/api/filtros",{method:"POST",headers:{"Content-Type":"application/json","X-Pisos-Key":API_KEY},body:JSON.stringify(body)});
     if(!r.ok)throw new Error(r.status===400?"datos no válidos":"HTTP "+r.status); FB=await r.json(); fillBusq(); m.textContent="✓ Guardado. Lares lo usará en su próxima pasada.";}
