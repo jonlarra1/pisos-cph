@@ -362,7 +362,11 @@ class Admin(BaseHTTPRequestHandler):
     server_version = "pisos-admin/1"
     def log_message(self, fmt, *a): pass
     def allowed(self):
+        """El puerto 8790 solo es accesible desde la propia Pi (127.0.0.1) o desde la tailnet vía
+        `tailscale serve`. Con serve web (nombre, :9444) llega Tailscale-User-Login y se comprueba;
+        con serve TCP (IP, :9445, para aparatos sin MagicDNS) no llega cabecera y se acepta."""
         who = self.headers.get("Tailscale-User-Login", "")
+        if not who: return True
         return (not ADMIN_USERS) or any(who.startswith(u) for u in ADMIN_USERS)
     def send(self, code, body, ctype):
         b = body.encode() if isinstance(body, str) else body
@@ -376,7 +380,7 @@ class Admin(BaseHTTPRequestHandler):
             st = {"ahora": time.strftime("%Y-%m-%dT%H:%M:%S%z"), "uptime_h": round((time.time()-STARTED)/3600, 2),
                   "checks": CHECKS, "eventos": tail("events", 60)[::-1], "api": tail("api", 80)[::-1], "cliente": tail("client", 30)[::-1],
                   "lares": [json.loads(x) for x in (open(os.path.join(BRIDGE, "lares_runs.jsonl"), encoding="utf-8").read().splitlines()[-15:] if os.path.exists(os.path.join(BRIDGE, "lares_runs.jsonl")) else []) if x.strip()][::-1],
-                  "usuario": self.headers.get("Tailscale-User-Login", "")}
+                  "usuario": self.headers.get("Tailscale-User-Login", "") or "acceso por IP de Tailscale"}
             return self.send(200, json.dumps(st, ensure_ascii=False), "application/json; charset=utf-8")
         if self.path in ("/", "/index.html"):
             return self.send(200, open(os.path.join(os.path.dirname(__file__), "admin.html"), encoding="utf-8").read(), "text/html; charset=utf-8")
