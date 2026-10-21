@@ -740,6 +740,8 @@ h1{font-family:var(--f-display);font-size:22px;line-height:1.1;margin:0;letter-s
 .lp[open]>summary::after{content:"▴"}
 .lp>summary small{font:500 12px var(--f-body);color:var(--muted)}
 .trip{display:grid;gap:6px;font-size:13px;color:var(--muted);margin-top:8px}
+.rcol .more-b{margin-top:8px}
+.rcol .lines-card>summary small{font:500 12px var(--f-body);color:var(--muted)}
 .trip label{display:flex;align-items:center;justify-content:space-between;gap:8px}
 .trip select{min-width:120px}
 .trip select{font:600 13px var(--f-body);color:var(--fg);background:var(--panel);border:1px solid var(--line);border-radius:6px;padding:4px 6px;cursor:pointer}
@@ -817,8 +819,11 @@ html,body{overflow-x:hidden}
 .leaflet-container .btn.pri{color:var(--panel)}
 .leaflet-container .btn.sec{color:var(--fg)}
 
-.sheet{position:absolute;top:0;right:0;bottom:0;width:min(440px,100%);background:var(--panel);z-index:800;box-shadow:var(--shadow);display:flex;flex-direction:column;transform:translateX(105%);transition:transform .22s ease;min-width:0}
-.sheet.open{transform:none}
+.sheet{display:none;flex-direction:column;min-height:0;flex:1;background:var(--panel)}
+.sheet.open{display:flex}
+.rail.has-sheet .list,.rail.has-sheet .out,.rail.has-sheet .rail-foot{display:none}
+.sheet .rt-h{display:none}
+.sh-back{border:0;background:var(--bg);color:var(--fg);border-radius:8px;padding:6px 10px;font:600 12.5px var(--f-body);cursor:pointer;justify-self:start}
 .sh-head{padding:18px 20px 14px;border-bottom:1px solid var(--line);display:grid;grid-template-columns:auto 1fr auto;gap:12px;align-items:center}
 .sh-head h2{font-family:var(--f-display);font-size:20px;margin:0;line-height:1.15;text-wrap:balance}
 .sh-head p{margin:3px 0 0;color:var(--muted);font-size:12.5px}
@@ -870,8 +875,7 @@ html,body{overflow-x:hidden}
   .list{overflow:visible}
   .rcol{top:8px;right:8px;max-height:calc(100% - 16px);overflow:auto}
   .lines-card{padding:8px 10px}
-  .sheet{position:fixed;top:auto;height:82vh;width:100%;border-radius:16px 16px 0 0;transform:translateY(105%);padding-bottom:env(safe-area-inset-bottom,0px)}
-  .sheet.open{transform:none}
+  .sheet .sh-body{overflow:visible}
 }
 @media (prefers-reduced-motion:reduce){.sheet,.pin{transition:none}}
 /* routes */
@@ -929,19 +933,32 @@ html,body{overflow-x:hidden}
 </style>
 
 <div class="app">
-  <aside class="rail">
+  <aside class="rail" id="rail">
     <div class="rail-head">
       <div>
         <h1>Pisos en Copenhague</h1>
         <p class="sub" id="count"></p>
       </div>
-      <details class="lp" id="d-viaje" open><summary>Viaje <small id="trip-s"></small></summary>
+    </div>
+    <aside class="sheet" id="sheet" aria-hidden="true"></aside>
+    <div class="list" id="list"></div>
+    <div class="out" id="out"></div>
+    <details class="rail-foot"><summary>Cómo se calcula y fuentes</summary>
+      <p>Lista ordenada de más barato a más caro (coste mensual total). Ubicación exacta cuando el anuncio da el número; si no, a nivel de calle. Vías y estaciones reales de S-tog, metro y Letbanen: © OpenStreetMap contributors (ODbL) y Rejseplanen, vía github.com/Miqell24/copenhagen-bus-map. Mapa base: © OpenStreetMap contributors.
+      Links revisados uno a uno el 21-10-2026. Los que no existen, están reservados o no tienen 3 dormitorios están en «Descartados». Pisos con ⚠️ tienen una condición a revisar.</p>
+      <p>Rutas: horarios de Rejseplanen (GTFS) para un martes normal, saliendo entre 7:30 y 8:30. Incluyen bus, S-tog, metro, Letbane y tren. Son estimaciones: consulta Rejseplanen el día que viajes.</p>
+    </details>
+  </aside>
+  <section class="mapwrap">
+    <div id="map" aria-label="Mapa de pisos"></div>
+    <div class="rcol">
+      <details class="lines-card" id="d-viaje" open><summary>Viaje <small id="trip-s"></small></summary>
       <div class="trip" role="group" aria-label="Viaje">
         <label>Llegar antes de<select id="ttime" aria-label="Hora de llegada"></select></label>
         <label>Día<select id="tday" aria-label="Día"></select></label>
         <div class="chips" id="hor" hidden></div>
       </div></details>
-      <details class="lp more" id="d-ver"><summary>Ver y filtrar <small id="more-s"></small></summary>
+      <details class="lines-card more" id="d-ver"><summary>Ver y filtrar <small id="more-s"></small></summary>
         <div class="more-b">
           <div class="ctl"><span class="lbl">Colorear por</span>
           <div class="seg" role="group" aria-label="Color de los puntos">
@@ -954,18 +971,6 @@ html,body{overflow-x:hidden}
           <div class="filt"><div class="filt-h"><span>Barrios</span><button class="lnk" id="f-all">Ver todos</button></div><div class="chips" id="chips"></div></div>
         </div>
       </details>
-    </div>
-    <div class="list" id="list"></div>
-    <div class="out" id="out"></div>
-    <details class="rail-foot"><summary>Cómo se calcula y fuentes</summary>
-      <p>Lista ordenada de más barato a más caro (coste mensual total). Ubicación exacta cuando el anuncio da el número; si no, a nivel de calle. Vías y estaciones reales de S-tog, metro y Letbanen: © OpenStreetMap contributors (ODbL) y Rejseplanen, vía github.com/Miqell24/copenhagen-bus-map. Mapa base: © OpenStreetMap contributors.
-      Links revisados uno a uno el 21-10-2026. Los que no existen, están reservados o no tienen 3 dormitorios están en «Descartados». Pisos con ⚠️ tienen una condición a revisar.</p>
-      <p>Rutas: horarios de Rejseplanen (GTFS) para un martes normal, saliendo entre 7:30 y 8:30. Incluyen bus, S-tog, metro, Letbane y tren. Son estimaciones: consulta Rejseplanen el día que viajes.</p>
-    </details>
-  </aside>
-  <section class="mapwrap">
-    <div id="map" aria-label="Mapa de pisos"></div>
-    <div class="rcol">
       <details class="lines-card" id="d-lineas"><summary>Líneas</summary><div class="lines-body" id="lines"><b>S-tog</b></div></details>
       <details class="lines-card cfg" id="cfg"><summary>Configuración</summary><div class="cfg-b" id="cfg-b"></div></details>
     </div>
@@ -973,7 +978,6 @@ html,body{overflow-x:hidden}
       <div class="fc-bar" id="card-bar" title="Arrastra para moverla"><span class="grip">⠿</span><span class="fc-t"><span class="d-only">Arrastra para mover</span><span class="m-only">Toca aquí para plegar / desplegar</span></span><button class="x" id="card-x" aria-label="Cerrar">×</button></div>
       <div class="fc-body" id="card-b"></div>
     </div>
-    <aside class="sheet" id="sheet" aria-hidden="true"></aside>
   </section>
 </div>
 
@@ -1309,8 +1313,8 @@ function drawRoute(id,key,fit){
       L.polyline(path,{renderer:routeR,color:css("--panel"),weight:9*w,opacity:.9*op,interactive:false}).addTo(routeLayer);
       L.polyline(path,{renderer:routeR,color:legCol(l),weight:5*w,opacity:op,dashArray:"10 8",lineCap:"butt",className:on?"route-ant":"",interactive:on})
        .bindTooltip(`${esc(l.m)} ${esc(l.line)} → ${esc(l.head)}`,{sticky:true}).addTo(routeLayer);});});
-  if(fit&&focusPts.length){const W=map.getSize().x, H=map.getSize().y, sh=sheet.classList.contains("open")?Math.min(460,W*.6):0;
-    let tl=[40,40], br=[Math.max(sh,W>700?280:20),40];
+  if(fit&&focusPts.length){const W=map.getSize().x, H=map.getSize().y, rc=document.querySelector(".rcol");
+    let tl=[40,40], br=[W>760&&rc?rc.offsetWidth+30:20,40];
     if(!card.hidden&&W>760){const mr=map.getContainer().getBoundingClientRect(), cr=card.getBoundingClientRect(), x0=cr.left-mr.left, x1=cr.right-mr.left;
       if(x0+x1<W)tl[0]=Math.min(W*.6,x1+20); else br[0]=Math.max(br[0],Math.min(W*.6,W-x0+20));}
     if(!card.hidden&&W<=760)br[1]=Math.min(H*.6,card.offsetHeight+20);
@@ -1339,7 +1343,7 @@ function stepsHtml(p,key){const row=rowOf(key)||allRows()[0]; key=row.key; const
   const who=`<p style="margin:8px 0 0;font-size:12px;color:var(--muted)">${pf.n}: ${bike?"🚲 bici + S-tog/tren":"🚶 andando + bus, metro, tren"} · ${bike?pf.vb:pf.vw} km/h · máx. ${limTxt(pf,pf.lim)} por tramo (cámbialo en Configuración)</p>`;
   const ref=dir?`<p style="margin:8px 0 0;font-size:11.5px;color:var(--muted)">Solo ${bike?`en bici (${pf.vb} km/h)`:`andando (${pf.vw} km/h)`}, sin transporte: ${dir.min} min · ${km(dir.d)}</p>`:"";
   if(!r)return who+`<p style="font-size:12.5px">Sin ruta para llegar antes de las ${tripTime}. Cambia la hora o sube el máximo de ${pf.n} en Configuración.</p>`+ref;
-  return who+`<p style="margin:8px 0 0">${altBtns(p.id,key)}</p><p style="margin:8px 0 0;font-size:12.5px"><b>${r.min} min</b> puerta a puerta · sal a las ${r.sale}, llegas a las ${r.llega}${r.trans>0?` · ${r.trans} transbordo${r.trans>1?"s":""}`:""}</p>
+  return who+`<p style="margin:8px 0 0;font-size:12.5px"><b>${r.min} min</b> puerta a puerta · sal a las ${r.sale}, llegas a las ${r.llega}${r.trans>0?` · ${r.trans} transbordo${r.trans>1?"s":""}`:""}</p>
   <ol class="steps">${r.legs.map(l=>l.m==="bike"
     ?`<li><span class="t">🚲 ${l.min}′</span><span>En bici${l.d?` ${km(l.d)}`:""} hasta <b>${esc(l.to)}</b></span></li>`
     :l.m==="walk"
@@ -1396,7 +1400,7 @@ document.addEventListener("click",e=>{
   if(a){e.stopPropagation(); const [id,key,n]=a.dataset.alt.split("|"); ALT[id+"|"+key]=+n; routeDest=key; saveUI();
     if(!card.hidden)showCard(card.dataset.id); drawRoute(id,key,true);
     const st=document.getElementById("rt-steps"); if(st&&sheet.dataset.id===id)st.innerHTML=stepsHtml(PISOS.find(x=>x.id===id),key);
-    const tb=document.querySelector("#sheet .rt-tabs"); if(tb&&sheet.dataset.id===id)tb.innerHTML=tabsHtml(PISOS.find(x=>x.id===id)); return;}
+    const rb=document.querySelector("#sheet .rt"); if(rb&&sheet.dataset.id===id){rb.outerHTML=routesHtml(PISOS.find(x=>x.id===id)); drawRoute(id,key,false);} return;}
   const b=e.target.closest("[data-route]");if(!b)return;
   const [id,key]=b.dataset.route.split("|"); routeDest=key; saveUI(); drawRoute(id,key,true);
   const st=document.getElementById("rt-steps"); if(st&&sheet.dataset.id===id)st.innerHTML=stepsHtml(PISOS.find(x=>x.id===id),key);});
@@ -1441,7 +1445,7 @@ function popupHtml(p){
       <a class="btn sec" href="${esc(p.link)}" target="_blank" rel="noopener">Anuncio ↗</a></div>`;}
 PISOS.forEach(p=>{
   const m=L.marker([p.lat,p.lon],{icon:pinIcon(p),riseOnHover:true,zIndexOffset:1000});
-  m.on("click",()=>{select(p.id,false);showCard(p.id);});
+  m.on("click",()=>{select(p.id,false);showPiso(p.id);});
   markers[p.id]=m.addTo(map);
 });
 map.fitBounds(L.latLngBounds([...PISOS.map(p=>[p.lat,p.lon]),WORK.ll]).pad(.08));
@@ -1533,7 +1537,7 @@ function select(id,fly){
   if(prev&&markers[prev])markers[prev].setIcon(pinIcon(PISOS.find(p=>p.id===prev)));
   const p=PISOS.find(p=>p.id===id); markers[id].setIcon(pinIcon(p,true));
   drawRoute(id,routeDest,false);
-  if(fly){map.flyTo([p.lat,p.lon],Math.max(map.getZoom(),13),{duration:.6});showCard(id);}
+  if(fly){map.flyTo([p.lat,p.lon],Math.max(map.getZoom(),13),{duration:.6});showPiso(id);}
   renderList();
 }
 function setMode(m){mode=m; if(typeof saveUI==="function")saveUI();["estado","prio","price","barrio"].forEach(k=>document.getElementById("m-"+k).setAttribute("aria-pressed",k===m));
@@ -1551,15 +1555,21 @@ function openSheet(id){
   const row=(k,v)=>v==null||v===""?"":`<dt>${k}</dt><dd>${v}</dd>`;
   const isPortal=p.portal;
   sheet.innerHTML=`
+   <div style="padding:10px 20px 0"><button class="sh-back" id="sh-back">← Lista de pisos</button></div>
    <div class="sh-head"><span class="badge" style="background:${col(p)};width:42px;height:42px;font-size:14px">${MODES[mode].lbl(p)}</span>
      <div style="min-width:0"><h2>${esc(p.zona)} · ${esc(p.calle)}</h2><p>${p.m2} m² · ${p.vaer} værelser · planta ${esc(p.planta||"—")}</p>${stPill(p)}</div>
-     <button class="x" id="sh-x" aria-label="Cerrar">×</button></div>
+     <button class="x" id="sh-x" aria-label="Cerrar ficha">×</button></div>
    <div class="sh-body">
      <div class="stats">
        <div class="stat"><b>${fmt(p.mensual)}</b><span>kr/mes total${p.aconto==null?"*":""}</span></div>
        <div class="stat"><b>${p.entradaCmp==null?"—":fmt(p.entradaCmp)}</b><span>depósito + prepago</span></div>
        <div class="stat"><b>${Math.round(p.alq/p.m2)}</b><span>kr/m²</span></div>
      </div>
+     <div class="sec"><h4>Cómo llegar · ${DAYF[tripDay]}, antes de las ${tripTime}</h4>
+       ${routesHtml(p)}
+       <h4 style="margin-top:14px">Paso a paso</h4>
+       <div id="rt-steps">${stepsHtml(p,routeDest)}</div>
+       <p style="margin:8px 0 0;font-size:11.5px;color:var(--muted)">Calculado con los horarios de Rejseplanen (semana del ${esc(RUTAS.week)}): la salida más tarde que llega a tiempo, con la configuración de cada uno. El botón abre Rejseplanen con su propio cálculo para el próximo ${DAYF[tripDay]}.</p></div>
      <div class="sec"><h4>Fotos</h4>
        <div class="photo"><p>Los portales no dejan cargar sus fotos fuera de su web, así que aquí no se pueden mostrar. Ábrelas en el anuncio de ${esc(isPortal)}.</p>
        <a class="btn pri" href="${esc(p.link)}" target="_blank" rel="noopener">Ver fotos y plano en ${esc(isPortal)} ↗</a></div></div>
@@ -1577,20 +1587,21 @@ function openSheet(id){
        ${row("Metro más cercano",`${esc(p.met.n)} (${[...mLinesAt[p.met.n]].sort().join(", ")}) · ${p.met.d.toFixed(1)} km`)}
        ${row("Distancia al trabajo",p.distWork.toFixed(1)+" km en línea recta")}
        ${row("Tu nota",esc(p.trans))}</dl></div>
-     <div class="sec"><h4>Cómo llegar · ${DAYF[tripDay]}, antes de las ${tripTime}</h4>
-       <div class="rt-tabs">${tabsHtml(p)}</div>
-       <div id="rt-steps">${stepsHtml(p,routeDest)}</div>
-       <p style="margin:8px 0 0;font-size:11.5px;color:var(--muted)">Calculado con los horarios de Rejseplanen (semana del ${esc(RUTAS.week)}): la salida más tarde que llega a tiempo, con la configuración de cada uno. El botón abre Rejseplanen con su propio cálculo para el próximo ${DAYF[tripDay]}.</p></div>
+
      ${p.estado==="warn"?`<div class="note warn-n">⚠️ ${esc(p.aviso)}</div>`:""}
      ${p.restr?`<div class="note"><b>Requisitos:</b> ${esc(p.restr)}</div>`:""}
      ${p.notas?`<div class="note">${esc(p.notas)}</div>`:""}
      ${/VERIFICAR/.test(p.dormEst)?`<div class="note warn">Revisa el plano: no está claro cuántos dormitorios tiene.</div>`:""}
    </div>`;
   drawRoute(id,routeDest,false);
-  sheet.dataset.id=id; sheet.classList.add("open"); sheet.setAttribute("aria-hidden","false");
-  document.getElementById("sh-x").onclick=closeSheet; document.getElementById("sh-x").focus();
+  const sc=sheet.querySelector(".sh-body")?.scrollTop||0, same=sheet.dataset.id===id&&sheet.classList.contains("open");
+  sheet.dataset.id=id; sheet.classList.add("open"); sheet.setAttribute("aria-hidden","false"); document.getElementById("rail").classList.add("has-sheet");
+  if(same)sheet.querySelector(".sh-body").scrollTop=sc; else sheet.querySelector(".sh-body").scrollTop=0;
+  document.getElementById("sh-x").onclick=closeSheet; document.getElementById("sh-back").onclick=closeSheet;
 }
-function closeSheet(){sheet.classList.remove("open");sheet.setAttribute("aria-hidden","true");}
+function closeSheet(){sheet.classList.remove("open");sheet.setAttribute("aria-hidden","true"); document.getElementById("rail").classList.remove("has-sheet"); renderList();}
+/* Abrir un piso: en escritorio la ficha sale a la izquierda; en móvil, la tarjeta abajo del mapa. */
+function showPiso(id){if(innerWidth>760)openSheet(id); else showCard(id);}
 document.addEventListener("click",e=>{const b=e.target.closest("[data-open]");if(b)openSheet(b.dataset.open);});
 document.addEventListener("keydown",e=>{if(e.key==="Escape"){if(sheet.classList.contains("open"))closeSheet();else hideCard();}});
 
