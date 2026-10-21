@@ -4,18 +4,21 @@ F = sys.argv[1]
 # After real street distances some routes may arrive after the chosen time.
 # Replace them with the latest earlier-slot route of the same flat/dest that still arrives on time.
 R = json.load(open(F)); T = R["times"]; late = fixed = 0
+ok = lambda i, t: R["routes"][i]["llega"] <= t
 for mo, D in R["ix"].items():
     for d, TT in D.items():
         for ti, t in enumerate(T):
             for lim, FF in TT.get(t, {}).items():
                 for fid, X in FF.items():
-                    for k, i in list(X.items()):
-                        if R["routes"][i]["llega"] <= t: continue
-                        late += 1; alt = None
-                        for t2 in reversed(T[:ti]):
-                            j = TT.get(t2, {}).get(lim, {}).get(fid, {}).get(k)
-                            if j is not None and R["routes"][j]["llega"] <= t: alt = j; break
-                        if alt is not None: X[k] = alt; fixed += 1
+                    for k, ids in list(X.items()):
+                        good = [i for i in ids if ok(i, t)]
+                        if len(good) == len(ids): continue
+                        late += 1
+                        if not good:   # fall back to the latest earlier slot that arrives on time
+                            for t2 in reversed(T[:ti]):
+                                good = [i for i in TT.get(t2, {}).get(lim, {}).get(fid, {}).get(k, []) if ok(i, t)]
+                                if good: break
+                        if good: X[k] = good; fixed += 1
                         else: del X[k]
 json.dump(R, open(F, "w"), ensure_ascii=False, separators=(",", ":"))
-print("late", late, "fixed with earlier slot", fixed, "removed", late-fixed)
+print("slots with late options", late, "fixed", fixed, "removed", late-fixed)

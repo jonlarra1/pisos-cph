@@ -20,7 +20,7 @@ LIMITS = [5, 10, 15, 20, 25, 30]   # max minutes walking or biking per leg (prof
 V, DET, CHG = 1.33, 1.25, 90      # walk speed m/s, detour factor, change buffer s
 VB, DETB = 20/3.6, 1.3            # bike speed m/s (20 km/h, Jon), detour factor
 PARK, BOARD = 0, 0                # no time counted for locking / boarding with the bike
-RAILBIKE = {109, 2}               # with a bike: only S-tog and regional trains (no bus, no metro)
+RAILBIKE = {109, 2, 0}            # with a bike: S-tog, regional/local trains and Letbane (free bikes). No bus, no metro.
 MODES_OUT = ["foot", "bike"]      # access/egress mode (always with public transport)
 STEP = 120                        # departure sampling step (s)
 DAYN = ["lun", "mar", "mié", "jue", "vie", "sáb", "dom"]
@@ -60,7 +60,7 @@ class Day:
         self.foot = {s: [(n, wt(d)) for n, d in self.near(la, lo, fp) if n != s] for s, la, lo in self.SL}
         self.egress = {k: dict(self.near(la, lo, self.WALKMAX)) for k, _, la, lo in DEST}
         self.begress = {k: dict(self.near(la, lo, self.BIKEMAX)) for k, _, la, lo in DEST}
-    def csa(self, la, lo, t0, var="foot"):
+    def csa(self, la, lo, t0, var="foot", ban=frozenset()):
         """var: foot = walk/transit/walk; park = bike to station, park, transit, walk;
         carry = bike, train with bike (S-tog/regional only), bike."""
         INF = 1e18; ready = {}; arr = {}; ptr = {}; enter = {}
@@ -76,7 +76,7 @@ class Day:
             dep, ar, u, v, t = conns[i]
             if dep > bound: break
             if t not in enter:
-                if ready.get(u, INF) <= dep: enter[t] = conns[i]
+                if ready.get(u, INF) <= dep and (not ban or self.routes[self.trips[t][0]][0] not in ban): enter[t] = conns[i]
                 else: continue
             if ar < arr.get(v, INF):
                 arr[v] = ar; ptr[v] = ("ride", enter[t], conns[i])
@@ -119,6 +119,33 @@ class Day:
         return out
 
 t_lo, t_hi = sec(TIMES[0])-110*60, sec(TIMES[-1])
+def finish(D, p, x):
+    t0, e, s, ptr, name, dla, dlo, var = x
+    legs = D.build(p["lat"], p["lon"], s, ptr, name, dla, dlo, var)
+    rides = [L for L in legs if L["m"] not in ("walk", "bike")]
+    if rides and legs[0]["m"] in ("walk", "bike"):  # leave just in time
+        pen = (PARK if var == "park" else BOARD if var == "carry" else 0)
+        t0 = max(t0, sec(rides[0]["dep"])-legs[0]["min"]*60-pen)
+    return {"min": round((e-t0)/60), "sale": hm(t0), "llega": hm(e), "trans": max(0, len(rides)-1), "legs": legs}
+def main_line(r):
+    rides = [L for L in r["legs"] if L["m"] not in ("walk", "bike")]
+    if not rides: return None
+    return max(rides, key=lambda L: sec(L["arr"])-sec(L["dep"]))["line"]
+def latest(D, p, Tl, vars_, k, ban, name, dla, dlo):
+    """Latest departure (STEP grid) arriving by Tl while avoiding lines in ban. Binary search (arrival grows with departure)."""
+    grid = list(range(t_lo, Tl+1, STEP)); lo, hi, found = 0, len(grid)-1, None
+    def run(t0):
+        bestx = None
+        for var in vars_:
+            b, ptr = D.csa(p["lat"], p["lon"], t0, var, ban)
+            e, s = b[k]
+            if e < 1e17 and (bestx is None or e < bestx[1]): bestx = (t0, e, s, ptr, name, dla, dlo, var)
+        return bestx
+    while lo <= hi:
+        mid = (lo+hi)//2; x = run(grid[mid])
+        if x and x[1] <= Tl: found = x; lo = mid+1
+        else: hi = mid-1
+    return found
 def work(pkl):
     ymd = pkl.rsplit("_", 1)[-1].split(".")[0]
     dn = DAYN[datetime.date(int(ymd[:4]), int(ymd[4:6]), int(ymd[6:])).weekday()]
@@ -137,17 +164,21 @@ def work(pkl):
                             if e < 1e17: samples[k].append((t0, e, s, ptr, name, dla, dlo, var))
                 for T in TIMES:
                     Tl = sec(T)
-                    for k in samples:
+                    for k, name, dla, dlo in DEST:
                         ok = [x for x in samples[k] if x[1] <= Tl]
                         if not ok: continue
-                        t0, e, s, ptr, name, dla, dlo, var = max(ok, key=lambda x: (x[0], -x[1]))  # latest departure
-                        legs = D.build(p["lat"], p["lon"], s, ptr, name, dla, dlo, var)
-                        rides = [L for L in legs if L["m"] not in ("walk", "bike")]
-                        if rides and legs[0]["m"] in ("walk", "bike"):  # leave just in time
-                            pen = (PARK if var == "park" else BOARD if var == "carry" else 0)
-                            t0 = max(t0, sec(rides[0]["dep"])-legs[0]["min"]*60-pen)
-                        r = {"min": round((e-t0)/60), "sale": hm(t0), "llega": hm(e), "trans": max(0, len(rides)-1), "legs": legs}
-                        res.append((dn, T, str(lim), mo, p["id"], k, r))
+                        best = max(ok, key=lambda x: (x[0], -x[1]))  # latest departure that arrives on time
+                        opts = [finish(D, p, best)]
+                        ban = set()
+                        for _ in range(2):   # up to 2 alternatives avoiding the main line(s) of earlier options
+                            ml = main_line(opts[-1])
+                            if not ml: break
+                            ban.add(ml); alt = latest(D, p, Tl, vars_, k, frozenset(ban), name, dla, dlo)
+                            if not alt: break
+                            r = finish(D, p, alt)
+                            if r["min"] > opts[0]["min"]+25: break
+                            if all(json.dumps(r["legs"]) != json.dumps(o["legs"]) for o in opts): opts.append(r)
+                        res.append((dn, T, str(lim), mo, p["id"], k, opts))
         print(dn, lim, "done", flush=True)
     return dn, res
 
@@ -156,10 +187,13 @@ if __name__ == "__main__":
     with multiprocessing.Pool(min(5, len(PREPS))) as pool:
         for dn, res in pool.map(work, PREPS):
             days.append(dn)
-            for dn_, T, lim, mo, fid, k, r in res:
-                key = json.dumps(r, sort_keys=True)
-                if key not in rindex: rindex[key] = len(routes); routes.append(r)
-                IX.setdefault(mo, {}).setdefault(dn_, {}).setdefault(T, {}).setdefault(lim, {}).setdefault(fid, {})[k] = rindex[key]
+            for dn_, T, lim, mo, fid, k, opts in res:
+                ids = []
+                for r in opts:
+                    key = json.dumps(r, sort_keys=True)
+                    if key not in rindex: rindex[key] = len(routes); routes.append(r)
+                    ids.append(rindex[key])
+                IX.setdefault(mo, {}).setdefault(dn_, {}).setdefault(T, {}).setdefault(lim, {}).setdefault(fid, {})[k] = ids
     # nicer geometry from shapes.txt
     need = {L["shape"] for r in routes for L in r["legs"] if L.get("shape")}
     SH = collections.defaultdict(list)
