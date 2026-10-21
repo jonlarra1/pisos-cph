@@ -48,7 +48,8 @@ The user is Jon. He works at Nordic Solar (Hellerup). He prefers short, simple, 
     permisos de otros usuarios (pasó con lares/cron/jobs.json, revertido). Comprobar `getfacl` antes y después.
 - Hosting: GitHub Pages (fixed link for flatmates). Commit + push to update.
 
-## Estado (2026-10-21, 21:10) y pendientes
+## Estado (2026-10-22, 00:05) y pendientes
+- Regla: depósito y prepago siempre por separado cuando el anuncio los separa (ficha, lista y candidatos); la suma solo como «total a la entrada».
 - Hecho y publicado: mapa con 12 pisos, rutas (bici/andando, 3 opciones, 5 días × 6 horas × límites 5–30 min), perfiles Jon/Unai,
   estados compartidos vía Pi, Lares v2 conectado (buzón pisos-bridge), menú «Búsqueda (Lares)» / «Visualización», galería de fotos,
   panel privado :9444, logs + checks. Listado izquierdo: principal = solo 🔵 gusta + 🟢 contactado; «🟠 Propuestos» = nuevos del
@@ -59,6 +60,9 @@ The user is Jon. He works at Nordic Solar (Hellerup). He prefers short, simple, 
   3. Pasar al mapa los candidatos que se marquen 🔵 en «Propuestos» (geocodificar + rutas: tools/route.py para esos ids y fusionar
      en data/rutas.json, como se hizo con 5680524/5680537/5680562).
   5. Futuro: monitorizar con Grafana (Loki/Promtail leyendo data/logs, ya en JSON por líneas) cuando Jon lo monte en el homelab.
+  6. Instalar en la Pi el piso_watch_monitor.py con depósito y prepago separados (campos `dep`/`pre`; local listo y probado
+     el 2026-10-21; hace falta clave SSH temporal). Hasta entonces los candidatos de Lares no traen el desglose.
+  7. Motor de rutas en vivo (backend/routing.py, bloque 1 en local): pendiente de probar y desplegar.
   4. 14 pisos de Lejebolig de nuevos_desde_14oct.md con fecha sin confirmar (Lejebolig no la muestra sin sesión) — no añadidos.
 - Puertos ya usados en la Pi (no tocar): Portainer 8000/9000/9443. Nuestro: 127.0.0.1:8787 (API, Funnel :8443), 127.0.0.1:8790 (panel: serve https :9444 por nombre, y serve TCP :9445 por IP http://100.72.170.60:9445 para aparatos sin MagicDNS). Comprobar siempre con `ss -ltnp | grep :PUERTO` antes de usar uno nuevo.
 - Acceso a la Pi: clave SSH temporal de 1 h (expiry-time en authorized_keys, comentario «claude-pisos-1h»); pedir una nueva a Jon.

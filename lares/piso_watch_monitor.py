@@ -121,6 +121,7 @@ def parse_boligportal(html):
                     "link": ("https://www.boligportal.dk" + url) if url.startswith("/") else url,
                     "titulo": a.get("title") or f"{street}, {area}", "lugar": f"{street} {a.get('street_number') or ''} {a.get('postal_code') or ''} {area}".strip(),
                     "precio": num(a.get("monthly_rent")) or 0, "aconto": num(a.get("monthly_rent_extra_costs")),
+                    "dep": num(a.get("deposit")), "pre": num(a.get("prepaid_rent")),
                     "m2": num(a.get("size_m2")), "vaer": num(a.get("rooms")),
                     "disp": (a.get("available_from") or "")[:10] or None, "contrato_meses": num(a.get("rental_period")),
                     "lat": loc.get("lat"), "lon": loc.get("lng") or loc.get("lon"),
@@ -135,6 +136,12 @@ def detalle(item):
     t = unescape(re.sub(r"<script.*?</script>|<style.*?</style>", " ", h, flags=re.S))
     t = re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", t))
     d = {"texto": t[:6000]}
+    # depósito y prepago por separado (Lejebolig: «an advance rent payment of DKK X and a security deposit of DKK Y» / «Deposit: X»)
+    kr = lambda m: int(re.sub(r"\D", "", next(g for g in m.groups() if g))) if m else None
+    d["pre"] = kr(re.search(r"advance rent payment of DKK ([\d,.]+)|[Ff]orudbetalt leje:?\s*(?:DKK|kr\.?)?\s*([\d.,]+)", t))
+    # la ficha técnica («Deposit: X») manda; la frase automática a veces trae mal el depósito
+    d["dep"] = kr(re.search(r"\bDeposit:\s*([\d,.]+)|[Dd]epositum:?\s*(?:DKK|kr\.?)?\s*([\d.,]+)", t)) or \
+        kr(re.search(r"security deposit of DKK ([\d,.]+)", t))
     mp = re.search(r"Rental period\s+(\w+)|Lejeperiode\s+(\w+)", t)
     if mp:
         v = (mp.group(1) or mp.group(2)).lower()
@@ -267,7 +274,7 @@ def main():
                 avisos.append("ficha no disponible")
         row = con.execute("SELECT first_seen, avisado FROM v2_eval WHERE id=?", (lid,)).fetchone()
         first = row[0] if row else now
-        out = {k: it.get(k) for k in ("id", "portal", "link", "titulo", "lugar", "zona", "precio", "aconto", "m2", "vaer", "disp", "contrato_meses", "lat", "lon", "plano", "plano_dorm")}
+        out = {k: it.get(k) for k in ("id", "portal", "link", "titulo", "lugar", "zona", "precio", "aconto", "dep", "pre", "m2", "vaer", "disp", "contrato_meses", "lat", "lon", "plano", "plano_dorm")}
         out.update({"avisos": avisos, "visto": first[:10]})
         con.execute("INSERT INTO v2_eval (id, portal, link, ok, motivo, item, first_seen, last_seen) VALUES (?,?,?,?,?,?,?,?) "
                     "ON CONFLICT(id) DO UPDATE SET ok=excluded.ok, motivo=excluded.motivo, item=excluded.item, last_seen=excluded.last_seen",

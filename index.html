@@ -857,9 +857,9 @@ html,body{overflow-x:hidden}
 .sh-head p{margin:3px 0 0;color:var(--muted);font-size:12.5px}
 .x{border:0;background:var(--bg);color:var(--fg);width:32px;height:32px;border-radius:8px;font-size:18px;cursor:pointer}
 .sh-body{overflow:auto;padding:16px 20px 24px;display:grid;gap:18px;min-height:0}
-.stats{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
-.stat{background:var(--bg);border-radius:10px;padding:10px}
-.stat b{display:block;font:500 16px var(--f-mono);font-variant-numeric:tabular-nums}
+.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(62px,1fr));gap:6px}
+.stat{background:var(--bg);border-radius:10px;padding:9px 8px}
+.stat b{display:block;font:500 14.5px var(--f-mono);font-variant-numeric:tabular-nums}
 .stat span{font-size:11.5px;color:var(--muted)}
 .sec h4{font:600 11px var(--f-body);letter-spacing:.08em;text-transform:uppercase;color:var(--muted);margin:0 0 8px}
 .bars{display:grid;gap:6px}
@@ -1594,7 +1594,7 @@ function renderList(){
    <button class="item${p.id===selId?" sel":""}" data-id="${p.id}">
      <span class="badge" style="background:${col(p)}">${MODES[mode].lbl(p)}</span>
      <span style="min-width:0"><div class="it-t">${p.estado==="warn"?"⚠️ ":""}${esc(p.calle)}</div>
-       <div class="it-s">${p.m2} m² · ${esc(p.dorm)} dorm · entrada ${p.entradaCmp==null?"—":Math.round(p.entradaCmp/1000)+"k"}</div></span>
+       <div class="it-s">${p.m2} m² · ${esc(p.dorm)} dorm · dep ${p.dep==null?"—":Math.round(p.dep/1000)+"k"} · pre ${p.pre==null?"—":Math.round(p.pre/1000)+"k"}</div></span>
      <span class="it-p">${fmt(p.mensual)}<small>kr/mes</small></span>
    </button>`;
   const groups=BORD.filter(b=>BAR[b].some(inMain));
@@ -1667,7 +1667,8 @@ function openSheet(id){
    <div class="sh-body">
      <div class="stats">
        <div class="stat"><b>${fmt(p.mensual)}</b><span>kr/mes total${p.aconto==null?"*":""}</span></div>
-       <div class="stat"><b>${p.entradaCmp==null?"—":fmt(p.entradaCmp)}</b><span>depósito + prepago</span></div>
+       <div class="stat"><b>${p.dep==null?"—":fmt(p.dep)}</b><span>depósito</span></div>
+       <div class="stat"><b>${p.pre==null?"—":fmt(p.pre)}</b><span>prepago</span></div>
        <div class="stat"><b>${Math.round(p.alq/p.m2)}</b><span>kr/m²</span></div>
      </div>
      <div class="sec"><h4>Cómo llegar · ${DAYF[tripDay]}, antes de las ${tripTime}</h4>
@@ -1678,7 +1679,7 @@ function openSheet(id){
      <div class="sec"><h4>Fotos${p.fotoPlano?" · plano primero":""}</h4>${galHtml(p)}</div>
      <div class="sec"><h4>Dinero</h4><dl class="kv">
        ${row("Alquiler",kr(p.alq))}${row("Aconto",p.aconto==null?"No indicado (se calcula con 1.000)":kr(p.aconto))}
-       ${row("Depósito",kr(p.dep))}${row("Prepago",kr(p.pre))}${row("Entrada total (anuncio)",kr(p.entrada))}</dl></div>
+       ${row("Depósito",kr(p.dep))}${row("Prepago",kr(p.pre))}${row("Total a la entrada (depósito + prepago)",p.entradaCmp!=null?kr(p.entradaCmp):kr(p.entrada)+(p.entrada!=null?" (el anuncio no lo separa)":""))}</dl></div>
      <div class="sec"><h4>Piso</h4><dl class="kv">
        ${row("Dormitorios",esc(p.dorm))}${row("Fuente dormitorios",esc(p.dormEst))}${row("Disponible",esc(p.disp))}
        ${row("Compartir piso",esc(p.deleg||"No indicado"))}${row("Mascotas",esc(p.mascotas))}${row("Amueblado",esc(p.amueblado))}${row("Balcón",esc(p.balcon))}</dl></div>
@@ -1762,7 +1763,8 @@ pullEstados(); setInterval(()=>{if(!document.hidden)pullEstados();},60000);
 const kr0=n=>n==null?"?":fmt(n);
 function candItem(c){const st=c.st||"nuevo";
   return `<div class="cand"><a class="t" href="${esc(c.link)}" target="_blank" rel="noopener">${esc(c.zona||"")} · ${esc(c.titulo||c.lugar||"Anuncio")} ↗</a>
-   <span class="m">${kr0(c.precio)} kr/mes · ${c.m2||"?"} m² · ${c.vaer||"?"} vær. · entrada ${esc(c.disp||"?")} · ${esc(c.portal||"")}</span>
+   <span class="m">${kr0(c.precio)} kr/mes · ${c.m2||"?"} m² · ${c.vaer||"?"} vær. · libre ${esc(c.disp||"?")} · ${esc(c.portal||"")}</span>
+   ${c.dep!=null||c.pre!=null?`<span class="m">Depósito ${kr0(c.dep)} kr · Prepago ${kr0(c.pre)} kr</span>`:""}
    ${c.avisos&&c.avisos.length?`<span class="w">⚠ ${c.avisos.map(esc).join(" · ")}</span>`:""}
    <span class="b">${c.plano?`<a href="${esc(c.plano)}" target="_blank" rel="noopener">Plano ↗</a>`:""}
     ${st!=="gusta"?`<button data-cst="${c.id}|gusta">🔵 Me gusta</button>`:""}${st!=="descartado"?`<button data-cst="${c.id}|descartado">🔴 Descartar</button>`:""}${st!=="nuevo"?`<button data-cst="${c.id}|nuevo">🟠 Volver a sin decidir</button>`:""}</span></div>`;}
