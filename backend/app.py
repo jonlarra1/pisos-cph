@@ -1,6 +1,6 @@
 """Pisos CPH backend: shared flat status (gusta / nuevo / contactado / descartado).
 Python stdlib only. SQLite at /data/pisos.db."""
-import json, os, re, sqlite3, threading, time, tempfile, ssl, socket, http.client, urllib.request, urllib.parse, collections, hashlib
+import json, os, re, sqlite3, threading, time, tempfile, ssl, socket, http.client, urllib.request, urllib.parse, collections, hashlib, gzip, glob, shutil, datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 DB = os.environ.get("DB_PATH", "/data/pisos.db")
@@ -29,6 +29,7 @@ SITE = os.environ.get("SITE_URL", "https://jonlarra1.github.io/pisos-cph/")
 LARES_CRON = os.environ.get("LARES_CRON", "/lares_cron/jobs.json")
 ADMIN_USERS = [u for u in os.environ.get("ADMIN_USERS", "").split(",") if u]
 CHECKS = {}                                  # último resultado de cada comprobación
+CHECK_HIST = collections.defaultdict(lambda: collections.deque(maxlen=10))   # 10 últimas de cada una
 IMG_DIR = os.path.join(os.path.dirname(DB) or "/data", "imgcache")
 IMG_HOSTS = {"image-lambda.boligportal.dk": "https://www.boligportal.dk/", "s3.eu-central-1.amazonaws.com": None}
 IMG_MAX_MB, IMG_CACHE_MB = 8, 300
@@ -38,28 +39,114 @@ RECENT = collections.deque(maxlen=300)       # últimas peticiones (también en 
 os.makedirs(LOGDIR, exist_ok=True)
 _loglock = threading.Lock()
 
+# ------------------------------------------------------------------ logs
+# logs/<tipo>/AAAA-MM-DD.jsonl (hoy) y .jsonl.gz (días pasados, comprimidos por housekeeping()).
+#   api, client  -> detalle de peticiones / errores de la página: 14 días
+#   events       -> caídas, recuperaciones, cambios de estado/filtros/zonas, accesos denegados: 183 días
+#   checks       -> SOLO cuando una comprobación cambia (OK <-> fallo): 183 días
+#   summary      -> una línea por día con el resumen: 183 días
+# Las 10 últimas comprobaciones de cada tipo van en memoria y en logs/checks_recientes.json.
+RETENTION = {"api": 14, "client": 14, "events": 183, "checks": 183, "summary": 183}
+DAY_CAP = 20_000_000                          # tope por tipo y día (bytes)
+_capped = set()
+
+def _today(): return time.strftime("%Y-%m-%d")
+
 def log(kind, **kw):
-    """Una línea JSON por evento en /data/logs/<kind>.jsonl (rota a 5 MB)."""
+    """Una línea JSON por evento en logs/<kind>/<hoy>.jsonl."""
     rec = {"ts": time.strftime("%Y-%m-%dT%H:%M:%S%z"), "t": round(time.time(), 3), **kw}
-    path = os.path.join(LOGDIR, f"{kind}.jsonl")
+    d = os.path.join(LOGDIR, kind); path = os.path.join(d, _today() + ".jsonl")
     with _loglock:
         try:
-            if os.path.exists(path) and os.path.getsize(path) > 5_000_000:
-                os.replace(path, path + ".1")
-            with open(path, "a", encoding="utf-8") as f: f.write(json.dumps(rec, ensure_ascii=False) + "\n")
+            os.makedirs(d, exist_ok=True)
+            if os.path.exists(path) and os.path.getsize(path) > DAY_CAP:
+                if (kind, _today()) not in _capped:
+                    _capped.add((kind, _today()))
+                    with open(os.path.join(LOGDIR, "events", _today() + ".jsonl"), "a", encoding="utf-8") as f:
+                        f.write(json.dumps({"ts": rec["ts"], "t": rec["t"], "level": "warn", "src": "logs",
+                                            "msg": f"tope diario de {DAY_CAP//1_000_000} MB alcanzado en «{kind}»: se deja de guardar el detalle hasta mañana"}) + "\n")
+            else:
+                with open(path, "a", encoding="utf-8") as f: f.write(json.dumps(rec, ensure_ascii=False) + "\n")
         except Exception as e:
             print("log error", e, flush=True)
     if kind == "api": RECENT.append(rec)
     return rec
 
-def tail(kind, n=50):
-    path = os.path.join(LOGDIR, f"{kind}.jsonl")
-    try:
+def _read(path, maxbytes=400_000):
+    if path.endswith(".gz"):
+        with gzip.open(path, "rt", encoding="utf-8", errors="replace") as f: data = f.read()
+    else:
         with open(path, "rb") as f:
-            f.seek(0, 2); size = f.tell(); f.seek(max(0, size-200_000)); lines = f.read().decode("utf-8", "replace").splitlines()[1:]
-        return [json.loads(x) for x in lines[-n:] if x.strip()]
-    except Exception:
+            f.seek(0, 2); size = f.tell(); f.seek(max(0, size-maxbytes)); data = f.read().decode("utf-8", "replace")
+            if size > maxbytes: data = data.split("\n", 1)[-1]
+    return [x for x in data.splitlines() if x.strip()]
+
+def tail(kind, n=50):
+    """Últimas n líneas del tipo, mirando hoy y, si hace falta, días anteriores."""
+    out = []
+    for path in sorted(glob.glob(os.path.join(LOGDIR, kind, "*.jsonl*")), reverse=True)[:3]:
+        try:
+            out = [json.loads(x) for x in _read(path)] + out
+        except Exception:
+            continue
+        if len(out) >= n: break
+    return out[-n:]
+
+def migrate_old_logs():
+    """Una vez: api.jsonl, checks.jsonl… del formato anterior pasan a logs/<tipo>/legacy-<fecha>.jsonl.gz."""
+    for f in glob.glob(os.path.join(LOGDIR, "*.jsonl")) + glob.glob(os.path.join(LOGDIR, "*.jsonl.1")):
+        kind = os.path.basename(f).split(".")[0]
+        d = os.path.join(LOGDIR, kind); os.makedirs(d, exist_ok=True)
+        dst = os.path.join(d, f"legacy-{time.strftime('%Y%m%d')}-{os.path.basename(f).replace('.', '_')}.jsonl.gz")
+        with open(f, "rb") as src, gzip.open(dst, "wb") as out: shutil.copyfileobj(src, out)
+        os.remove(f)
+
+def daily_summary(day):
+    """Resumen de un día (a partir del detalle de api/client y de los eventos)."""
+    def lines(kind):
+        for ext in (".jsonl", ".jsonl.gz"):
+            p = os.path.join(LOGDIR, kind, day + ext)
+            if os.path.exists(p):
+                try: return [json.loads(x) for x in _read(p, 50_000_000)]
+                except Exception: return []
         return []
+    api, cli, ev = lines("api"), lines("client"), lines("events")
+    by = collections.Counter(r.get("path", "?") for r in api)
+    ms = [r.get("ms", 0) for r in api]
+    lares = 0
+    try:
+        for x in open(os.path.join(BRIDGE, "lares_runs.jsonl"), encoding="utf-8"):
+            if x.strip() and json.loads(x).get("ts", "").startswith(day): lares += 1
+    except Exception: pass
+    return {"dia": day, "peticiones": len(api), "por_ruta": dict(by.most_common(10)),
+            "errores_4xx": sum(1 for r in api if 400 <= r.get("code", 0) < 500), "errores_5xx": sum(1 for r in api if r.get("code", 0) >= 500),
+            "ms_medio": round(sum(ms)/len(ms)) if ms else 0, "errores_pagina": len(cli),
+            "caidas": sum(1 for e in ev if str(e.get("msg", "")).startswith("CAÍDO")), "cambios_estado": sum(1 for e in ev if e.get("src") == "estado"),
+            "pasadas_lares": lares}
+
+def housekeeping():
+    """Comprime los días pasados, escribe su resumen y borra lo que supera la retención."""
+    today = _today(); now = time.time()
+    for kind, days in RETENTION.items():
+        d = os.path.join(LOGDIR, kind)
+        if not os.path.isdir(d): continue
+        for f in glob.glob(os.path.join(d, "*.jsonl")):
+            name = os.path.basename(f)[:-6]
+            if name >= today or name.startswith("legacy"): continue
+            if kind == "api":                       # antes de comprimir el detalle de ayer, guardar su resumen
+                sp = os.path.join(LOGDIR, "summary"); os.makedirs(sp, exist_ok=True)
+                if not glob.glob(os.path.join(sp, name + ".jsonl*")):
+                    with open(os.path.join(sp, name + ".jsonl"), "w", encoding="utf-8") as o: o.write(json.dumps(daily_summary(name), ensure_ascii=False) + "\n")
+            with open(f, "rb") as src, gzip.open(f + ".gz", "wb") as out: shutil.copyfileobj(src, out)
+            os.remove(f)
+        for f in glob.glob(os.path.join(d, "*.jsonl.gz")):
+            if now - os.path.getmtime(f) > days * 86400: os.remove(f)
+
+def housekeeper():
+    while True:
+        try: housekeeping()
+        except Exception as e: log("events", level="error", src="logs", msg=f"housekeeping: {type(e).__name__}: {e}")
+        time.sleep(3600)
 
 def db():
     c = sqlite3.connect(DB, timeout=10)
@@ -277,8 +364,14 @@ def chk(name, fn):
         res = {"ok": False, "detail": f"{type(e).__name__}: {e}"}
     res.update({"name": name, "ms": round((time.time()-t0)*1000), "at": time.strftime("%Y-%m-%dT%H:%M:%S%z")})
     prev = CHECKS.get(name); CHECKS[name] = res
-    log("checks", **res)
+    res["t"] = round(time.time(), 3); CHECK_HIST[name].append(res)
+    try:   # 10 últimas de cada comprobación, para no perderlas si se reinicia el contenedor
+        tmp = os.path.join(LOGDIR, ".checks_recientes.tmp")
+        with open(tmp, "w", encoding="utf-8") as f: json.dump({k: list(v) for k, v in CHECK_HIST.items()}, f, ensure_ascii=False)
+        os.replace(tmp, os.path.join(LOGDIR, "checks_recientes.json"))
+    except Exception as e: print("checks_recientes", e, flush=True)
     if prev is None or prev["ok"] != res["ok"]:
+        log("checks", **res)
         log("events", level="info" if res["ok"] else "error", src=name, msg=("RECUPERADO: " if res["ok"] else "CAÍDO: ") + str(res["detail"])[:300])
 
 def check_funnel():
@@ -350,10 +443,23 @@ def check_img():
     tot = sum(IMG_STATS.values()); err = IMG_STATS["error"]
     return (tot == 0 or err / tot < 0.3), f"{len(files)} fotos en caché ({mb:.0f} MB) · desde el arranque: {IMG_STATS['hit']} de caché, {IMG_STATS['fetch']} descargadas, {err} errores"
 
+def check_storage():
+    def du(p):
+        tot = 0
+        for root, _, files in os.walk(p):
+            for f in files:
+                try: tot += os.path.getsize(os.path.join(root, f))
+                except OSError: pass
+        return tot / 1048576
+    logs_mb, img_mb = du(LOGDIR), du(IMG_DIR)
+    st = os.statvfs(os.path.dirname(DB) or "/data"); free = st.f_bavail / st.f_blocks * 100; free_gb = st.f_bavail * st.f_frsize / 1e9
+    ok = logs_mb < 100 and free > 10
+    return ok, f"logs {logs_mb:.1f} MB · caché de fotos {img_mb:.0f} MB · disco libre {free_gb:.0f} GB ({free:.0f} %)"
+
 def monitor():
     while True:
         for name, fn in (("funnel_publico", check_funnel), ("web_github", check_site), ("lares_pasadas", check_lares_runs),
-                         ("lares_cron", check_lares_cron), ("buzon_compartido", check_bridge), ("api_errores", check_api_errors), ("fotos", check_img)):
+                         ("lares_cron", check_lares_cron), ("buzon_compartido", check_bridge), ("api_errores", check_api_errors), ("fotos", check_img), ("almacenamiento", check_storage)):
             chk(name, fn)
         time.sleep(300)
 
@@ -388,7 +494,7 @@ class Admin(BaseHTTPRequestHandler):
             q = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
             since = float(q.get("since", ["0"])[0] or 0)
             items = [{"k": "api", **r} for r in tail("api", 300) if r.get("t", 0) > since]
-            items += [{"k": "check", **r} for r in tail("checks", 60) if r.get("t", 0) > since]
+            items += [{"k": "check", **r} for h in CHECK_HIST.values() for r in h if r.get("t", 0) > since]
             lp = os.path.join(BRIDGE, "lares_runs.jsonl")
             if os.path.exists(lp):
                 for x in open(lp, encoding="utf-8").read().splitlines()[-20:]:
@@ -399,13 +505,19 @@ class Admin(BaseHTTPRequestHandler):
             items.sort(key=lambda r: r.get("t", 0))
             return self.send(200, json.dumps({"now": time.time(), "checks": CHECKS, "items": items[-400:]}, ensure_ascii=False), "application/json; charset=utf-8")
         if self.path == "/checknow":
-            threading.Thread(target=lambda: [chk(n, f) for n, f in (("funnel_publico", check_funnel), ("web_github", check_site), ("lares_pasadas", check_lares_runs), ("lares_cron", check_lares_cron), ("buzon_compartido", check_bridge), ("api_errores", check_api_errors), ("fotos", check_img))], daemon=True).start()
+            threading.Thread(target=lambda: [chk(n, f) for n, f in (("funnel_publico", check_funnel), ("web_github", check_site), ("lares_pasadas", check_lares_runs), ("lares_cron", check_lares_cron), ("buzon_compartido", check_bridge), ("api_errores", check_api_errors), ("fotos", check_img), ("almacenamiento", check_storage))], daemon=True).start()
             return self.send(200, '{"ok":true}', "application/json")
         self.send(404, "not found", "text/plain")
 
 if __name__ == "__main__":
+    migrate_old_logs()
+    try:
+        for k, v in json.load(open(os.path.join(LOGDIR, "checks_recientes.json"), encoding="utf-8")).items():
+            CHECK_HIST[k].extend(v[-10:]); CHECKS[k] = v[-1]
+    except Exception: pass
     init()
     log("events", level="info", src="api", msg="arranque del backend")
+    threading.Thread(target=housekeeper, daemon=True).start()
     threading.Thread(target=monitor, daemon=True).start()
     threading.Thread(target=lambda: ThreadingHTTPServer(("0.0.0.0", 8790), Admin).serve_forever(), daemon=True).start()
     ThreadingHTTPServer(("0.0.0.0", 8787), H).serve_forever()

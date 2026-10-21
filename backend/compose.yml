@@ -20,3 +20,6 @@ services:
     security_opt: ["no-new-privileges:true"]
     cap_drop: [ALL]
     mem_limit: 128m
+    logging:                      # stdout de Docker con tope (el detalle va a data/logs, con su propia rotación)
+      driver: json-file
+      options: {max-size: "5m", max-file: "2"}
