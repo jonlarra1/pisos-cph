@@ -28,6 +28,7 @@ PUBLIC_HOST = os.environ.get("PUBLIC_HOST", "raspberrypi.tail9f1069.ts.net"); PU
 SITE = os.environ.get("SITE_URL", "https://jonlarra1.github.io/pisos-cph/")
 LARES_CRON = os.environ.get("LARES_CRON", "/lares_cron/jobs.json")
 ADMIN_USERS = [u for u in os.environ.get("ADMIN_USERS", "").split(",") if u]
+SITE_DATA = {}                               # PISOS / OUT de la web publicada (lo rellena check_site)
 CHECKS = {}                                  # último resultado de cada comprobación
 CHECK_HIST = collections.defaultdict(lambda: collections.deque(maxlen=10))   # 10 últimas de cada una
 IMG_DIR = os.path.join(os.path.dirname(DB) or "/data", "imgcache")
@@ -378,6 +379,27 @@ class H(BaseHTTPRequestHandler):
         write_config(); log("events", level="info", src="estado", msg=f"{pid} -> {st}", by=by); self.reply(200, all_estados())
 
 # ------------------------------------------------------------------ comprobaciones
+def listas():
+    """Contadores por lista para el panel + anuncios nuevos por día (historial.json de Lares)."""
+    est = all_estados(); n = collections.Counter()
+    for p in SITE_DATA.get("pisos", []):
+        n["mapa_" + (est.get(str(p.get("id")), {}).get("st") or p.get("st") or "nuevo")] += 1
+    for c in candidatos().get("pisos", []):
+        n["lares_" + (c.get("st") or "nuevo")] += 1
+    try:
+        with open(os.path.join(BRIDGE, "historial.json"), encoding="utf-8") as f: h = json.load(f)
+    except Exception:
+        h = {}
+    dias = h.get("por_dia") or {}
+    hoy = time.strftime("%Y-%m-%d")
+    serie = [{"dia": d, **v} for d, v in sorted(dias.items()) if d][-30:]
+    completos = [x["vistos"] for x in serie if x["dia"] != hoy][-14:]
+    return {"gusta": n["mapa_gusta"] + n["lares_gusta"], "contactado": n["mapa_contactado"] + n["lares_contactado"],
+            "propuestos": n["mapa_nuevo"] + n["lares_nuevo"], "descartados": n["mapa_descartado"] + n["lares_descartado"],
+            "descartados_fijos": len(SITE_DATA.get("out", [])), "rechazados_lares": len(h.get("rechazados") or []),
+            "en_mapa": len(SITE_DATA.get("pisos", [])), "historial": bool(h), "por_dia": serie,
+            "media_diaria": round(sum(completos) / len(completos), 1) if completos else None, "dias_media": len(completos)}
+
 def chk(name, fn):
     t0 = time.time()
     try:
@@ -417,6 +439,11 @@ def check_funnel():
 def check_site():
     r = urllib.request.urlopen(urllib.request.Request(SITE + f"?chk={int(time.time())}", headers={"User-Agent": "pisos-monitor"}), timeout=15)
     body = r.read().decode("utf-8", "replace")
+    for k, name in (("pisos", "PISOS"), ("out", "OUT")):      # listas del mapa para el contador del panel
+        m = re.search(r"const %s = (\[.*?\]);\n" % name, body, re.S)
+        if m:
+            try: SITE_DATA[k] = json.loads(m.group(1))
+            except ValueError: pass
     return (r.status == 200 and "const RUTAS" in body and "const PISOS" in body), f"HTTP {r.status}, {len(body)//1024} KB"
 
 def check_lares_runs():
@@ -457,7 +484,8 @@ def check_bridge():
 
 def check_api_errors():
     recent = [r for r in tail("api", 300) if time.time() - r.get("t", 0) < 3600]
-    errs = [r for r in recent if r.get("code", 200) >= 500]
+    # un 502 de /api/img es el portal negando una foto, no un fallo nuestro: lo vigila check_img
+    errs = [r for r in recent if r.get("code", 200) >= 500 and not (r.get("path") == "/api/img" and r.get("code") == 502)]
     cli = [r for r in tail("client", 100) if time.time() - r.get("t", 0) < 3600]
     return (not errs), f"{len(recent)} peticiones en la última hora · {len(errs)} errores 5xx · {len(cli)} errores de la página"
 
@@ -524,6 +552,7 @@ class Admin(BaseHTTPRequestHandler):
             st = {"ahora": time.strftime("%Y-%m-%dT%H:%M:%S%z"), "uptime_h": round((time.time()-STARTED)/3600, 2),
                   "checks": CHECKS, "eventos": tail("events", 60)[::-1], "api": tail("api", 80)[::-1], "cliente": tail("client", 30)[::-1],
                   "lares": [json.loads(x) for x in (open(os.path.join(BRIDGE, "lares_runs.jsonl"), encoding="utf-8").read().splitlines()[-15:] if os.path.exists(os.path.join(BRIDGE, "lares_runs.jsonl")) else []) if x.strip()][::-1],
+                  "listas": listas(),
                   "usuario": self.headers.get("Tailscale-User-Login", "") or "acceso por IP de Tailscale"}
             return self.send(200, json.dumps(st, ensure_ascii=False), "application/json; charset=utf-8")
         if self.path in ("/", "/index.html"):

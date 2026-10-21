@@ -138,7 +138,7 @@ def detalle(item):
     d = {"texto": t[:6000]}
     # depósito y prepago por separado (Lejebolig: «an advance rent payment of DKK X and a security deposit of DKK Y» / «Deposit: X»)
     kr = lambda m: int(re.sub(r"\D", "", next(g for g in m.groups() if g))) if m else None
-    d["pre"] = kr(re.search(r"advance rent payment of DKK ([\d,.]+)|[Ff]orudbetalt leje:?\s*(?:DKK|kr\.?)?\s*([\d.,]+)", t))
+    d["pre"] = kr(re.search(r"Rent paid in advance:\s*([\d,.]+)", t)) or kr(re.search(r"advance rent payment of DKK ([\d,.]+)|upfront rent payment of DKK ([\d,.]+)|[Ff]orudbetalt leje:?\s*(?:DKK|kr\.?)?\s*([\d.,]+)", t))
     # la ficha técnica («Deposit: X») manda; la frase automática a veces trae mal el depósito
     d["dep"] = kr(re.search(r"\bDeposit:\s*([\d,.]+)|[Dd]epositum:?\s*(?:DKK|kr\.?)?\s*([\d.,]+)", t)) or \
         kr(re.search(r"security deposit of DKK ([\d,.]+)", t))
@@ -286,7 +286,9 @@ def main():
                 con.execute("UPDATE v2_eval SET avisado=1 WHERE id=?", (lid,))
         else:
             rech.append({**out, "motivo": motivo})
-    con.commit(); con.close()
+    con.commit()
+    historial(con, now)
+    con.close()
 
     cands.sort(key=lambda x: (x["visto"], -x["precio"]), reverse=True)
     write_json(BRIDGE / "candidatos.json", {"actualizado": now, "filtros": F, "pisos": cands, "errores": errors})
@@ -301,6 +303,24 @@ def main():
               f"{(n['titulo'] or '')[:45]} | {n['link']}" + (f" | ⚠ {', '.join(n['avisos'][:2])}" if n["avisos"] else ""))
     if errors and not nuevos:
         print(f"[aviso] fuentes con error: {', '.join(errors)}")
+
+
+def historial(con, now):
+    """pisos-bridge/historial.json para el panel y la web: TODOS los rechazados que Lares ha visto (con motivo, para
+    poder recuperar un error) y cuántos anuncios nuevos ve cada día. Sin IA y sin avisos: solo un archivo."""
+    try:
+        rech, dias = [], {}
+        for lid, portal, link, ok, motivo, item, first, last in con.execute("SELECT id, portal, link, ok, motivo, item, first_seen, last_seen FROM v2_eval"):
+            d = dias.setdefault((first or "")[:10], {"vistos": 0, "candidatos": 0, "rechazados": 0})
+            d["vistos"] += 1; d["candidatos" if ok else "rechazados"] += 1
+            if not ok:
+                it = json.loads(item or "{}")
+                rech.append({k: it.get(k) for k in ("id", "portal", "link", "titulo", "zona", "precio", "m2", "vaer", "disp")}
+                            | {"id": lid, "portal": it.get("portal") or portal, "link": it.get("link") or link, "motivo": motivo, "visto": (first or "")[:10], "ultimo": (last or "")[:10]})
+        rech.sort(key=lambda x: x["ultimo"], reverse=True)
+        write_json(BRIDGE / "historial.json", {"actualizado": now, "por_dia": dict(sorted(dias.items())), "rechazados": rech[:3000]})
+    except Exception:
+        pass
 
 
 def cron_status():
