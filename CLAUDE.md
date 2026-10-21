@@ -34,3 +34,16 @@ The user is Jon. He works at Nordic Solar (Hellerup). He prefers short, simple, 
 - Right column «🔎 Búsqueda (Lares)» = search params stored on the Pi (`/api/filtros`, zones) → config.json → Lares. «👁 Visualización» = map-only view settings (states shown, colour, barrios), per browser.
 - UI settings per browser in localStorage: `ui` (day, colour mode, barrio filter, lines off, route option, open panels), `perfiles`, `tripTime`, `yo`, `destinos`, `cardPos`.
 - Hosting: GitHub Pages (fixed link for flatmates). Commit + push to update.
+
+## Estado (2026-10-21, 21:10) y pendientes
+- Hecho y publicado: mapa con 12 pisos, rutas (bici/andando, 3 opciones, 5 días × 6 horas × límites 5–30 min), perfiles Jon/Unai,
+  estados compartidos vía Pi, Lares v2 conectado (buzón pisos-bridge), menú «Búsqueda (Lares)» / «Visualización», galería de fotos,
+  panel privado :9443, logs + checks. Listado izquierdo: principal = solo 🔵 gusta + 🟢 contactado; «🟠 Propuestos» = nuevos del
+  mapa + candidatos de Lares juntos (una sola categoría); «🔴 Descartados» = temporales (48 h, con «recuperar») + definitivos.
+- Pendiente:
+  1. Fireworks (proveedor del modelo de Lares) suspendido → avisos de Lares al Bot Chat fallan (check `lares_cron` en rojo). Lo arregla Jon.
+  2. Tarea IA de Lares que mire los planos y escriba `pisos-bridge/planos.json` (`{"<id>": {"dorm": 3}}`) — cuando Lares tenga modelo.
+  3. Pasar al mapa los candidatos que se marquen 🔵 en «Propuestos» (geocodificar + rutas: tools/route.py para esos ids y fusionar
+     en data/rutas.json, como se hizo con 5680524/5680537/5680562).
+  4. 14 pisos de Lejebolig de nuevos_desde_14oct.md con fecha sin confirmar (Lejebolig no la muestra sin sesión) — no añadidos.
+- Acceso a la Pi: clave SSH temporal de 1 h (expiry-time en authorized_keys, comentario «claude-pisos-1h»); pedir una nueva a Jon.

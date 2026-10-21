@@ -882,6 +882,9 @@ html,body{overflow-x:hidden}
 .warn-n{background:color-mix(in srgb,var(--mid) 18%,transparent);margin:8px 0}
 .out{padding:4px 14px 10px;font-size:12.5px}
 .out summary{cursor:pointer;font-weight:600;padding:6px 0;color:var(--muted)}
+.lh{padding:8px 18px 6px;font:700 11px var(--f-body);letter-spacing:.06em;text-transform:uppercase;color:var(--muted);border-bottom:1px solid var(--line)}
+.plist .item{padding-left:6px;padding-right:6px}
+.out-i.tmp{background:color-mix(in srgb,#d64541 6%,transparent);padding:6px 6px;border-radius:6px}
 .lares{padding:4px 14px 6px;font-size:12.5px;border-top:1px solid var(--line)}
 .lares summary{cursor:pointer;font-weight:600;padding:6px 0;color:var(--fg)}
 .lares .out-s{max-height:40vh}
@@ -1045,7 +1048,7 @@ const OUT = [{"t": "Sydhavn · Stejlepladsen · Grøntudsevej 120 m² (Stejlepla
 /* ---------- estado de cada piso (campo st en PISOS; stF = fecha del último cambio) ----------
    gusta = nos gusta · nuevo = recién aparecido, sin decidir · contactado = hemos hablado con el casero
    descartado = se ve en rojo DESCARTE_H horas (con cuenta atrás) y luego pasa a «Descartados» (sigue en la BD). */
-const ESTADOS={gusta:{c:"#2b6fd6",t:"Nos gusta"},nuevo:{c:"#ee8a12",t:"Nuevo · sin decidir"},contactado:{c:"#2e9e4f",t:"Contactado con el casero"},descartado:{c:"#d64541",t:"Descartado"}};
+const ESTADOS={gusta:{c:"#2b6fd6",t:"Nos gusta"},nuevo:{c:"#ee8a12",t:"Propuesto · sin decidir"},contactado:{c:"#2e9e4f",t:"Contactado con el casero"},descartado:{c:"#d64541",t:"Descartado"}};
 const DESCARTE_H=48;   // horas que un piso descartado sigue en el mapa (en rojo, con cuenta atrás)
 /* hora del descarte: ts del servidor (s) o, si no hay, la fecha stF a mediodía */
 const discTs=p=>p.ts?p.ts*1000:Date.parse((p.stF||"2000-01-01")+"T12:00:00");
@@ -1552,7 +1555,9 @@ const ZONAS=[...new Set(PISOS.map(p=>p.barrio))].sort((a,b)=>a.localeCompare(b,"
 let zsel=new Set();
 const expired=p=>p.st==="descartado"&&leftH(p)<=0;
 let SHOW={gusta:true,nuevo:true,contactado:true,descartado:true,lares:true};
-const SHOWL={gusta:["#2b6fd6","Nos gustan"],nuevo:["#ee8a12","Nuevos"],contactado:["#2e9e4f","Contactados"],descartado:["#d64541","Descartados (48 h)"],lares:["#ee8a12","◆ Propuestos por Lares"]};
+let CANDS=[];   // propuestos por Lares (se cargan de la Pi)
+const candLayer=L.layerGroup().addTo(map);
+const SHOWL={gusta:["#2b6fd6","Nos gustan"],contactado:["#2e9e4f","En contacto"],nuevo:["#ee8a12","Propuestos"],descartado:["#d64541","Descartados (48 h)"]};
 const visible=p=>!expired(p)&&SHOW[p.st]!==false&&(zsel.size===0||zsel.has(p.barrio));
 function renderChips(){
   document.getElementById("chips").innerHTML=ZONAS.map(z=>`<button class="chip" data-z="${esc(z)}" aria-pressed="${zsel.has(z)}" style="--bc:${BCOL[z]}"><i class="bsw"></i>${esc(z)}<small>${BAR[z].length}</small></button>`).join("");
@@ -1569,25 +1574,29 @@ function applyFilter(fit){ if(typeof saveUI==="function")saveUI();
 document.getElementById("chips").addEventListener("click",e=>{const c=e.target.closest(".chip");if(!c)return;
   const z=c.dataset.z;zsel.has(z)?zsel.delete(z):zsel.add(z);applyFilter(true);});
 document.getElementById("f-all").addEventListener("click",()=>{zsel.clear();applyFilter(true);});
+/* Lista principal: solo 🔵 nos gustan y 🟢 en contacto. 🟠 van a «Propuestos», 🔴 a «Descartados». */
+const inMain=p=>visible(p)&&(p.st==="gusta"||p.st==="contactado");
+let itemHtml=null;
 function renderList(){
-  const vis=ranked.filter(visible);
-  document.getElementById("count").textContent=zsel.size?`${vis.length} de ${PISOS.length} pisos`:`${PISOS.length} pisos activos · revisados 21-10-2026`;
+  const vis=ranked.filter(inMain);
+  document.getElementById("count").textContent=`${vis.length} que os gustan o en contacto · ${PISOS.length} en total`;
   document.getElementById("legend").innerHTML=mode==="barrio"?`<span>Cada color = un barrio. Mira los grupos de la lista.</span>`:MODES[mode].legend().map(([t,l])=>`<span><i class="dot" style="background:${t.startsWith("#")?t:`var(--${t})`}"></i>${l}</span>`).join("")+
     `<span><i class="dot" style="background:var(--fg);border-radius:3px;width:16px"></i>Trabajo (Nordic Solar)</span>`;
-  const item=p=>`
+  const item=itemHtml=p=>`
    <button class="item${p.id===selId?" sel":""}" data-id="${p.id}">
      <span class="badge" style="background:${col(p)}">${MODES[mode].lbl(p)}</span>
      <span style="min-width:0"><div class="it-t">${p.estado==="warn"?"⚠️ ":""}${esc(p.calle)}</div>
        <div class="it-s">${p.m2} m² · ${esc(p.dorm)} dorm · entrada ${p.entradaCmp==null?"—":Math.round(p.entradaCmp/1000)+"k"}</div></span>
      <span class="it-p">${fmt(p.mensual)}<small>kr/mes</small></span>
    </button>`;
-  const groups=BORD.filter(b=>BAR[b].some(visible));
-  document.getElementById("list").innerHTML=groups.length===0?'<p class="empty">Ningún piso en esta selección.</p>':groups.map(b=>{const t=BST[b];
+  const groups=BORD.filter(b=>BAR[b].some(inMain));
+  document.getElementById("list").innerHTML=`<div class="lh">🔵 Nos gustan · 🟢 En contacto</div>`+(groups.length===0?'<p class="empty">Todavía no hay pisos en azul o verde. Mira los 🟠 propuestos más abajo y marca los que os gusten.</p>':groups.map(b=>{const t=BST[b], n=BAR[b].filter(inMain).length;
     const r=t.mMin===t.mMax?fmt(t.mMin):`${fmt(t.mMin)}–${fmt(t.mMax)}`;
     return `<section class="grp" style="--bc:${BCOL[b]}">
-     <header class="grp-h"><div class="grp-t"><i class="bsw"></i><b>${esc(b)}</b><span>${t.n} piso${t.n>1?"s":""}</span></div>
+     <header class="grp-h"><div class="grp-t"><i class="bsw"></i><b>${esc(b)}</b><span>${n} piso${n>1?"s":""}</span></div>
       <p class="grp-k"><b>${r} kr</b>/mes · S-tog ${esc(t.st)} ${t.stD.toFixed(1)} km · <b>${(()=>{const m=BAR[b].map(p=>RT(p.id,"ns-jon")).filter(Boolean).map(r=>r.min);return m.length?Math.min(...m)+" min":"—";})()}</b> a Nordic Solar</p>${BNOTE[b]?`<p class="grp-n">${esc(BNOTE[b])}</p>`:""}</header>
-     ${BAR[b].filter(visible).map(item).join("")}</section>`;}).join("");
+     ${BAR[b].filter(inMain).map(item).join("")}</section>`;}).join(""));
+  if(document.getElementById("lares"))renderCands();
 }
 function renderOut(){const el=document.getElementById("out");
   const zona=o=>{const z=o.t.split(" · ")[0].trim(); return z.startsWith("Rødovre")?"Rødovre":z;};
@@ -1595,9 +1604,15 @@ function renderOut(){const el=document.getElementById("out");
   const G={}; ALL.forEach(o=>(G[zona(o)]??=[]).push(o));
   const keys=Object.keys(G).sort((a,b)=>a.localeCompare(b,"da"));
   const wasOpen=el.querySelector("details")?.open;
-  el.innerHTML=`<details${wasOpen?" open":""}><summary>Descartados (${ALL.length})</summary><div class="out-s">${keys.map(k=>`<div class="out-g"><div class="out-h">${esc(k)} <small>${G[k].length}</small></div>
+  const temp=PISOS.filter(p=>p.st==="descartado"&&!expired(p)).sort((a,b)=>leftH(a)-leftH(b));
+  const tempHtml=temp.length?`<div class="out-h">⏳ Temporales: siguen 48 h en el mapa <small>${temp.length}</small></div>`+temp.map(p=>`<div class="out-i tmp">
+    <button class="lnk" data-id="${p.id}" style="text-align:left;font-weight:600;color:var(--fg)">${esc(p.barrio)} · ${esc(p.calle)}</button>
+    <span>Descartado ${p.by?`por ${esc(PERF[p.by]?.n||p.by)} `:""}· sale del mapa en ${Math.ceil(leftH(p))} h · <button class="lnk" data-setst="${p.id}|nuevo">recuperar</button></span></div>`).join(""):"";
+  el.innerHTML=`<details${wasOpen||temp.length?" open":""}><summary>🔴 Descartados (${ALL.length+temp.length})</summary><div class="out-s">${tempHtml}${temp.length?`<div class="out-h" style="margin-top:6px">Definitivos <small>${ALL.length}</small></div>`:""}${keys.map(k=>`<div class="out-g"><div class="out-h">${esc(k)} <small>${G[k].length}</small></div>
     ${G[k].map(o=>`<div class="out-i"><a href="${esc(o.link)}" target="_blank" rel="noopener">${esc(o.t.split(" · ").slice(1).join(" · ")||o.t)} ↗</a><span>${esc(o.r)}</span></div>`).join("")}</div>`).join("")}</div></details>`;}
 document.getElementById("list").addEventListener("click",e=>{const b=e.target.closest(".item");if(b)select(b.dataset.id,true);});
+document.getElementById("lares").addEventListener("click",e=>{const b=e.target.closest(".item[data-id]");if(b)select(b.dataset.id,true);});
+document.getElementById("out").addEventListener("click",e=>{const b=e.target.closest("button[data-id]");if(b)select(b.dataset.id,true);});
 function select(id,fly){
   const prev=selId; selId=id;
   if(prev&&markers[prev])markers[prev].setIcon(pinIcon(PISOS.find(p=>p.id===prev)));
@@ -1724,7 +1739,7 @@ uiReady=true;
 renderWalk();renderChips();renderList();renderOut();
 pullEstados(); setInterval(()=>{if(!document.hidden)pullEstados();},60000);
 /* ---------- propuestos por Lares (Raspberry Pi) ---------- */
-let CANDS=[]; const candLayer=L.layerGroup().addTo(map);
+
 const kr0=n=>n==null?"?":fmt(n);
 function candItem(c){const st=c.st||"nuevo";
   return `<div class="cand"><a class="t" href="${esc(c.link)}" target="_blank" rel="noopener">${esc(c.zona||"")} · ${esc(c.titulo||c.lugar||"Anuncio")} ↗</a>
@@ -1734,16 +1749,20 @@ function candItem(c){const st=c.st||"nuevo";
     ${st!=="gusta"?`<button data-cst="${c.id}|gusta">🔵 Me gusta</button>`:""}${st!=="descartado"?`<button data-cst="${c.id}|descartado">🔴 Descartar</button>`:""}${st!=="nuevo"?`<button data-cst="${c.id}|nuevo">🟠 Volver a sin decidir</button>`:""}</span></div>`;}
 function renderCands(){const el=document.getElementById("lares"); if(!el)return;
   const sin=CANDS.filter(c=>(c.st||"nuevo")==="nuevo"), gus=CANDS.filter(c=>c.st==="gusta"||c.st==="contactado");
+  const map0=ranked.filter(p=>p.st==="nuevo"&&visible(p));
   const was=el.querySelector("details")?.open;
-  el.innerHTML=!CANDS.length?"":`<details${was===false?"":" open"}><summary>🟠 Propuestos por Lares (${sin.length})</summary><div class="out-s">
-    ${sin.map(candItem).join("")||'<p style="color:var(--muted);margin:6px 0">Nada nuevo ahora mismo.</p>'}
+  /* una sola categoría: los 🟠 del mapa y los que trae Lares, juntos y por precio */
+  const todos=[...map0.map(p=>({precio:p.mensual,html:`<div class="plist">${(itemHtml||(()=>""))(p)}</div>`})),...sin.map(c=>({precio:c.precio||0,html:candItem(c)}))].sort((a,b)=>a.precio-b.precio);
+  el.innerHTML=`<details${was===false?"":" open"}><summary>🟠 Propuestos (${todos.length})</summary><div class="out-s">
+    ${SHOW.nuevo?(todos.map(x=>x.html).join("")||'<p style="color:var(--muted);margin:6px 0">No hay propuestos ahora mismo.</p>'):'<p style="color:var(--muted);margin:6px 0">Ocultos en Visualización.</p>'}
     ${gus.length?`<div class="out-h">🔵 Os gustan · pendientes de pasar al mapa <small>${gus.length}</small></div>${gus.map(candItem).join("")}`:""}</div></details>`;
   candLayer.clearLayers();
-  CANDS.filter(c=>c.st!=="descartado"&&c.lat&&c.lon).forEach(c=>L.marker([c.lat,c.lon],{zIndexOffset:950,icon:L.divIcon({className:"",iconSize:[22,22],iconAnchor:[11,11],
-    html:`<div class="cpin" style="background:${ESTADOS[c.st||"nuevo"].c}"><span>L</span></div>`})}).bindTooltip(`Propuesto por Lares · ${esc(c.zona||"")} · ${kr0(c.precio)} kr`,{direction:"top"}).bindPopup(candItem(c),{maxWidth:280}).addTo(candLayer));}
+  CANDS.filter(c=>c.st!=="descartado"&&c.lat&&c.lon).forEach(c=>{const lb=Math.round(((c.precio||0)+(c.aconto||0))/1000)+"k";
+    L.marker([c.lat,c.lon],{zIndexOffset:950,icon:L.divIcon({className:"",iconSize:[30,30],iconAnchor:[15,15],
+    html:`<div class="pin" style="width:30px;height:30px;background:${ESTADOS[c.st||"nuevo"].c};font-size:12px">${lb}</div>`})}).bindTooltip(`Propuesto · ${esc(c.zona||"")} · ${kr0(c.precio)} kr`,{direction:"top"}).bindPopup(candItem(c),{maxWidth:280}).addTo(candLayer);});}
 async function pullCandidatos(){try{const r=await fetch(API+"/api/candidatos",{cache:"no-store"}); if(!r.ok)throw 0; const d=await r.json(); CANDS=d.pisos||[]; renderCands();
   const el=document.getElementById("lares-s"); if(el&&d.actualizado){const h=(Date.now()-Date.parse(d.actualizado))/36e5; el.textContent=`Última pasada de Lares: hace ${h<1?Math.round(h*60)+" min":h.toFixed(1)+" h"}.`;}}catch(e){}}
-document.addEventListener("click",async e=>{const b=e.target.closest("[data-cst]"); if(!b)return; e.stopPropagation(); b.disabled=true;
+document.addEventListener("click",async e=>{const b=e.target.closest("[data-cst]"); if(!b)return; if(PISOS.some(x=>x.id===b.dataset.cst.split("|")[0]))return; e.stopPropagation(); b.disabled=true;
   const [id,st]=b.dataset.cst.split("|"); if(await pushEstado(id,st)){const c=CANDS.find(x=>String(x.id)===id); if(c){c.st=st;} renderCands(); map.closePopup(); pullCandidatos();}
   else{b.disabled=false; alert("No se pudo guardar: la Raspberry Pi no responde.");}});
 /* ---------- zonas que vigila Lares ---------- */
@@ -1760,8 +1779,8 @@ pullCandidatos(); pullZonas(); setInterval(()=>{if(!document.hidden)pullCandidat
 function renderShow(){document.getElementById("showst").innerHTML=Object.entries(SHOWL).map(([k,[c,t]])=>`<button class="chip schip" data-show="${k}" aria-pressed="${SHOW[k]}"><i class="bsw" style="background:${c}"></i>${t}</button>`).join("");
   const off=Object.keys(SHOW).filter(k=>!SHOW[k]).length; document.getElementById("more-s").textContent=(zsel.size?`· ${zsel.size} barrio${zsel.size>1?"s":""} `:"")+(off?`· ${off} oculto${off>1?"s":""}`:"");}
 document.getElementById("showst").addEventListener("click",e=>{const b=e.target.closest("[data-show]"); if(!b)return; const k=b.dataset.show; SHOW[k]=!SHOW[k];
-  if(k==="lares"){SHOW.lares?candLayer.addTo(map):candLayer.remove();} renderShow(); applyFilter(false); saveUI();});
-renderShow(); if(!SHOW.lares)candLayer.remove();
+  if(k==="nuevo"){SHOW.nuevo?candLayer.addTo(map):candLayer.remove();} renderShow(); applyFilter(false); saveUI();});
+renderShow(); if(!SHOW.nuevo)candLayer.remove();
 /* ---------- búsqueda de Lares: filtros guardados en la Pi ---------- */
 let FB=null;
 function fillBusq(){const f=document.getElementById("fbusq"); if(!FB)return;
