@@ -763,6 +763,7 @@ html,body{overflow-x:hidden}
 .lines-card summary::-webkit-details-marker{display:none}
 .lines-card summary::after{content:"▾";color:var(--muted);font-size:11px;margin-left:auto}
 .lines-card[open] summary::after{content:"▴"}
+.ck-row{display:flex;align-items:center;gap:6px;font-size:12px;margin-top:4px;cursor:pointer}
 .hint{color:var(--muted);font-size:11px;line-height:1.35}
 .fb{display:grid;gap:6px}
 .fb label{display:flex;justify-content:space-between;align-items:center;gap:8px;font-size:12px;color:var(--fg)}
@@ -1018,11 +1019,11 @@ html,body{overflow-x:hidden}
       </details>
       <details class="lines-card more" id="d-ver"><summary>👁 Visualización <small id="more-s"></small></summary>
         <div class="more-b">
-          <div class="ctl"><span class="lbl">Mostrar en el mapa</span><div class="chips" id="showst"></div></div>
+          <div class="ctl"><span class="lbl">Mostrar en el mapa</span><div class="chips" id="showst"></div>
+            <label class="ck-row"><input type="checkbox" id="barr-ck"> Barrios y municipios (zonas de colores)</label></div>
           <div class="ctl"><span class="lbl">Colorear por</span>
           <div class="seg" role="group" aria-label="Color de los puntos">
             <button id="m-estado" aria-pressed="true">Estado</button>
-            <button id="m-prio" aria-pressed="false">Tu prioridad</button>
             <button id="m-price" aria-pressed="false">Coste/mes</button>
             <button id="m-barrio" aria-pressed="false">Barrios</button>
           </div>
@@ -1532,10 +1533,7 @@ L.DomEvent.disableClickPropagation(card); L.DomEvent.disableScrollPropagation(ca
 
 /* lines toggle card */
 const lc=document.getElementById("lines");
-{const r=document.createElement("label");r.className="lrow";
- r.innerHTML=`<input type="checkbox" ${barriosOn?"checked":""}><span class="lchip" style="background:linear-gradient(135deg,#4e79a7,#f28e2b 50%,#59a14f)">▦</span><span>Barrios y municipios</span>`;
- r.querySelector("input").addEventListener("change",e=>showBarrios(e.target.checked)); lc.prepend(r);
- const h=document.createElement("b");h.textContent="Mapa";lc.prepend(h);}
+
 LINES.forEach(l=>{const r=document.createElement("label");r.className="lrow";
   r.innerHTML=`<input type="checkbox" id="ln-${l.k}" checked><span class="lchip" style="background:${l.c}">${l.k}</span><span>${l.d}</span>`;
   r.querySelector("input").addEventListener("change",e=>{e.target.checked?lineLayers[l.k].addTo(map):lineLayers[l.k].remove(); lineOn[l.k]=e.target.checked; updateStations();});
@@ -1621,10 +1619,9 @@ function select(id,fly){
   if(fly){map.flyTo([p.lat,p.lon],Math.max(map.getZoom(),13),{duration:.6});showPiso(id);}
   renderList();
 }
-function setMode(m){mode=m; if(typeof saveUI==="function")saveUI();["estado","prio","price","barrio"].forEach(k=>document.getElementById("m-"+k).setAttribute("aria-pressed",k===m));
+function setMode(m){mode=m; if(typeof saveUI==="function")saveUI();["estado","price","barrio"].forEach(k=>document.getElementById("m-"+k).setAttribute("aria-pressed",k===m));
   PISOS.forEach(p=>markers[p.id].setIcon(pinIcon(p,p.id===selId)));renderList(); if(!card.hidden)showCard(card.dataset.id);}
 document.getElementById("m-estado").onclick=()=>setMode("estado");
-document.getElementById("m-prio").onclick=()=>setMode("prio");
 document.getElementById("m-price").onclick=()=>setMode("price");
 document.getElementById("m-barrio").onclick=()=>setMode("barrio");
 
@@ -1714,7 +1711,7 @@ function lineInputs(){return [...document.querySelectorAll("#lines .lrow")].map(
   .filter(x=>x.k&&x.inp&&x.k!=="▦");}
 {const bar=document.createElement("div"); bar.className="lall";
  bar.innerHTML='<button data-lall="1">Todas</button><button data-lall="0">Ninguna</button>';
- document.getElementById("lines").insertBefore(bar,document.getElementById("lines").children[2]||null);
+ document.getElementById("lines").insertBefore(bar,document.getElementById("lines").firstChild);
  bar.addEventListener("click",e=>{const b=e.target.closest("[data-lall]"); if(!b)return; const on=b.dataset.lall==="1";
    lineInputs().forEach(({inp})=>{if(inp.checked!==on){inp.checked=on; inp.dispatchEvent(new Event("change"));}}); saveUI();});}
 function saveUI(){if(!uiReady)return; try{localStorage.setItem("ui",JSON.stringify({day:tripDay,mode,zsel:[...zsel],alt:ALT,dest:routeDest,
@@ -1731,7 +1728,7 @@ let uiReady=false;
   /* líneas: por defecto apagadas; después, las que dejó cada uno */
   const want=new Set(u.v===2&&Array.isArray(u.on)?u.on:[]);
   lineInputs().forEach(({k,inp})=>{const on=want.has(k); if(inp.checked!==on){inp.checked=on; inp.dispatchEvent(new Event("change"));}});
-  if(MODES[u.mode])setMode(u.mode);
+  if(MODES[u.mode]&&u.mode!=="prio")setMode(u.mode);
   if(zsel.size)applyFilter(false);}
 ["d-viaje","d-busq","d-ver","d-lineas","cfg"].forEach(id=>document.getElementById(id)?.addEventListener("toggle",()=>saveUI()));
 document.getElementById("lines").addEventListener("change",()=>setTimeout(saveUI,0));
@@ -1781,6 +1778,7 @@ function renderShow(){document.getElementById("showst").innerHTML=Object.entries
 document.getElementById("showst").addEventListener("click",e=>{const b=e.target.closest("[data-show]"); if(!b)return; const k=b.dataset.show; SHOW[k]=!SHOW[k];
   if(k==="nuevo"){SHOW.nuevo?candLayer.addTo(map):candLayer.remove();} renderShow(); applyFilter(false); saveUI();});
 renderShow(); if(!SHOW.nuevo)candLayer.remove();
+{const ck=document.getElementById("barr-ck"); ck.checked=barriosOn; ck.addEventListener("change",()=>showBarrios(ck.checked));}
 /* ---------- búsqueda de Lares: filtros guardados en la Pi ---------- */
 let FB=null;
 function fillBusq(){const f=document.getElementById("fbusq"); if(!FB)return;
