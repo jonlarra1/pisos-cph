@@ -5,10 +5,10 @@ import json, sys, time, urllib.request, os
 F = sys.argv[1]; CACHE = sys.argv[2] if len(sys.argv) > 2 else "walkcache.json"
 R = json.load(open(F)); cache = json.load(open(CACHE)) if os.path.exists(CACHE) else {}
 UA = "pisos-cph/1.0 (personal flat-hunting map; light use)"
-def foot(pts):
-    key = ";".join(f"{lo:.5f},{la:.5f}" for la, lo in pts)
+def foot(pts, prof="foot"):
+    key = ("bike:" if prof == "bike" else "")+";".join(f"{lo:.5f},{la:.5f}" for la, lo in pts)
     if key not in cache:
-        u = f"https://routing.openstreetmap.de/routed-foot/route/v1/driving/{key}?overview=full&geometries=geojson"
+        u = f"https://routing.openstreetmap.de/routed-{prof}/route/v1/driving/{key.split(':')[-1]}?overview=full&geometries=geojson"
         for i in range(3):
             try:
                 r = json.load(urllib.request.urlopen(urllib.request.Request(u, headers={"User-Agent": UA}), timeout=30)); break
@@ -26,21 +26,23 @@ def hm(t): t = int(round(t/60)); return f"{t//60:02d}:{t%60:02d}"
 newp = {}
 for r in R["routes"]:
     for L in r["legs"]:
-        if L["m"] != "walk": continue
-        if L["p"] not in newp:
-            res = foot(R["paths"][L["p"]])
+        if L["m"] not in ("walk", "bike"): continue
+        nk = (L["m"], L["p"])
+        if nk not in newp:
+            res = foot(R["paths"][L["p"]], "bike" if L["m"] == "bike" else "foot")
             if res:
                 g = res["g"]; a, b = R["paths"][L["p"]][0], R["paths"][L["p"]][-1]
                 g = [a]+g+[b]            # keep exact start/end (flat, stop, destination)
-                R["paths"].append(g); newp[L["p"]] = (len(R["paths"])-1, res["d"], res["t"])
-            else: newp[L["p"]] = None
-        n = newp[L["p"]]
+                t = res["d"]/(20/3.6) if L["m"] == "bike" else res["t"]   # bike: Jon at 20 km/h
+                R["paths"].append(g); newp[nk] = (len(R["paths"])-1, res["d"], t)
+            else: newp[nk] = None
+        n = newp[nk]
         if n: L["p"], L["d"], L["min"] = n[0], n[1], max(1, round(n[2]/60))
-    rides = [L for L in r["legs"] if L["m"] != "walk"]
+    rides = [L for L in r["legs"] if L["m"] not in ("walk", "bike")]
     if rides:
-        if r["legs"][0]["m"] == "walk": r["sale"] = hm(sec(rides[0]["dep"])-r["legs"][0]["min"]*60)
+        if r["legs"][0]["m"] in ("walk", "bike"): r["sale"] = hm(sec(rides[0]["dep"])-r["legs"][0]["min"]*60)
         else: r["sale"] = rides[0]["dep"]
-        r["llega"] = hm(sec(rides[-1]["arr"])+(r["legs"][-1]["min"]*60 if r["legs"][-1]["m"] == "walk" else 0))
+        r["llega"] = hm(sec(rides[-1]["arr"])+(r["legs"][-1]["min"]*60 if r["legs"][-1]["m"] in ("walk", "bike") else 0))
         r["min"] = round((sec(r["llega"])-sec(r["sale"]))/60)
     else:
         r["min"] = r["legs"][0]["min"]
@@ -51,3 +53,4 @@ for r in R["routes"]:
     for L in r["legs"]: L["p"] = remap[L["p"]]
 json.dump(R, open(F, "w"), ensure_ascii=False, separators=(",", ":"))
 print("ok", len(newp), "walk legs routed;", sum(1 for v in newp.values() if v is None), "failed")
+

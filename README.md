@@ -29,6 +29,9 @@ Abre http://localhost:8000 (no con file://).
    ```
 4. Sustituye la línea `const RUTAS=...;` de `index.html` por el contenido de `data/rutas.json`.
 
+Modos (siempre con transporte público): 🚶 andando + bus/metro/Letbane/tren (Unai), 🚲 bici a 20 km/h + solo S-tog/tren regional/Lokaltog, con la bici dentro (Jon). Defaults: Nordic Solar 🚲, GN 🚶, DTU 🚶; se cambian en cada ruta.
+Tras `route.py`, ejecuta `python3 tools/walkpaths.py data/rutas.json` (tramos a pie/bici por calle; solo una vez) y `python3 tools/fixlate.py data/rutas.json` y `python3 tools/direct.py data/pisos.json data/directo.json` (referencia solo bici / solo andando).
+
 Cómo se calculan: para cada día, hora de llegada ("llegar antes de") y límite andando por tramo, se busca la salida más tarde que llega a tiempo (Connection Scan Algorithm sobre el GTFS). Transbordos con 1,5 min de margen. Cada ruta tiene además un botón que abre Rejseplanen con origen, destino y hora ya puestos.
 
 Horarios guardados ("Mis horarios"): edita `const HORARIOS=[...]` en `index.html`, por ejemplo
