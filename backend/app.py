@@ -1,6 +1,6 @@
 """Pisos CPH backend: shared flat status (gusta / nuevo / contactado / descartado).
 Python stdlib only. SQLite at /data/pisos.db."""
-import json, os, re, sqlite3, threading, time, tempfile
+import json, os, re, sqlite3, threading, time, tempfile, ssl, socket, http.client, urllib.request, collections
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 DB = os.environ.get("DB_PATH", "/data/pisos.db")
@@ -22,6 +22,39 @@ ZONAS_DEFAULT = {  # zona: permitida
 ZONA_RE = re.compile(r"^[A-Za-zÆØÅæøåÉé .\-]{2,30}$")
 lock = threading.Lock()
 hits = {}
+STARTED = time.time()
+LOGDIR = os.environ.get("LOG_DIR", "/data/logs")
+PUBLIC_HOST = os.environ.get("PUBLIC_HOST", "raspberrypi.tail9f1069.ts.net"); PUBLIC_PORT = int(os.environ.get("PUBLIC_PORT", "8443"))
+SITE = os.environ.get("SITE_URL", "https://jonlarra1.github.io/pisos-cph/")
+LARES_CRON = os.environ.get("LARES_CRON", "/lares_cron/jobs.json")
+ADMIN_USERS = [u for u in os.environ.get("ADMIN_USERS", "").split(",") if u]
+CHECKS = {}                                  # último resultado de cada comprobación
+RECENT = collections.deque(maxlen=300)       # últimas peticiones (también en api.jsonl)
+os.makedirs(LOGDIR, exist_ok=True)
+_loglock = threading.Lock()
+
+def log(kind, **kw):
+    """Una línea JSON por evento en /data/logs/<kind>.jsonl (rota a 5 MB)."""
+    rec = {"ts": time.strftime("%Y-%m-%dT%H:%M:%S%z"), "t": round(time.time(), 3), **kw}
+    path = os.path.join(LOGDIR, f"{kind}.jsonl")
+    with _loglock:
+        try:
+            if os.path.exists(path) and os.path.getsize(path) > 5_000_000:
+                os.replace(path, path + ".1")
+            with open(path, "a", encoding="utf-8") as f: f.write(json.dumps(rec, ensure_ascii=False) + "\n")
+        except Exception as e:
+            print("log error", e, flush=True)
+    if kind == "api": RECENT.append(rec)
+    return rec
+
+def tail(kind, n=50):
+    path = os.path.join(LOGDIR, f"{kind}.jsonl")
+    try:
+        with open(path, "rb") as f:
+            f.seek(0, 2); size = f.tell(); f.seek(max(0, size-200_000)); lines = f.read().decode("utf-8", "replace").splitlines()[1:]
+        return [json.loads(x) for x in lines[-n:] if x.strip()]
+    except Exception:
+        return []
 
 def db():
     c = sqlite3.connect(DB, timeout=10)
@@ -47,7 +80,8 @@ def all_zonas():
 
 def write_config():
     """config.json para Lares: filtros, zonas y pisos que ya tienen estado (no volver a proponerlos)."""
-    if not os.path.isdir(BRIDGE): return
+    if not os.path.isdir(BRIDGE):
+        log("events", level="error", src="bridge", msg="carpeta compartida no montada"); return
     cfg = {"actualizado": time.strftime("%Y-%m-%dT%H:%M:%S"), "filtros": FILTROS, "zonas": all_zonas(),
            "con_estado": all_estados()}
     fd, tmp = tempfile.mkstemp(dir=BRIDGE, prefix=".config", suffix=".tmp")
@@ -77,7 +111,18 @@ def limited(ip):  # max 30 writes per minute per client
 
 class H(BaseHTTPRequestHandler):
     server_version = "pisos/1"
-    def log_message(self, fmt, *a): print("%s %s" % (self.address_string(), fmt % a), flush=True)
+    def log_message(self, fmt, *a): pass
+    def handle_one_request(self):
+        self._t0 = time.time(); self._code = None
+        try:
+            super().handle_one_request()
+        except Exception as e:
+            log("events", level="error", src="api", msg=f"{type(e).__name__}: {e}")
+        if getattr(self, "command", None) and self._code is not None and self.path != "/api/health":
+            log("api", m=self.command, path=self.path.split("?")[0], code=self._code, ms=round((time.time()-self._t0)*1000),
+                origin=self.headers.get("Origin", "") if self.headers else "", via="funnel" if self.headers and self.headers.get("Tailscale-Funnel-Request") else "")
+    def send_response(self, code, message=None):
+        self._code = code; super().send_response(code, message)
     def cors(self):
         o = self.headers.get("Origin", "")
         if o in ORIGINS:
@@ -99,6 +144,15 @@ class H(BaseHTTPRequestHandler):
         if self.path == "/api/candidatos": return self.reply(200, candidatos())
         self.reply(404, {"error": "not found"})
     def do_POST(self):
+        if self.path == "/api/clientlog":    # errores de la página de los usuarios
+            n = int(self.headers.get("Content-Length") or 0)
+            ip = self.headers.get("X-Forwarded-For", self.client_address[0]).split(",")[0].strip()
+            if n <= 0 or n > 2048: return self.reply(400, {"error": "bad size"})
+            if limited("log:"+ip): return self.reply(429, {"error": "too many requests"})
+            try: d = json.loads(self.rfile.read(n))
+            except Exception: return self.reply(400, {"error": "bad json"})
+            log("client", level=str(d.get("level", "error"))[:10], msg=str(d.get("msg", ""))[:500], where=str(d.get("where", ""))[:200])
+            return self.reply(200, {"ok": True})
         if self.path not in ("/api/estado", "/api/zona"): return self.reply(404, {"error": "not found"})
         if KEY and self.headers.get("X-Pisos-Key") != KEY: return self.reply(403, {"error": "forbidden"})
         o = self.headers.get("Origin", "")
@@ -117,7 +171,7 @@ class H(BaseHTTPRequestHandler):
             if not ZONA_RE.match(z) or not isinstance(ok, bool): return self.reply(400, {"error": "bad data"})
             with lock, db() as c:
                 c.execute("INSERT INTO zonas (zona, permitida, by, ts) VALUES (?,?,?,?) ON CONFLICT(zona) DO UPDATE SET permitida=excluded.permitida, by=excluded.by, ts=excluded.ts", (z, int(ok), by, int(time.time())))
-            write_config(); return self.reply(200, all_zonas())
+            write_config(); log("events", level="info", src="zonas", msg=f"{z} -> {'permitida' if ok else 'excluida'}", by=by); return self.reply(200, all_zonas())
         pid, st = str(d.get("id", "")), d.get("st")
         stF = time.strftime("%Y-%m-%d")
         if not ID_RE.match(pid) or st not in ESTADOS or by not in WHO: return self.reply(400, {"error": "bad data"})
@@ -125,8 +179,123 @@ class H(BaseHTTPRequestHandler):
         with lock, db() as c:
             c.execute("INSERT INTO estado (id, st, stF, by, ts) VALUES (?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET st=excluded.st, stF=excluded.stF, by=excluded.by, ts=excluded.ts", (pid, st, stF, by, ts))
             c.execute("INSERT INTO historial (id, st, stF, by, ts) VALUES (?,?,?,?,?)", (pid, st, stF, by, ts))
-        write_config(); self.reply(200, all_estados())
+        write_config(); log("events", level="info", src="estado", msg=f"{pid} -> {st}", by=by); self.reply(200, all_estados())
+
+# ------------------------------------------------------------------ comprobaciones
+def chk(name, fn):
+    t0 = time.time()
+    try:
+        ok, detail = fn()
+        res = {"ok": bool(ok), "detail": detail}
+    except Exception as e:
+        res = {"ok": False, "detail": f"{type(e).__name__}: {e}"}
+    res.update({"name": name, "ms": round((time.time()-t0)*1000), "at": time.strftime("%Y-%m-%dT%H:%M:%S%z")})
+    prev = CHECKS.get(name); CHECKS[name] = res
+    log("checks", **res)
+    if prev is None or prev["ok"] != res["ok"]:
+        log("events", level="info" if res["ok"] else "error", src=name, msg=("RECUPERADO: " if res["ok"] else "CAÍDO: ") + str(res["detail"])[:300])
+
+def check_funnel():
+    """Como un usuario de fuera: IP pública del Funnel por DNS público y GET /api/health."""
+    q = urllib.request.Request(f"https://cloudflare-dns.com/dns-query?name={PUBLIC_HOST}&type=A", headers={"accept": "application/dns-json"})
+    ips = [a["data"] for a in json.load(urllib.request.urlopen(q, timeout=10)).get("Answer", []) if a.get("type") == 1]
+    if not ips: return False, "DNS público sin IPs para el Funnel"
+    ctx = ssl.create_default_context()
+    with socket.create_connection((ips[0], PUBLIC_PORT), timeout=10) as sock:
+        with ctx.wrap_socket(sock, server_hostname=PUBLIC_HOST) as ss:
+            ss.sendall(f"GET /api/health HTTP/1.1\r\nHost: {PUBLIC_HOST}\r\nConnection: close\r\n\r\n".encode())
+            data = b""
+            while True:
+                chunk = ss.recv(4096)
+                if not chunk: break
+                data += chunk
+    head = data.split(b"\r\n", 1)[0].decode(errors="replace")
+    return (" 200 " in head and b'"ok": true' in data), f"{head} vía {ips[0]}"
+
+def check_site():
+    r = urllib.request.urlopen(urllib.request.Request(SITE + f"?chk={int(time.time())}", headers={"User-Agent": "pisos-monitor"}), timeout=15)
+    body = r.read().decode("utf-8", "replace")
+    return (r.status == 200 and "const RUTAS" in body and "const PISOS" in body), f"HTTP {r.status}, {len(body)//1024} KB"
+
+def check_lares_runs():
+    path = os.path.join(BRIDGE, "lares_runs.jsonl")
+    try:
+        last = json.loads(open(path, encoding="utf-8").read().strip().splitlines()[-1])
+    except FileNotFoundError:
+        return False, "Lares aún no ha registrado ninguna pasada (lares_runs.jsonl no existe)"
+    age = (time.time() - last.get("t", 0)) / 3600
+    errs = last.get("errores") or []
+    ok = age < 3.7 and not errs and last.get("ok", True)
+    return ok, f"última pasada hace {age:.1f} h · {last.get('leidos', {})} anuncios · {last.get('candidatos', 0)} candidatos" + (f" · errores: {errs}" if errs else "")
+
+def check_lares_cron():
+    jobs = json.load(open(LARES_CRON, encoding="utf-8"))
+    jobs = jobs if isinstance(jobs, list) else jobs.get("jobs", [])
+    out, ok = [], True
+    for j in jobs:
+        if not str(j.get("name", "")).startswith("piso"): continue
+        st, derr = j.get("last_status"), j.get("last_delivery_error")
+        bad = (st not in ("ok", None)) or not j.get("enabled", True)
+        ok = ok and not bad
+        out.append(f"{j.get('name')}: {st} (última {str(j.get('last_run_at'))[:16]}, próxima {str(j.get('next_run_at'))[:16]})" +
+                   (f" — entrega: {str(derr)[:160]}" if derr and bad else ""))
+    return ok, " | ".join(out) or "sin tareas de pisos"
+
+def check_bridge():
+    res = []
+    ok = True
+    for fn, max_h in (("config.json", None), ("candidatos.json", 3.7)):
+        p = os.path.join(BRIDGE, fn)
+        if not os.path.exists(p): ok = False; res.append(f"{fn}: no existe"); continue
+        age = (time.time() - os.path.getmtime(p)) / 3600
+        if max_h and age > max_h: ok = False
+        res.append(f"{fn}: hace {age:.1f} h")
+    return ok, " · ".join(res)
+
+def check_api_errors():
+    recent = [r for r in tail("api", 300) if time.time() - r.get("t", 0) < 3600]
+    errs = [r for r in recent if r.get("code", 200) >= 500]
+    cli = [r for r in tail("client", 100) if time.time() - r.get("t", 0) < 3600]
+    return (not errs), f"{len(recent)} peticiones en la última hora · {len(errs)} errores 5xx · {len(cli)} errores de la página"
+
+def monitor():
+    while True:
+        for name, fn in (("funnel_publico", check_funnel), ("web_github", check_site), ("lares_pasadas", check_lares_runs),
+                         ("lares_cron", check_lares_cron), ("buzon_compartido", check_bridge), ("api_errores", check_api_errors)):
+            chk(name, fn)
+        time.sleep(300)
+
+# ------------------------------------------------------------------ panel privado (solo tailnet)
+class Admin(BaseHTTPRequestHandler):
+    server_version = "pisos-admin/1"
+    def log_message(self, fmt, *a): pass
+    def allowed(self):
+        who = self.headers.get("Tailscale-User-Login", "")
+        return (not ADMIN_USERS) or any(who.startswith(u) for u in ADMIN_USERS)
+    def send(self, code, body, ctype):
+        b = body.encode() if isinstance(body, str) else body
+        self.send_response(code); self.send_header("Content-Type", ctype); self.send_header("Content-Length", str(len(b)))
+        self.send_header("Cache-Control", "no-store"); self.end_headers(); self.wfile.write(b)
+    def do_GET(self):
+        if not self.allowed():
+            log("events", level="warn", src="admin", msg=f"acceso denegado: {self.headers.get('Tailscale-User-Login','(sin login)')}")
+            return self.send(403, "forbidden", "text/plain")
+        if self.path.startswith("/status"):
+            st = {"ahora": time.strftime("%Y-%m-%dT%H:%M:%S%z"), "uptime_h": round((time.time()-STARTED)/3600, 2),
+                  "checks": CHECKS, "eventos": tail("events", 60)[::-1], "api": tail("api", 80)[::-1], "cliente": tail("client", 30)[::-1],
+                  "lares": [json.loads(x) for x in (open(os.path.join(BRIDGE, "lares_runs.jsonl"), encoding="utf-8").read().splitlines()[-15:] if os.path.exists(os.path.join(BRIDGE, "lares_runs.jsonl")) else []) if x.strip()][::-1],
+                  "usuario": self.headers.get("Tailscale-User-Login", "")}
+            return self.send(200, json.dumps(st, ensure_ascii=False), "application/json; charset=utf-8")
+        if self.path in ("/", "/index.html"):
+            return self.send(200, open(os.path.join(os.path.dirname(__file__), "admin.html"), encoding="utf-8").read(), "text/html; charset=utf-8")
+        if self.path == "/checknow":
+            threading.Thread(target=lambda: [chk(n, f) for n, f in (("funnel_publico", check_funnel), ("web_github", check_site), ("lares_pasadas", check_lares_runs), ("lares_cron", check_lares_cron), ("buzon_compartido", check_bridge), ("api_errores", check_api_errors))], daemon=True).start()
+            return self.send(200, '{"ok":true}', "application/json")
+        self.send(404, "not found", "text/plain")
 
 if __name__ == "__main__":
     init()
+    log("events", level="info", src="api", msg="arranque del backend")
+    threading.Thread(target=monitor, daemon=True).start()
+    threading.Thread(target=lambda: ThreadingHTTPServer(("0.0.0.0", 8790), Admin).serve_forever(), daemon=True).start()
     ThreadingHTTPServer(("0.0.0.0", 8787), H).serve_forever()

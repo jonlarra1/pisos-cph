@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Estado del sistema</title>
+<style>
+:root{--bg:#f4f5f2;--panel:#fff;--fg:#1d2320;--muted:#66706b;--line:#dfe3df;--ok:#2e9e4f;--bad:#d64541;--warn:#c98a0b;color-scheme:light}
+@media (prefers-color-scheme:dark){:root{--bg:#111716;--panel:#1a2221;--fg:#e6eeec;--muted:#9db0ad;--line:#2a3a38;color-scheme:dark}}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--fg);font:14px/1.45 system-ui,-apple-system,"Segoe UI",sans-serif}
+main{max-width:1100px;margin:0 auto;padding:20px 16px 40px}
+h1{font-size:22px;margin:0}.sub{color:var(--muted);margin:4px 0 16px;font-size:13px}
+.top{display:flex;gap:12px;align-items:center;flex-wrap:wrap;justify-content:space-between}
+.global{display:inline-flex;align-items:center;gap:8px;padding:8px 14px;border-radius:999px;font-weight:700;color:#fff}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:10px;margin:14px 0 22px}
+.card{background:var(--panel);border:1px solid var(--line);border-left:6px solid var(--c);border-radius:10px;padding:12px 14px}
+.card h3{margin:0 0 4px;font-size:14px;display:flex;justify-content:space-between;gap:8px}
+.card .d{font-size:12.5px;color:var(--muted);word-break:break-word}.card .t{font-size:11px;color:var(--muted);margin-top:6px}
+.dot{width:10px;height:10px;border-radius:50%;background:var(--c);display:inline-block;flex:none;margin-top:4px}
+h2{font-size:15px;margin:20px 0 8px}
+table{width:100%;border-collapse:collapse;background:var(--panel);border:1px solid var(--line);border-radius:10px;overflow:hidden;font-size:12.5px}
+td,th{padding:6px 10px;border-bottom:1px solid var(--line);text-align:left;vertical-align:top}th{color:var(--muted);font-weight:600}
+tr.err td{color:var(--bad)}tr.warn td{color:var(--warn)}
+button{border:1px solid var(--line);background:var(--panel);color:var(--fg);border-radius:8px;padding:6px 12px;font:600 13px system-ui;cursor:pointer}
+.wrap{overflow-x:auto}
+</style></head><body><main>
+<div class="top"><div><h1>Estado del sistema · Pisos CPH</h1><p class="sub" id="sub">Cargando…</p></div>
+<div><span class="global" id="global">…</span> <button id="now">Comprobar ahora</button></div></div>
+<div class="grid" id="grid"></div>
+<h2>Eventos (caídas, recuperaciones, cambios)</h2><div class="wrap"><table id="ev"></table></div>
+<h2>Pasadas de Lares</h2><div class="wrap"><table id="lr"></table></div>
+<h2>Peticiones a la API (últimas)</h2><div class="wrap"><table id="api"></table></div>
+<h2>Errores en la página de los usuarios</h2><div class="wrap"><table id="cl"></table></div>
+</main><script>
+const NAMES={funnel_publico:["Funnel (desde internet)","La web de los usuarios llega a la Pi"],web_github:["Web en GitHub Pages","jonlarra1.github.io/pisos-cph"],
+ lares_pasadas:["Lares · búsquedas","Cada 3 h lee Lejebolig y Boligportal"],lares_cron:["Lares · tareas del cron","piso-watch-cph y piso-check-links"],
+ buzon_compartido:["Buzón compartido","config / candidatos entre Lares y el backend"],api_errores:["API de estados","Errores de la última hora"]};
+const esc=s=>String(s??"").replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+const ago=t=>{if(!t)return"";const s=(Date.now()/1000-t);return s<90?`hace ${Math.round(s)} s`:s<5400?`hace ${Math.round(s/60)} min`:`hace ${(s/3600).toFixed(1)} h`;};
+async function load(){
+  let st; try{const r=await fetch("status",{cache:"no-store"}); if(!r.ok)throw new Error("HTTP "+r.status); st=await r.json();}
+  catch(e){document.getElementById("global").style.background="var(--bad)";document.getElementById("global").textContent="⛔ El backend no responde";
+    document.getElementById("sub").textContent="No se puede leer /status: "+e.message+" · reintentando…";return;}
+  const ch=Object.values(st.checks), bad=ch.filter(c=>!c.ok);
+  const g=document.getElementById("global"); g.style.background=!ch.length?"var(--warn)":bad.length?"var(--bad)":"var(--ok)";
+  g.textContent=!ch.length?"Comprobando…":bad.length?`⚠ ${bad.length} con problemas`:"✓ Todo funciona";
+  document.getElementById("sub").textContent=`Backend en marcha desde hace ${st.uptime_h} h · ${st.usuario||""} · actualizado ${new Date().toLocaleTimeString()}`;
+  document.getElementById("grid").innerHTML=Object.keys(NAMES).map(k=>{const c=st.checks[k], n=NAMES[k];
+    const col=!c?"var(--warn)":c.ok?"var(--ok)":"var(--bad)";
+    return `<div class="card" style="--c:${col}"><h3><span>${n[0]}</span><span class="dot"></span></h3><div class="d">${c?esc(c.detail):"aún sin comprobar"}</div>
+      <div class="t">${esc(n[1])}${c?` · ${esc(c.at.slice(11,19))} · ${c.ms} ms`:""}</div></div>`;}).join("");
+  const rows=(id,head,list,fn)=>{document.getElementById(id).innerHTML=`<tr>${head.map(h=>`<th>${h}</th>`).join("")}</tr>`+(list.length?list.map(fn).join(""):`<tr><td colspan="${head.length}" style="color:var(--muted)">Sin datos</td></tr>`);};
+  rows("ev",["Hora","Origen","Nivel","Mensaje"],st.eventos,e=>`<tr class="${e.level==="error"?"err":e.level==="warn"?"warn":""}"><td>${esc((e.ts||"").slice(5,19).replace("T"," "))}</td><td>${esc(e.src)}</td><td>${esc(e.level)}</td><td>${esc(e.msg)}${e.by?` · ${esc(e.by)}`:""}</td></tr>`);
+  rows("lr",["Hora","Duración","Anuncios leídos","Candidatos","Nuevos","Errores"],st.lares,r=>`<tr class="${(r.errores||[]).length||r.ok===false?"err":""}"><td>${esc((r.ts||"").slice(5,16).replace("T"," "))} <small>(${ago(r.t)})</small></td><td>${r.seg??""} s</td><td>${esc(JSON.stringify(r.leidos||{}))}</td><td>${r.candidatos??""}</td><td>${r.nuevos??""}</td><td>${esc((r.errores||[]).join(", ")||(r.ok===false?r.msg:""))}</td></tr>`);
+  rows("api",["Hora","Método","Ruta","Código","ms","Origen"],st.api.slice(0,40),a=>`<tr class="${a.code>=500?"err":a.code>=400?"warn":""}"><td>${esc((a.ts||"").slice(11,19))}</td><td>${esc(a.m)}</td><td>${esc(a.path)}</td><td>${a.code}</td><td>${a.ms}</td><td>${esc(a.via||"")} ${esc((a.origin||"").replace("https://",""))}</td></tr>`);
+  rows("cl",["Hora","Nivel","Mensaje","Dónde"],st.cliente,c=>`<tr class="err"><td>${esc((c.ts||"").slice(5,19).replace("T"," "))}</td><td>${esc(c.level)}</td><td>${esc(c.msg)}</td><td>${esc(c.where)}</td></tr>`);
+}
+document.getElementById("now").onclick=async()=>{await fetch("checknow");setTimeout(load,4000);};
+load(); setInterval(load,15000);
+</script></body></html>

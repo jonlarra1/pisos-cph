@@ -4,14 +4,17 @@ services:
     container_name: pisos-api
     restart: unless-stopped
     ports:
-      - "127.0.0.1:8787:8787"      # only reachable from the Pi itself; Tailscale Funnel publishes it
+      - "127.0.0.1:8787:8787"      # API: only reachable from the Pi itself; Tailscale Funnel publishes it
+      - "127.0.0.1:8790:8790"      # private status panel: published only inside the tailnet (tailscale serve, NOT funnel)
     user: "1000:1000"              # same uid as Lares (hermes) so both can use the shared bridge folder
     volumes:
       - ./data:/data
       - /home/jon/syncthing_media/jon_Vault/Jon/Vivienda/pisos-bridge:/bridge
+      - /home/jon/docker/hermes/profiles/lares/cron:/lares_cron:ro   # only Lares' cron status (read-only)
     environment:
       ALLOWED_ORIGINS: "https://jonlarra1.github.io,http://localhost:8000"
       API_KEY: "${API_KEY}"
+      ADMIN_USERS: "larrabajojon@"    # Tailscale login(s) allowed to open the status panel
     read_only: true
     tmpfs: [/tmp]
     security_opt: ["no-new-privileges:true"]

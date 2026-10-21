@@ -8,7 +8,7 @@ cache = json.load(open(CACHE)) if os.path.exists(CACHE) else {}
 UA = "pisos-cph/1.0 (personal flat-hunting map; light use)"
 def get(prof, a, b):
     key = f"{prof}:{a[1]:.5f},{a[0]:.5f};{b[1]:.5f},{b[0]:.5f}"
-    if key not in cache:
+    if cache.get(key) is None:
         u = f"https://routing.openstreetmap.de/{PROF[prof]}/route/v1/driving/{a[1]:.5f},{a[0]:.5f};{b[1]:.5f},{b[0]:.5f}?overview=full&geometries=geojson"
         r = None
         for _ in range(3):
@@ -23,9 +23,9 @@ def get(prof, a, b):
                 if abs(q[0]-th[-1][0])+abs(q[1]-th[-1][1]) > 0.00015: th.append(q)
             if th[-1] != pts[-1]: th.append(pts[-1])
             cache[key] = {"min": max(1, round(x["duration"]/60)), "d": round(x["distance"]), "path": [list(a)]+th+[list(b)]}
-        if prof == "bike" and cache[key]: cache[key]["min"] = max(1, round(cache[key]["d"]/(20/3.6)/60))  # 20 km/h
-        else: cache[key] = None
-        json.dump(cache, open(CACHE, "w"))
+            json.dump(cache, open(CACHE, "w"))
+        else:
+            return None          # no se guarda el fallo: se reintenta la próxima vez
     r = cache[key]
     if prof == "bike" and r: r = dict(r, min=max(1, round(r["d"]/(20/3.6)/60)))  # Jon: 20 km/h
     return r

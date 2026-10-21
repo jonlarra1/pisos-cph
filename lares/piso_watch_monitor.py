@@ -30,6 +30,7 @@ MAX_DETAIL = 8                       # fichas abiertas por pasada (ritmo suave)
 DEFAULT_FILTROS = {"precio_max": 23000, "vaer_min": 4, "disp_desde": "2026-12-18", "disp_hasta": "2027-01-15"}
 BASE.mkdir(parents=True, exist_ok=True)
 BRIDGE.mkdir(parents=True, exist_ok=True)
+STATS = {}                           # resumen de la pasada para lares_runs.jsonl
 
 # Texto -> zona del mapa. Las claves más largas se prueban primero.
 ZONA_ALIAS = {
@@ -281,6 +282,10 @@ def main():
     write_json(BRIDGE / "candidatos.json", {"actualizado": now, "filtros": F, "pisos": cands, "errores": errors})
     write_json(BRIDGE / "rechazados.json", {"actualizado": now, "pisos": rech[:400]})
 
+    leidos = {}
+    for it in listings.values(): leidos[it["portal"]] = leidos.get(it["portal"], 0) + 1
+    STATS.update(leidos=leidos, candidatos=len(cands), nuevos=len(nuevos), rechazados=len(rech), errores=errors,
+                 fichas_abiertas=MAX_DETAIL-budget, mapa_conocidos=len(known))
     for n in nuevos:
         print(f"NUEVO | {n['zona']} | {n['precio']} kr/mes | {n['m2'] or '?'} m², {n['vaer'] or '?'} vær. | "
               f"{(n['titulo'] or '')[:45]} | {n['link']}" + (f" | ⚠ {', '.join(n['avisos'][:2])}" if n["avisos"] else ""))
@@ -288,5 +293,24 @@ def main():
         print(f"[aviso] fuentes con error: {', '.join(errors)}")
 
 
+def run_log(**kw):
+    """Una línea por pasada en pisos-bridge/lares_runs.jsonl (lo lee el panel de estado)."""
+    rec = {"ts": datetime.now().astimezone().isoformat(timespec="seconds"), "t": round(datetime.now(timezone.utc).timestamp(), 1), **kw}
+    p = BRIDGE / "lares_runs.jsonl"
+    try:
+        lines = p.read_text(encoding="utf-8").splitlines()[-500:] if p.exists() else []
+        lines.append(json.dumps(rec, ensure_ascii=False))
+        tmp = p.with_suffix(".tmp"); tmp.write_text("\n".join(lines) + "\n", encoding="utf-8"); os.replace(tmp, p)
+    except Exception:
+        pass
+
+
 if __name__ == "__main__":
-    main()
+    import time as _t, traceback
+    _t0 = _t.time()
+    try:
+        STATS.clear(); main()
+        run_log(ok=True, seg=round(_t.time()-_t0, 1), **STATS)
+    except Exception as e:
+        run_log(ok=False, seg=round(_t.time()-_t0, 1), msg=f"{type(e).__name__}: {e}", errores=[traceback.format_exc(limit=2)[-300:]])
+        raise
