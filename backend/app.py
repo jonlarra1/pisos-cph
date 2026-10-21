@@ -331,6 +331,11 @@ class H(BaseHTTPRequestHandler):
         if self.path == "/api/zonas": return self.reply(200, all_zonas())
         if self.path == "/api/filtros": return self.reply(200, filtros())
         if self.path == "/api/candidatos": return self.reply(200, candidatos())
+        if self.path.startswith("/api/ruta?"):
+            if limited("ruta:" + self.client_ip(), 20, "ruta:*", 200): return self.reply(429, {"error": "demasiadas búsquedas, espera un minuto"})
+            code, obj = ruta(urllib.parse.urlparse(self.path).query)
+            self._note = f"{obj.get('ms','')} ms" + (" caché" if obj.get("cache") else "") if code == 200 else str(obj.get("error", ""))[:60]
+            return self.reply(code, obj)
         self.reply(404, {"error": "not found"})
     def do_POST(self):
         if self.path == "/api/clientlog":    # errores de la página de los usuarios
@@ -379,6 +384,109 @@ class H(BaseHTTPRequestHandler):
         write_config(); log("events", level="info", src="estado", msg=f"{pid} -> {st}", by=by); self.reply(200, all_estados())
 
 # ------------------------------------------------------------------ comprobaciones
+# ------------------------------------------------------------------ motor de rutas (horarios GTFS de Rejseplanen)
+GTFS_DIR = os.environ.get("GTFS_DIR", os.path.join(os.path.dirname(DB) or "/data", "gtfs"))
+GTFS_URL = os.environ.get("GTFS_URL", "https://www.rejseplanen.info/labs/GTFS.zip")
+GTFS_EVERY = 7 * 86400                       # descarga semanal
+MOTOR = {"m": None, "error": "", "cargado": 0, "ultima_ms": None, "busquedas": 0}
+RUTA_CACHE = collections.OrderedDict()       # resultados recientes (10 min)
+RUTA_LOCK = threading.Semaphore(1)           # una búsqueda a la vez (CPU de la Pi)
+COMPACTO = os.path.join(GTFS_DIR, "compacto.pkl")
+
+def gtfs_refresh(force=False):
+    """Descarga el GTFS si tiene más de 7 días y prepara el archivo compacto en un proceso aparte
+    (así el pico de memoria de la preparación no se suma al del servidor). Luego recarga el motor."""
+    os.makedirs(GTFS_DIR, exist_ok=True)
+    zp = os.path.join(GTFS_DIR, "GTFS.zip")
+    viejo = not os.path.exists(COMPACTO) or time.time() - os.path.getmtime(COMPACTO) > GTFS_EVERY
+    if force or viejo:
+        t0 = time.time()
+        try:
+            req = urllib.request.Request(GTFS_URL, headers={"User-Agent": "pisos-cph/1.0 (personal flat-hunting map)"})
+            with urllib.request.urlopen(req, timeout=120) as r, open(zp + ".tmp", "wb") as f:
+                n = 0
+                while True:
+                    b = r.read(1 << 20)
+                    if not b: break
+                    n += len(b)
+                    if n > 300_000_000: raise ValueError("GTFS demasiado grande")
+                    f.write(b)
+            os.replace(zp + ".tmp", zp)
+            import subprocess, sys
+            out = subprocess.run([sys.executable, "-I", "-c",
+                                  "import sys,json; sys.path.insert(0, sys.argv[1]); import routing; print(json.dumps(routing.preparar(sys.argv[2], sys.argv[3])))",
+                                  os.path.dirname(os.path.abspath(__file__)), zp, COMPACTO], capture_output=True, text=True, timeout=900)
+            if out.returncode: raise RuntimeError(out.stderr.strip()[-300:])
+            os.remove(zp)                           # el zip ya no hace falta (56 MB)
+            log("events", level="info", src="rutas", msg=f"horarios actualizados en {time.time()-t0:.0f} s: {out.stdout.strip()[:200]}")
+        except Exception as e:
+            MOTOR["error"] = f"{type(e).__name__}: {str(e)[:200]}"
+            log("events", level="error", src="rutas", msg="no se pudo actualizar el GTFS: " + MOTOR["error"])
+            try: os.remove(zp + ".tmp")
+            except OSError: pass
+    if os.path.exists(COMPACTO) and (MOTOR["m"] is None or os.path.getmtime(COMPACTO) > MOTOR["cargado"]):
+        import routing
+        MOTOR["m"] = None                           # suelta el anterior antes de cargar el nuevo (memoria)
+        MOTOR["m"] = routing.Motor(COMPACTO); MOTOR["cargado"] = os.path.getmtime(COMPACTO); MOTOR["error"] = ""
+        RUTA_CACHE.clear()
+
+def gtfs_worker():
+    while True:
+        try: gtfs_refresh()
+        except Exception as e: log("events", level="error", src="rutas", msg=f"{type(e).__name__}: {e}"[:300])
+        time.sleep(6 * 3600)
+
+def _f(q, k, lo, hi):
+    v = float(q[k][0])
+    if not (lo <= v <= hi) or v != v: raise ValueError(k)
+    return v
+
+def ruta(qs):
+    """GET /api/ruta?olat&olon&dlat&dlon&dname&fecha=YYYY-MM-DD&hora=HH:MM&modo=llegar|salir&perfil=foot|bike&lim&vw&vb"""
+    import routing
+    q = urllib.parse.parse_qs(qs, max_num_fields=20)
+    M = MOTOR["m"]
+    if M is None: return 503, {"error": "motor de rutas no disponible", "detalle": MOTOR["error"]}
+    B = routing.BBOX
+    try:
+        olat, olon = _f(q, "olat", B[0], B[1]), _f(q, "olon", B[2], B[3])
+        dlat, dlon = _f(q, "dlat", B[0], B[1]), _f(q, "dlon", B[2], B[3])
+        fecha = q["fecha"][0]; hora = q["hora"][0]; modo = q.get("modo", ["llegar"])[0]; perfil = q.get("perfil", ["foot"])[0]
+        if not re.fullmatch(r"20\d\d-[01]\d-[0-3]\d", fecha) or not re.fullmatch(r"[0-2]\d:[0-5]\d", hora) or int(hora[:2]) > 23: raise ValueError("fecha/hora")
+        datetime.date.fromisoformat(fecha)
+        if modo not in ("llegar", "salir") or perfil not in ("foot", "bike"): raise ValueError("modo/perfil")
+        lim = _f(q, "lim", 3, 30) if "lim" in q else 10
+        vw = _f(q, "vw", 3, 7) if "vw" in q else 5; vb = _f(q, "vb", 8, 35) if "vb" in q else 20
+        dname = re.sub(r"[^\w .,·\-/]", "", q.get("dname", ["Destino"])[0], flags=re.U)[:60] or "Destino"
+    except (KeyError, ValueError, IndexError) as e:
+        return 400, {"error": f"parámetros no válidos ({e})"}
+    ymd = fecha.replace("-", "")
+    if not (M.desde <= ymd <= M.hasta): return 400, {"error": f"fuera del periodo de horarios ({M.desde}–{M.hasta})"}
+    key = (round(olat, 4), round(olon, 4), round(dlat, 4), round(dlon, 4), fecha, hora, modo, perfil, lim, vw, vb)
+    hit = RUTA_CACHE.get(key)
+    if hit and time.time() - hit[0] < 600: return 200, {**hit[1], "cache": True}
+    if not RUTA_LOCK.acquire(timeout=10): return 503, {"error": "motor ocupado, prueba en unos segundos"}
+    try:
+        t0 = time.time()
+        pf = {"mode": perfil, "v_walk": vw/3.6, "v_bike": vb/3.6, "lim_min": lim}
+        opts = M.ruta(olat, olon, (dlat, dlon), dname, fecha, hora, modo, pf)
+        ms = round((time.time()-t0)*1000)
+    finally:
+        RUTA_LOCK.release()
+    MOTOR["ultima_ms"] = ms; MOTOR["busquedas"] += 1
+    res = {"opciones": opts, "ms": ms, "horarios": {"creado": M.creado, "hasta": M.hasta}, "fuente": "GTFS Rejseplanen (horario, sin retrasos)"}
+    RUTA_CACHE[key] = (time.time(), res)
+    while len(RUTA_CACHE) > 300: RUTA_CACHE.popitem(last=False)
+    return 200, res
+
+def check_rutas():
+    M = MOTOR["m"]
+    if M is None: return False, "motor sin cargar" + (f" · {MOTOR['error']}" if MOTOR["error"] else "")
+    edad = (time.time() - MOTOR["cargado"]) / 86400
+    hoy = time.strftime("%Y%m%d"); ok = edad < 10 and M.desde <= hoy <= M.hasta and not MOTOR["error"]
+    return ok, (f"horarios de hace {edad:.1f} días (válidos hasta {M.hasta}) · {MOTOR['busquedas']} búsquedas desde el arranque"
+                + (f" · última {MOTOR['ultima_ms']} ms" if MOTOR["ultima_ms"] is not None else "") + (f" · {MOTOR['error']}" if MOTOR["error"] else ""))
+
 def listas():
     """Contadores por lista para el panel + anuncios nuevos por día (historial.json de Lares)."""
     est = all_estados(); n = collections.Counter()
@@ -525,7 +633,7 @@ def check_storage():
 def monitor():
     while True:
         for name, fn in (("funnel_publico", check_funnel), ("web_github", check_site), ("lares_pasadas", check_lares_runs),
-                         ("lares_cron", check_lares_cron), ("buzon_compartido", check_bridge), ("api_errores", check_api_errors), ("fotos", check_img), ("almacenamiento", check_storage), ("aislamiento_red", check_isolation)):
+                         ("lares_cron", check_lares_cron), ("buzon_compartido", check_bridge), ("api_errores", check_api_errors), ("fotos", check_img), ("almacenamiento", check_storage), ("aislamiento_red", check_isolation), ("motor_rutas", check_rutas)):
             chk(name, fn)
         time.sleep(300)
 
@@ -585,6 +693,7 @@ if __name__ == "__main__":
     init()
     log("events", level="info", src="api", msg="arranque del backend")
     threading.Thread(target=housekeeper, daemon=True).start()
+    threading.Thread(target=gtfs_worker, daemon=True).start()
     threading.Thread(target=monitor, daemon=True).start()
     threading.Thread(target=lambda: ThreadingHTTPServer(("0.0.0.0", 8790), Admin).serve_forever(), daemon=True).start()
     ThreadingHTTPServer(("0.0.0.0", 8787), H).serve_forever()

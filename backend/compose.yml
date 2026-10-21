@@ -18,7 +18,7 @@ services:
     tmpfs: [/tmp]
     security_opt: ["no-new-privileges:true"]
     cap_drop: [ALL]
-    mem_limit: 128m
+    mem_limit: 512m
     pids_limit: 100
     networks: [pisosnet]
     logging:                      # stdout de Docker con tope (el detalle va a data/logs, con su propia rotación)
