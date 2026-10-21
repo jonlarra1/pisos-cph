@@ -899,6 +899,14 @@ html,body{overflow-x:hidden}
 .alts{grid-column:1/-1;display:flex;flex-wrap:wrap;gap:3px;align-items:center;font-size:11px;color:var(--muted);margin-top:2px}
 .alts button{border:1px solid var(--line);background:var(--panel);color:var(--fg);border-radius:10px;padding:1px 7px;font:600 11px var(--f-body);cursor:pointer}
 .alts button[aria-pressed="true"]{background:var(--accent);border-color:var(--accent);color:var(--panel)}
+.dst{display:flex;align-items:center;gap:6px;font-size:12px}
+.dst span{flex:1}
+.dst small{color:var(--muted)}
+.addd{display:grid;gap:5px;margin-top:4px}
+.addd input,.addd select{font:500 12px var(--f-body);color:var(--fg);background:var(--panel);border:1px solid var(--line);border-radius:6px;padding:5px 6px;min-width:0}
+.addd-r{display:flex;gap:6px}
+.addd-r select{flex:1}
+.addd .btn{padding:5px 10px;font-size:12px}
 .who{color:var(--muted);font-weight:500;margin-left:2px}
 .rt-tabs{display:flex;flex-wrap:wrap;gap:4px}
 .rt-tabs button{border:1px solid var(--line);background:none;color:var(--fg);border-radius:14px;padding:4px 10px;font:600 12px var(--f-body);cursor:pointer}
@@ -1193,7 +1201,31 @@ let routeDest="ns-jon", tripDay=RUTAS.days[0], tripTime="08:30";
 const PERF={jon:{n:"Jon",mode:"bike",lim:10},unai:{n:"Unai",mode:"foot",lim:10}};
 /* Filas de rutas: destino + quién va. */
 const ROWS=[{key:"ns-jon",k:"ns",who:"jon"},{key:"gn-unai",k:"gn",who:"unai"},{key:"dtu-jon",k:"dtu",who:"jon"},{key:"dtu-unai",k:"dtu",who:"unai"}];
-const ROW=Object.fromEntries(ROWS.map(r=>[r.key,r]));
+/* Destinos añadidos por cada uno (se guardan en su navegador). Rutas: bici/andando por calle al momento + Rejseplanen. */
+let EXTRA=[]; try{EXTRA=JSON.parse(localStorage.getItem("destinos")||"[]").filter(d=>d&&d.id&&Array.isArray(d.ll));}catch(e){}
+const extraLayer=L.layerGroup().addTo(map);
+function allRows(){return ROWS.concat(EXTRA.flatMap(d=>(d.who==="both"?["jon","unai"]:[d.who]).map(w=>({key:d.id+"-"+w,k:d.id,who:w,extra:d}))));}
+const rowOf=key=>allRows().find(r=>r.key===key);
+const dName=k=>{const x=EXTRA.find(d=>d.id===k); return x?x.n:DSHORT[k].replace(" (trabajo)","");};
+const dLL=k=>{const x=EXTRA.find(d=>d.id===k); return x?x.ll:RUTAS.dest.find(d=>d.k===k).ll;};
+function drawExtraMarkers(){extraLayer.clearLayers();
+  EXTRA.forEach(d=>L.marker(d.ll,{icon:L.divIcon({className:"",html:`<div class="work dest">${esc(d.n)}</div>`,iconSize:null,iconAnchor:[30,12]}),zIndexOffset:880}).bindTooltip(esc(d.addr||d.n),{direction:"top",offset:[0,-14]}).addTo(extraLayer));}
+function saveExtra(){try{localStorage.setItem("destinos",JSON.stringify(EXTRA));}catch(e){} drawExtraMarkers();}
+drawExtraMarkers();
+const LIVE={};
+function liveRoute(mode,a,b){const key=`${mode}|${a[0].toFixed(5)},${a[1].toFixed(5)}|${b[0].toFixed(5)},${b[1].toFixed(5)}`;
+  if(key in LIVE)return LIVE[key]; LIVE[key]="pending";
+  fetch(`https://routing.openstreetmap.de/routed-${mode==="bike"?"bike":"foot"}/route/v1/driving/${a[1]},${a[0]};${b[1]},${b[0]}?overview=full&geometries=geojson`)
+   .then(r=>r.json()).then(j=>{const x=j.routes&&j.routes[0];
+     LIVE[key]=x?{d:Math.round(x.distance),min:Math.max(1,Math.round((mode==="bike"?x.distance/(20/3.6):x.duration)/60)),path:x.geometry.coordinates.map(([lo,la])=>[la,lo])}:null; onLive();})
+   .catch(()=>{LIVE[key]=null; onLive();});
+  return "pending";}
+const liveFor=(p,row)=>liveRoute(PERF[row.who].mode,[p.lat,p.lon],row.extra.ll);
+let liveT=null;
+function onLive(){clearTimeout(liveT); liveT=setTimeout(()=>{if(!card.hidden)showCard(card.dataset.id);
+  const id=sheet.classList.contains("open")?sheet.dataset.id:selId; if(id)drawRoute(id,routeDest,false);
+  const st=document.getElementById("rt-steps"); if(st&&sheet.classList.contains("open")){const p=PISOS.find(x=>x.id===sheet.dataset.id); if(p)st.innerHTML=stepsHtml(p,routeDest);
+    const tb=document.querySelector("#sheet .rt-tabs"); if(tb&&p)tb.innerHTML=tabsHtml(p);}},80);}
 {const wd=["dom","lun","mar","mié","jue","vie","sáb"][new Date().getDay()]; if(RUTAS.days.includes(wd))tripDay=wd;}
 try{const t=localStorage.getItem("tripTime");if(RUTAS.times.includes(t))tripTime=t;
   const pf=JSON.parse(localStorage.getItem("perfiles")||"{}");
@@ -1204,7 +1236,7 @@ const SPEED={foot:1.33,bike:20/3.6};
 const limTxt=(mode,m)=>`${m} min · ≈ ${km(Math.round(m*60*SPEED[mode]/50)*50)}`;
 /* Opciones de ruta por destino (hasta 3: la más rápida y alternativas por otras líneas). ALT = opción elegida. */
 const ALT={};
-const RTS=(id,key)=>{const row=ROW[key]; if(!row)return []; const pf=PERF[row.who];
+const RTS=(id,key)=>{const row=rowOf(key); if(!row||row.extra)return []; const pf=PERF[row.who];
   const i=((((RUTAS.ix[pf.mode]||{})[tripDay]||{})[tripTime]||{})[pf.lim]||{})[id]; let j=i&&i[row.k]; if(j==null)return []; if(!Array.isArray(j))j=[j];
   return j.map(x=>RUTAS.routes[x]).filter(Boolean).sort((a,b)=>a.min-b.min||(a.sale<b.sale?1:-1));};  // la más rápida primero
 const RT=(id,key)=>{const o=RTS(id,key); if(!o.length)return null; return o[Math.min(ALT[id+"|"+key]||0,o.length-1)];};
@@ -1212,30 +1244,33 @@ const mainLine=r=>{const rides=r.legs.filter(l=>!isMove(l)); if(!rides.length)re
   const m=rides.reduce((a,l)=>{const d=t=>+t.slice(0,2)*60+ +t.slice(3); return (d(l.arr)-d(l.dep))>(d(a.arr)-d(a.dep))?l:a;}); return m.line;};
 const altBtns=(id,key)=>{const o=RTS(id,key); if(o.length<2)return ""; const cur=Math.min(ALT[id+"|"+key]||0,o.length-1);
   return `<span class="alts">Opciones: ${o.map((r,n)=>`<button data-alt="${id}|${key}|${n}" aria-pressed="${n===cur}" title="Opción ${n+1}: ${r.min} min por ${esc(mainLine(r))}">${r.min}′ ${esc(mainLine(r))}</button>`).join("")}</span>`;};
-const rowName=r=>`${DSHORT[r.k].replace(" (trabajo)","")} <small class="who">${PERF[r.who].mode==="bike"?"🚲":"🚶"} ${PERF[r.who].n}</small>`;
+const rowName=r=>`${esc(dName(r.k))} <small class="who">${PERF[r.who].mode==="bike"?"🚲":"🚶"} ${PERF[r.who].n}</small>`;
 const LP=l=>RUTAS.paths[l.p];
 const DAYL={lun:"L",mar:"M",mié:"X",jue:"J",vie:"V",sáb:"S",dom:"D"}, DAYF={lun:"lunes",mar:"martes",mié:"miércoles",jue:"jueves",vie:"viernes",sáb:"sábado",dom:"domingo"};
-function rpLink(p,k){const d=RUTAS.dest.find(x=>x.k===k), now=new Date(), want=["dom","lun","mar","mié","jue","vie","sáb"].indexOf(tripDay);
+function rpLink(p,k){const now=new Date(), want=["dom","lun","mar","mié","jue","vie","sáb"].indexOf(tripDay);
   const dt=new Date(now); dt.setDate(now.getDate()+((want-now.getDay()+7)%7));
   const dd=String(dt.getDate()).padStart(2,"0")+"."+String(dt.getMonth()+1).padStart(2,"0")+"."+String(dt.getFullYear()).slice(2);
   const id=(ll,n)=>`A=16@X=${Math.round(ll[1]*1e6)}@Y=${Math.round(ll[0]*1e6)}@O=${n}`;
-  return "https://www.rejseplanen.dk/bin/query.exe/mn?SID="+encodeURIComponent(id([p.lat,p.lon],p.calle.replace(/@/g,"")))+"&ZID="+encodeURIComponent(id(d.ll,DSHORT[k]))+
+  return "https://www.rejseplanen.dk/bin/query.exe/mn?SID="+encodeURIComponent(id([p.lat,p.lon],p.calle.replace(/@/g,"")))+"&ZID="+encodeURIComponent(id(dLL(k),dName(k).replace(/@/g,"")))+
     `&date=${dd}&time=${tripTime}&timesel=arrive&start=1`;}
 const routeR=L.svg({padding:.5}), routeLayer=L.layerGroup().addTo(map);
 /* Dibuja las rutas de todas las filas; la elegida resaltada, las otras más suaves. */
 function drawRoute(id,key,fit){
   routeLayer.clearLayers(); let focusPts=[]; const seen=new Set();
-  const order=ROWS.map(r=>r.key).filter(x=>x!==key).concat([key]);
-  order.forEach(rk=>{const r=RT(id,rk); if(!r)return; const on=rk===key;
+  const rows=allRows(), order=rows.map(r=>r.key).filter(x=>x!==key).concat([key]), P=PISOS.find(x=>x.id===id);
+  order.forEach(rk=>{const row=rows.find(x=>x.key===rk); if(!row)return; const on=rk===key;
+    let r=RT(id,rk);
+    if(row.extra&&P){const lv=liveFor(P,row); if(lv&&lv!=="pending"){r={legs:[{m:PERF[row.who].mode==="bike"?"bike":"walk",min:lv.min,d:lv.d,live:lv.path}]};}}
+    if(!r)return;
     const sig=r.legs.map(l=>l.p).join(","); if(!on&&seen.has(sig))return; seen.add(sig);
-    const op=on?1:.4, w=on?1:.7, dname=DSHORT[ROW[rk].k];
-    r.legs.forEach(l=>{const path=LP(l); if(on)focusPts.push(...path);
+    const op=on?1:.4, w=on?1:.7, dname=dName(row.k), ant=on?"route-ant ":"";
+    r.legs.forEach(l=>{const path=l.live||LP(l); if(on)focusPts.push(...path);
       if(isMove(l)){const bike=l.m==="bike";
         L.polyline(path,{renderer:routeR,color:css("--panel"),weight:(bike?8:7)*w,opacity:.85*op,interactive:false}).addTo(routeLayer);
-        L.polyline(path,{renderer:routeR,color:bike?BIKE_C:css("--fg"),weight:(bike?4.5:3.5)*w,opacity:.95*op,dashArray:bike?"6 6":"1 7",lineCap:"round",className:"route-ant "+(bike?"bike":"walk"),interactive:on})
+        L.polyline(path,{renderer:routeR,color:bike?BIKE_C:css("--fg"),weight:(bike?4.5:3.5)*w,opacity:.95*op,dashArray:bike?"6 6":"1 7",lineCap:"round",className:ant+(bike?"bike":"walk"),interactive:on})
          .bindTooltip(`${bike?"🚲":"🚶"} ${l.d?km(l.d)+" · ":""}${l.min} min → ${esc(dname)}`,{sticky:true}).addTo(routeLayer);return;}
       L.polyline(path,{renderer:routeR,color:css("--panel"),weight:9*w,opacity:.9*op,interactive:false}).addTo(routeLayer);
-      L.polyline(path,{renderer:routeR,color:legCol(l),weight:5*w,opacity:op,dashArray:"10 8",lineCap:"butt",className:"route-ant",interactive:on})
+      L.polyline(path,{renderer:routeR,color:legCol(l),weight:5*w,opacity:op,dashArray:"10 8",lineCap:"butt",className:on?"route-ant":"",interactive:on})
        .bindTooltip(`${esc(l.m)} ${esc(l.line)} → ${esc(l.head)}`,{sticky:true}).addTo(routeLayer);});});
   if(fit&&focusPts.length){const W=map.getSize().x, H=map.getSize().y, sh=sheet.classList.contains("open")?Math.min(460,W*.6):0;
     let tl=[40,40], br=[Math.max(sh,W>700?280:20),40];
@@ -1246,12 +1281,23 @@ function drawRoute(id,key,fit){
   document.querySelectorAll("[data-route]").forEach(b=>b.classList.toggle("on",b.dataset.route===id+"|"+key));
 }
 function routesHtml(p){
-  return `<div class="rt"><div class="rt-h">Llegar antes de las ${tripTime} · ${DAYF[tripDay]}</div>${ROWS.map(row=>{const r=RT(p.id,row.key);
+  return `<div class="rt"><div class="rt-h">Llegar antes de las ${tripTime} · ${DAYF[tripDay]}</div>${allRows().map(row=>{
+    if(row.extra){const lv=liveFor(p,row), bike=PERF[row.who].mode==="bike";
+      const head=`<span class="rt-n">${rowName(row)}</span>`;
+      return `<div class="rt-i${row.key===routeDest?" on":""}" data-route="${p.id}|${row.key}" role="button" tabindex="0">${head}<b>${lv&&lv!=="pending"?lv.min+" min":lv==="pending"?"…":"—"}</b>
+        <span class="ch">${lv==="pending"?"Calculando…":lv?`${bike?"🚲 Solo en bici":"🚶 Solo andando"} · ${km(lv.d)}`:"Sin ruta"} · <a href="${esc(rpLink(p,row.k))}" target="_blank" rel="noopener">Transporte en Rejseplanen ↗</a></span></div>`;}
+    const r=RT(p.id,row.key);
     const head=`<span class="rt-n">${rowName(row)}${r?` <small style="color:var(--muted)">sal ${r.sale}</small>`:""}</span>`;
     if(!r)return `<div class="rt-i" style="cursor:default">${head}<b>—</b><span class="ch">Sin ruta con su configuración</span></div>`;
     return `<div class="rt-i${row.key===routeDest?" on":""}" data-route="${p.id}|${row.key}" role="button" tabindex="0">${head}<b>${r.min} min</b><span class="ch">${chips(r)}${r.trans>0?` · ${r.trans} transb.`:" · directo"}</span>${altBtns(p.id,row.key)}</div>`;}).join("")}</div>`;}
-const tabsHtml=p=>ROWS.map(row=>{const r=RT(p.id,row.key);return `<button data-route="${p.id}|${row.key}" class="${row.key===routeDest?"on":""}">${DSHORT[row.k].replace(" (trabajo)","")} · ${PERF[row.who].n} · ${r?r.min+"′":"—"}</button>`;}).join("");
-function stepsHtml(p,key){const row=ROW[key], pf=PERF[row.who], r=RT(p.id,key), bike=pf.mode==="bike";
+const tabsHtml=p=>allRows().map(row=>{let m; if(row.extra){const lv=liveFor(p,row); m=lv&&lv!=="pending"?lv.min+"′":"…";}else{const r=RT(p.id,row.key); m=r?r.min+"′":"—";}
+  return `<button data-route="${p.id}|${row.key}" class="${row.key===routeDest?"on":""}">${esc(dName(row.k))} · ${PERF[row.who].n} · ${m}</button>`;}).join("");
+function stepsHtml(p,key){const row=rowOf(key)||allRows()[0]; key=row.key; const pf=PERF[row.who], r=RT(p.id,key), bike=pf.mode==="bike";
+  if(row.extra){const lv=liveFor(p,row);
+    return `<p style="margin:8px 0 0;font-size:12.5px"><b>${esc(row.extra.n)}</b> <small style="color:var(--muted)">${esc(row.extra.addr||"")}</small></p>
+    <p style="margin:6px 0 0;font-size:12.5px">${lv==="pending"?"Calculando ruta…":lv?`${bike?"🚲 Solo en bici (20 km/h)":"🚶 Solo andando"}: <b>${lv.min} min</b> · ${km(lv.d)} (dibujado en el mapa)`:"No se pudo calcular la ruta por calle."}</p>
+    <p style="margin:6px 0 0;font-size:11.5px;color:var(--muted)">Para este destino no hay rutas de transporte público precalculadas: ábrelo en Rejseplanen. Si quieres que salga como los otros tres, díselo a Jon/Claude y se añade fijo.</p>
+    <a class="btn sec" style="margin-top:10px;width:100%;box-sizing:border-box" href="${esc(rpLink(p,row.k))}" target="_blank" rel="noopener">Ver en Rejseplanen ↗</a>`;}
   const dir=DIRECTO[pf.mode]?.[p.id]?.[row.k];
   const who=`<p style="margin:8px 0 0;font-size:12px;color:var(--muted)">${pf.n}: ${bike?"🚲 bici + S-tog/tren":"🚶 andando + bus, metro, tren"} · máx. ${limTxt(pf.mode,pf.lim)} por tramo (cámbialo en Configuración)</p>`;
   const ref=dir?`<p style="margin:8px 0 0;font-size:11.5px;color:var(--muted)">Solo ${bike?"en bici (20 km/h)":"andando"}, sin transporte: ${dir.min} min · ${km(dir.d)}</p>`:"";
@@ -1273,7 +1319,13 @@ function renderWalk(){
        <button data-pfmode="${w}|foot" aria-pressed="${pf.mode==="foot"}">🚶 Andando</button><button data-pfmode="${w}|bike" aria-pressed="${pf.mode==="bike"}">🚲 Bici</button></div>
      <label class="pfl">Máx. por tramo <select data-pflim="${w}">${RUTAS.lim.map(m=>opt(m,limTxt(pf.mode,m),m===pf.lim)).join("")}</select></label>
      <small>${pf.mode==="bike"?"Bici a 20 km/h + S-tog / tren (sin bus ni metro)":"Andando + bus, metro, Letbane y tren"}</small></div>`).join("")+
-    `<small class="pfn">Rutas: ${ROWS.map(r=>`${DSHORT[r.k].replace(" (trabajo)","")} → ${PERF[r.who].n}`).join(" · ")}</small>`;
+    `<div class="pf"><b>Destinos</b>
+      ${ROWS.map(r=>`<div class="dst"><span>${esc(dName(r.k))}</span><small>${PERF[r.who].n}</small></div>`).join("")}
+      ${EXTRA.map(d=>`<div class="dst"><span>${esc(d.n)}</span><small>${d.who==="both"?"Jon y Unai":PERF[d.who].n}</small><button class="lnk" data-deldest="${d.id}" title="Quitar">✕</button></div>`).join("")}
+      <form class="addd" id="addd"><input name="n" placeholder="Nombre (p. ej. Gimnasio)" required maxlength="30">
+        <input name="a" placeholder="Dirección (p. ej. Nørrebrogade 20, 2200)" required maxlength="90">
+        <div class="addd-r"><select name="w"><option value="jon">Jon</option><option value="unai">Unai</option><option value="both">Los dos</option></select><button class="btn sec" type="submit">＋ Añadir</button></div>
+        <small id="addd-m"></small></form></div>`;
   const h=document.getElementById("hor"); h.hidden=!HORARIOS.length;
   h.innerHTML=HORARIOS.map((x,i)=>`<button class="chip" data-hor="${i}" aria-pressed="${x.row===routeDest&&x.time===tripTime&&x.days.includes(tripDay)}">${esc(x.n)} <small>${x.days.map(d=>DAYL[d]).join("")} · ${x.time}</small></button>`).join("");}
 function tripChanged(){try{localStorage.setItem("tripTime",tripTime);localStorage.setItem("perfiles",JSON.stringify(PERF));}catch(_){}
@@ -1284,7 +1336,15 @@ function tripChanged(){try{localStorage.setItem("tripTime",tripTime);localStorag
 document.querySelector(".trip").addEventListener("change",e=>{const t=e.target;
   if(t.id==="ttime")tripTime=t.value; if(t.id==="tday")tripDay=t.value; tripChanged();});
 document.getElementById("cfg-b").addEventListener("change",e=>{const s=e.target.closest("[data-pflim]"); if(!s)return; PERF[s.dataset.pflim].lim=+s.value; tripChanged();});
-document.getElementById("cfg-b").addEventListener("click",e=>{const b=e.target.closest("[data-pfmode]"); if(!b)return; const [w,m]=b.dataset.pfmode.split("|"); PERF[w].mode=m; tripChanged();});
+document.getElementById("cfg-b").addEventListener("click",e=>{
+  const del=e.target.closest("[data-deldest]"); if(del){EXTRA=EXTRA.filter(d=>d.id!==del.dataset.deldest); saveExtra(); tripChanged(); return;}
+  const b=e.target.closest("[data-pfmode]"); if(!b)return; const [w,m]=b.dataset.pfmode.split("|"); PERF[w].mode=m; tripChanged();});
+document.getElementById("cfg-b").addEventListener("submit",async e=>{e.preventDefault(); const f=e.target, msg=f.querySelector("#addd-m");
+  const n=f.n.value.trim(), a=f.a.value.trim(), w=f.w.value; if(!n||!a)return; msg.textContent="Buscando dirección…";
+  try{const r=await fetch("https://nominatim.openstreetmap.org/search?"+new URLSearchParams({format:"json",countrycodes:"dk",limit:"1",q:a}));
+    const j=await r.json(); if(!j.length){msg.textContent="No encuentro esa dirección. Prueba con calle, número y código postal."; return;}
+    EXTRA.push({id:"x"+Date.now().toString(36),n,addr:a,ll:[+(+j[0].lat).toFixed(6),+(+j[0].lon).toFixed(6)],who:w});
+    saveExtra(); tripChanged();}catch(err){msg.textContent="No se pudo buscar la dirección (sin conexión).";}});
 document.getElementById("hor").addEventListener("click",e=>{const b=e.target.closest("[data-hor]");if(!b)return;
   const x=HORARIOS[+b.dataset.hor]; routeDest=x.row; tripTime=x.time; if(!x.days.includes(tripDay))tripDay=x.days[0]; tripChanged();});
 document.addEventListener("click",e=>{
