@@ -1,0 +1,17 @@
+services:
+  pisos-api:
+    build: .
+    container_name: pisos-api
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8787:8787"      # only reachable from the Pi itself; Tailscale Funnel publishes it
+    volumes:
+      - ./data:/data
+    environment:
+      ALLOWED_ORIGINS: "https://jonlarra1.github.io,http://localhost:8000"
+      API_KEY: "${API_KEY}"
+    read_only: true
+    tmpfs: [/tmp]
+    security_opt: ["no-new-privileges:true"]
+    cap_drop: [ALL]
+    mem_limit: 128m

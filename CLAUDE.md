@@ -27,4 +27,6 @@ The user is Jon. He works at Nordic Solar (Hellerup). He prefers short, simple, 
 - Keep OSM attribution visible: "© OpenStreetMap contributors".
 - Respect OSM tile and Nominatim usage policies (light personal use, real User-Agent, max 1 request/second for Nominatim).
 - Do not invent addresses or coordinates. If an exact address is not found, keep the old point and say so in `ubic`.
+- Shared backend: `backend/` (Python stdlib + SQLite in Docker) runs on the Raspberry Pi at `/home/docker/pisos-backend`, bound to 127.0.0.1:8787, public via Tailscale Funnel `https://raspberrypi.tail9f1069.ts.net:8443`. Page reads `/api/estados` on load + every 60 s and POSTs `/api/estado`; offline → localStorage only. Not connected to Lares (agent on the Pi) yet — Jon asked to keep it separate for now. Only touch `/home/docker/pisos-backend` on the Pi; use targeted checks (grep).
+- UI settings per browser in localStorage: `ui` (day, colour mode, barrio filter, lines off, route option, open panels), `perfiles`, `tripTime`, `yo`, `destinos`, `cardPos`.
 - Hosting: GitHub Pages (fixed link for flatmates). Commit + push to update.

@@ -935,13 +935,13 @@ html,body{overflow-x:hidden}
         <h1>Pisos en Copenhague</h1>
         <p class="sub" id="count"></p>
       </div>
-      <details class="lp" open><summary>Viaje <small id="trip-s"></small></summary>
+      <details class="lp" id="d-viaje" open><summary>Viaje <small id="trip-s"></small></summary>
       <div class="trip" role="group" aria-label="Viaje">
         <label>Llegar antes de<select id="ttime" aria-label="Hora de llegada"></select></label>
         <label>Día<select id="tday" aria-label="Día"></select></label>
         <div class="chips" id="hor" hidden></div>
       </div></details>
-      <details class="lp more"><summary>Ver y filtrar <small id="more-s"></small></summary>
+      <details class="lp more" id="d-ver"><summary>Ver y filtrar <small id="more-s"></small></summary>
         <div class="more-b">
           <div class="ctl"><span class="lbl">Colorear por</span>
           <div class="seg" role="group" aria-label="Color de los puntos">
@@ -966,7 +966,7 @@ html,body{overflow-x:hidden}
   <section class="mapwrap">
     <div id="map" aria-label="Mapa de pisos"></div>
     <div class="rcol">
-      <details class="lines-card"><summary>Líneas</summary><div class="lines-body" id="lines"><b>S-tog</b></div></details>
+      <details class="lines-card" id="d-lineas"><summary>Líneas</summary><div class="lines-body" id="lines"><b>S-tog</b></div></details>
       <details class="lines-card cfg" id="cfg"><summary>Configuración</summary><div class="cfg-b" id="cfg-b"></div></details>
     </div>
     <div class="fcard" id="card" hidden role="dialog" aria-label="Piso">
@@ -989,6 +989,11 @@ const ESTADOS={gusta:{c:"#2b6fd6",t:"Nos gusta"},nuevo:{c:"#ee8a12",t:"Nuevo · 
 const DESCARTE_DIAS=7;
 /* Cambios de estado hechos en la página: {id:{st,stF}}. Por ahora en este navegador (localStorage "estados"). */
 let ESTL={}; try{ESTL=JSON.parse(localStorage.getItem("estados")||"{}");}catch(e){}
+/* Backend compartido en la Raspberry Pi (Tailscale Funnel). Si no responde, la página sigue con lo de este navegador.
+   La clave solo frena abusos casuales: la página es pública. */
+const API="https://raspberrypi.tail9f1069.ts.net:8443", API_KEY="cbWL_VKg5OmKwl7wx37zY3fj";
+let YO=""; try{YO=localStorage.getItem("yo")||"";}catch(e){}
+let apiOK=null;
 PISOS.forEach(p=>{const o=ESTL[p.id]; if(o&&ESTADOS[o.st]&&(!p.stF||o.stF>=p.stF)){p.st=o.st;p.stF=o.stF;}});
 {const today=new Date(); for(let i=PISOS.length-1;i>=0;i--){const p=PISOS[i]; if(!ESTADOS[p.st])p.st="nuevo";
   if(p.st==="descartado"&&(today-new Date(p.stF))/864e5>DESCARTE_DIAS){OUT.unshift({t:`${p.barrio} · ${p.calle}`,r:`Descartado (${p.stF})`,link:p.link}); PISOS.splice(i,1);}}}
@@ -1346,7 +1351,8 @@ function renderWalk(){
   document.getElementById("ttime").innerHTML=RUTAS.times.map(t=>opt(t,t.replace(/^0/,""),t===tripTime)).join("");
   document.getElementById("tday").innerHTML=RUTAS.days.map(d=>opt(d,DAYF[d],d===tripDay)).join("");
   document.getElementById("trip-s").textContent=`· ${tripTime.replace(/^0/,"")} · ${DAYF[tripDay]}`;
-  document.getElementById("cfg-b").innerHTML=Object.entries(PERF).map(([w,pf])=>`<div class="pf" data-pf="${w}">
+  document.getElementById("cfg-b").innerHTML=`<div class="pf"><label class="pfl"><b>Soy</b><select id="yo"><option value="">—</option>${Object.entries(PERF).map(([w,pf])=>opt(w,pf.n,w===YO)).join("")}</select></label>
+     <small id="api-s">${apiOK==null?"Conectando con la Raspberry Pi…":apiOK?"✓ Estados compartidos (Raspberry Pi)":"Sin conexión con la Raspberry Pi: los cambios se guardan solo en este navegador"}</small></div>`+Object.entries(PERF).map(([w,pf])=>`<div class="pf" data-pf="${w}">
      <b>${esc(pf.n)}</b>
      <div class="seg sm" role="group" aria-label="Cómo se mueve ${esc(pf.n)}">
        <button data-pfmode="${w}|foot" aria-pressed="${pf.mode==="foot"}">🚶 Andando</button><button data-pfmode="${w}|bike" aria-pressed="${pf.mode==="bike"}">🚲 Bici</button></div>
@@ -1363,7 +1369,7 @@ function renderWalk(){
         <small id="addd-m"></small></form></div>`;
   const h=document.getElementById("hor"); h.hidden=!HORARIOS.length;
   h.innerHTML=HORARIOS.map((x,i)=>`<button class="chip" data-hor="${i}" aria-pressed="${x.row===routeDest&&x.time===tripTime&&x.days.includes(tripDay)}">${esc(x.n)} <small>${x.days.map(d=>DAYL[d]).join("")} · ${x.time}</small></button>`).join("");}
-function tripChanged(){try{localStorage.setItem("tripTime",tripTime);localStorage.setItem("perfiles",JSON.stringify(PERF));}catch(_){}
+function tripChanged(){try{localStorage.setItem("tripTime",tripTime);localStorage.setItem("perfiles",JSON.stringify(PERF));}catch(_){} saveUI();
   renderWalk(); renderList();
   const id=sheet.classList.contains("open")?sheet.dataset.id:selId;
   if(id){drawRoute(id,routeDest,false); if(sheet.classList.contains("open"))openSheet(id);}
@@ -1371,6 +1377,7 @@ function tripChanged(){try{localStorage.setItem("tripTime",tripTime);localStorag
 document.querySelector(".trip").addEventListener("change",e=>{const t=e.target;
   if(t.id==="ttime")tripTime=t.value; if(t.id==="tday")tripDay=t.value; tripChanged();});
 document.getElementById("cfg-b").addEventListener("change",e=>{const t=e.target;
+  if(t.id==="yo"){YO=t.value; try{localStorage.setItem("yo",YO);}catch(_){} return;}
   if(t.dataset.pflim)PERF[t.dataset.pflim].lim=+t.value; else if(t.dataset.pfvw)PERF[t.dataset.pfvw].vw=+t.value; else if(t.dataset.pfvb)PERF[t.dataset.pfvb].vb=+t.value; else return;
   tripChanged();});
 document.getElementById("cfg-b").addEventListener("click",e=>{
@@ -1386,20 +1393,29 @@ document.getElementById("hor").addEventListener("click",e=>{const b=e.target.clo
   const x=HORARIOS[+b.dataset.hor]; routeDest=x.row; tripTime=x.time; if(!x.days.includes(tripDay))tripDay=x.days[0]; tripChanged();});
 document.addEventListener("click",e=>{
   const a=e.target.closest("[data-alt]");
-  if(a){e.stopPropagation(); const [id,key,n]=a.dataset.alt.split("|"); ALT[id+"|"+key]=+n; routeDest=key;
+  if(a){e.stopPropagation(); const [id,key,n]=a.dataset.alt.split("|"); ALT[id+"|"+key]=+n; routeDest=key; saveUI();
     if(!card.hidden)showCard(card.dataset.id); drawRoute(id,key,true);
     const st=document.getElementById("rt-steps"); if(st&&sheet.dataset.id===id)st.innerHTML=stepsHtml(PISOS.find(x=>x.id===id),key);
     const tb=document.querySelector("#sheet .rt-tabs"); if(tb&&sheet.dataset.id===id)tb.innerHTML=tabsHtml(PISOS.find(x=>x.id===id)); return;}
   const b=e.target.closest("[data-route]");if(!b)return;
-  const [id,key]=b.dataset.route.split("|"); routeDest=key; drawRoute(id,key,true);
+  const [id,key]=b.dataset.route.split("|"); routeDest=key; saveUI(); drawRoute(id,key,true);
   const st=document.getElementById("rt-steps"); if(st&&sheet.dataset.id===id)st.innerHTML=stepsHtml(PISOS.find(x=>x.id===id),key);});
 document.addEventListener("keydown",e=>{if((e.key==="Enter"||e.key===" ")&&e.target.matches&&e.target.matches(".rt-i[data-route]")){e.preventDefault();e.target.click();}});
 function pinIcon(p,sel){const sz=sel?36:30;
   return L.divIcon({className:"",iconSize:[sz,sz],iconAnchor:[sz/2,sz/2],popupAnchor:[0,-sz/2],
     html:`<div class="pin${sel?" sel":""}" style="width:${sz}px;height:${sz}px;background:${col(p)};font-size:${String(MODES[mode].lbl(p)).length>2?10.5:12}px">${MODES[mode].lbl(p)}</div>`});}
-const stPill=p=>`<div class="stw"><div class="stp" style="--sc:${ESTADOS[p.st].c}"><i></i>${ESTADOS[p.st].t}<small>desde ${esc(p.stF)}</small></div>
+const stPill=p=>`<div class="stw"><div class="stp" style="--sc:${ESTADOS[p.st].c}"><i></i>${ESTADOS[p.st].t}<small>desde ${esc(p.stF)}${p.by?` · por ${esc(PERF[p.by]?.n||p.by)}`:""}</small></div>
   <div class="stb" role="group" aria-label="Cambiar estado">${Object.entries(ESTADOS).map(([k,e])=>`<button data-setst="${p.id}|${k}" aria-pressed="${p.st===k}" style="--sc:${e.c}" title="${e.t}"><i></i>${e.t.split(" ·")[0].replace(" con el casero","")}</button>`).join("")}</div></div>`;
-function setEstado(id,st){const p=PISOS.find(x=>x.id===id); if(!p||!ESTADOS[st])return;
+function applyRemote(rem){let ch=false; for(const id in rem){const p=PISOS.find(x=>x.id===id), o=rem[id]; if(!p||!ESTADOS[o.st])continue;
+    if(p.st!==o.st||p.stF!==o.stF||p.by!==o.by){p.st=o.st;p.stF=o.stF;p.by=o.by;ch=true;}}
+  if(ch){PISOS.forEach(p=>markers[p.id].setIcon(pinIcon(p,p.id===selId))); applyFilter(false); if(!card.hidden)showCard(card.dataset.id);
+    if(sheet.classList.contains("open")){const p=PISOS.find(x=>x.id===sheet.dataset.id),h=sheet.querySelector(".stw"); if(p&&h)h.outerHTML=stPill(p);}}}
+function apiStatus(ok){apiOK=ok; const el=document.getElementById("api-s"); if(el)el.textContent=ok?"✓ Estados compartidos (Raspberry Pi)":"Sin conexión con la Raspberry Pi: los cambios se guardan solo en este navegador";}
+async function pullEstados(){try{const c=new AbortController(); setTimeout(()=>c.abort(),5000);
+    const r=await fetch(API+"/api/estados",{signal:c.signal,cache:"no-store"}); if(!r.ok)throw 0; applyRemote(await r.json()); apiStatus(true);}catch(e){apiStatus(false);}}
+async function pushEstado(id,st){try{const r=await fetch(API+"/api/estado",{method:"POST",headers:{"Content-Type":"application/json","X-Pisos-Key":API_KEY},body:JSON.stringify({id,st,by:YO})});
+    if(!r.ok)throw 0; applyRemote(await r.json()); apiStatus(true); return true;}catch(e){apiStatus(false); return false;}}
+function setEstado(id,st){const p=PISOS.find(x=>x.id===id); if(!p||!ESTADOS[st])return; p.by=YO; pushEstado(id,st);
   const d=new Date(), f=`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
   p.st=st; p.stF=f; ESTL[id]={st,stF:f}; try{localStorage.setItem("estados",JSON.stringify(ESTL));}catch(e){}
   markers[id].setIcon(pinIcon(p,id===selId)); renderList();
@@ -1472,13 +1488,14 @@ LINES.forEach(l=>{const r=document.createElement("label");r.className="lrow";
 let selId=null;
 const ZONAS=[...new Set(PISOS.map(p=>p.barrio))].sort((a,b)=>a.localeCompare(b,"da"));
 let zsel=new Set();
-const visible=p=>zsel.size===0||zsel.has(p.barrio);
+const expired=p=>p.st==="descartado"&&(new Date()-new Date(p.stF))/864e5>DESCARTE_DIAS;
+const visible=p=>!expired(p)&&(zsel.size===0||zsel.has(p.barrio));
 function renderChips(){
   document.getElementById("chips").innerHTML=ZONAS.map(z=>`<button class="chip" data-z="${esc(z)}" aria-pressed="${zsel.has(z)}" style="--bc:${BCOL[z]}"><i class="bsw"></i>${esc(z)}<small>${BAR[z].length}</small></button>`).join("");
   document.getElementById("f-all").hidden=zsel.size===0;
   document.getElementById("more-s").textContent=zsel.size?`· ${zsel.size} barrio${zsel.size>1?"s":""}`:"";
 }
-function applyFilter(fit){
+function applyFilter(fit){ if(typeof saveUI==="function")saveUI();
   PISOS.forEach(p=>visible(p)?markers[p.id].addTo(map):markers[p.id].remove());
   renderChips();renderList();
   if(fit){const v=PISOS.filter(visible);const pts=v.map(p=>[p.lat,p.lon]);
@@ -1519,7 +1536,7 @@ function select(id,fly){
   if(fly){map.flyTo([p.lat,p.lon],Math.max(map.getZoom(),13),{duration:.6});showCard(id);}
   renderList();
 }
-function setMode(m){mode=m;["estado","prio","price","barrio"].forEach(k=>document.getElementById("m-"+k).setAttribute("aria-pressed",k===m));
+function setMode(m){mode=m; if(typeof saveUI==="function")saveUI();["estado","prio","price","barrio"].forEach(k=>document.getElementById("m-"+k).setAttribute("aria-pressed",k===m));
   PISOS.forEach(p=>markers[p.id].setIcon(pinIcon(p,p.id===selId)));renderList(); if(!card.hidden)showCard(card.dataset.id);}
 document.getElementById("m-estado").onclick=()=>setMode("estado");
 document.getElementById("m-prio").onclick=()=>setMode("prio");
@@ -1585,7 +1602,27 @@ function restyle(){
 matchMedia("(prefers-color-scheme: dark)").addEventListener("change",restyle);
 new MutationObserver(restyle).observe(document.documentElement,{attributes:true,attributeFilter:["data-theme"]});
 
+/* ---------- recordar la configuración de cada uno (en su navegador) ---------- */
+function saveUI(){if(!uiReady)return; try{localStorage.setItem("ui",JSON.stringify({day:tripDay,mode,zsel:[...zsel],alt:ALT,dest:routeDest,
+  off:Object.keys(lineOn).filter(k=>!lineOn[k]).concat(["Bx","L"].filter(k=>!map.hasLayer(extraLayers[k]))),
+  open:Object.fromEntries(["d-viaje","d-ver","d-lineas","cfg"].map(id=>[id,!!document.getElementById(id)?.open]))}));}catch(e){}}
+let uiReady=false;
+{let u={}; try{u=JSON.parse(localStorage.getItem("ui")||"{}");}catch(e){}
+  if(RUTAS.days.includes(u.day))tripDay=u.day;
+  if(u.alt&&typeof u.alt==="object")Object.assign(ALT,u.alt);
+  if(typeof u.dest==="string"&&rowOf(u.dest))routeDest=u.dest;
+  (u.zsel||[]).forEach(z=>{if(ZONAS.includes(z))zsel.add(z);});
+  if(u.open)for(const id in u.open){const d=document.getElementById(id); if(d)d.open=!!u.open[id];}
+  (u.off||[]).forEach(k=>{const inp=[...document.querySelectorAll("#lines .lrow")].find(r=>r.querySelector(".lchip")?.textContent===k)?.querySelector("input");
+    if(inp&&inp.checked){inp.checked=false; inp.dispatchEvent(new Event("change"));}});
+  if(MODES[u.mode])setMode(u.mode);
+  if(zsel.size)applyFilter(false);}
+["d-viaje","d-ver","d-lineas","cfg"].forEach(id=>document.getElementById(id)?.addEventListener("toggle",()=>saveUI()));
+document.getElementById("lines").addEventListener("change",()=>setTimeout(saveUI,0));
+uiReady=true;
 renderWalk();renderChips();renderList();renderOut();
+pullEstados(); setInterval(()=>{if(!document.hidden)pullEstados();},60000);
+document.addEventListener("visibilitychange",()=>{if(!document.hidden)pullEstados();});
 </script>
 
 </body></html>
