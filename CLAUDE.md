@@ -19,7 +19,7 @@ The user is Jon. He works at Nordic Solar (Hellerup). He prefers short, simple, 
   - Only the focused route animates; the others are drawn static and faded.
   - Station dots/labels hide when all lines through them are switched off (`lineOn`, `updateStations`).
   - `HORARIOS` — saved schedule presets shown as "Mis horarios".
-- Flat status (`st` in PISOS, `stF` = date of last change): gusta (blue, we like it), nuevo (orange, new/undecided), contactado (green, landlord contacted), descartado (red; shown DESCARTE_DIAS=7 days, then auto-moved to «Descartados»). Default colour mode = Estado; pin label = monthly cost. Jon tells Claude status changes; update both `data/pisos.json` and `const PISOS` in index.html, then commit + push.
+- Flat status (`st` in PISOS, `stF` = date of last change; changeable in the card/sheet, overrides saved per browser in localStorage "estados" until a shared backend exists): gusta (blue, we like it), nuevo (orange, new/undecided), contactado (green, landlord contacted), descartado (red; shown DESCARTE_DIAS=7 days, then auto-moved to «Descartados»). Default colour mode = Estado; pin label = monthly cost. Jon tells Claude status changes; update both `data/pisos.json` and `const PISOS` in index.html, then commit + push.
 - `data/pisos.json` — flat data (id, zona, barrio, calle, m2, vaer, dorm, alq, aconto, dep, pre, disp, link, lat, lon, ubic = location precision, estado/aviso = warnings).
 
 ## Rules
