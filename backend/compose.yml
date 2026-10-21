@@ -5,8 +5,10 @@ services:
     restart: unless-stopped
     ports:
       - "127.0.0.1:8787:8787"      # only reachable from the Pi itself; Tailscale Funnel publishes it
+    user: "1000:1000"              # same uid as Lares (hermes) so both can use the shared bridge folder
     volumes:
       - ./data:/data
+      - /home/jon/syncthing_media/jon_Vault/Jon/Vivienda/pisos-bridge:/bridge
     environment:
       ALLOWED_ORIGINS: "https://jonlarra1.github.io,http://localhost:8000"
       API_KEY: "${API_KEY}"
