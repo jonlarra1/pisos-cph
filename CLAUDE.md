@@ -29,7 +29,7 @@ The user is Jon. He works at Nordic Solar (Hellerup). He prefers short, simple, 
 - Respect OSM tile and Nominatim usage policies (light personal use, real User-Agent, max 1 request/second for Nominatim).
 - Do not invent addresses or coordinates. If an exact address is not found, keep the old point and say so in `ubic`.
 - Shared backend: `backend/` (Python stdlib + SQLite in Docker) runs on the Raspberry Pi at `/home/docker/pisos-backend`, bound to 127.0.0.1:8787, public via Tailscale Funnel `https://raspberrypi.tail9f1069.ts.net:8443`. Page reads `/api/estados` on load + every 60 s and POSTs `/api/estado`; offline → localStorage only. Connected to Lares via the shared folder `Vivienda/pisos-bridge` (see `lares/README.md`): Lares writes candidatos.json, backend serves `/api/candidatos` and `/api/zonas` (POST `/api/zona`) and writes config.json. Lares only: never read other Hermes agents/profiles. Only touch `/home/docker/pisos-backend` on the Pi; use targeted checks (grep).
-- Monitoring & logs policy (keep for every new feature): backend logs JSON lines in /data/logs (api, events, checks, client); checks every 5 min (funnel_publico, web_github, lares_pasadas, lares_cron, buzon_compartido, api_errores, fotos); private panel https://raspberrypi.tail9f1069.ts.net:9443 (tailscale serve, tailnet only, Tailscale-User-Login must start with larrabajojon@). Add a check + log events for anything new.
+- Monitoring & logs policy (keep for every new feature): backend logs JSON lines in /data/logs (api, events, checks, client); checks every 5 min (funnel_publico, web_github, lares_pasadas, lares_cron, buzon_compartido, api_errores, fotos); private panel https://raspberrypi.tail9f1069.ts.net:9444 (tailscale serve, tailnet only, Tailscale-User-Login must start with larrabajojon@). Add a check + log events for anything new.
 - Photos: `fotos` (list, floor plan first when `fotoPlano`) per flat, shown through the backend image proxy `/api/img?u=` (allow-listed hosts, disk cache 300 MB).
 - Right column «🔎 Búsqueda (Lares)» = search params stored on the Pi (`/api/filtros`, zones) → config.json → Lares. «👁 Visualización» = map-only view settings (states shown, colour, barrios), per browser.
 - UI settings per browser in localStorage: `ui` (day, colour mode, barrio filter, lines off, route option, open panels), `perfiles`, `tripTime`, `yo`, `destinos`, `cardPos`.
@@ -38,7 +38,7 @@ The user is Jon. He works at Nordic Solar (Hellerup). He prefers short, simple, 
 ## Estado (2026-10-21, 21:10) y pendientes
 - Hecho y publicado: mapa con 12 pisos, rutas (bici/andando, 3 opciones, 5 días × 6 horas × límites 5–30 min), perfiles Jon/Unai,
   estados compartidos vía Pi, Lares v2 conectado (buzón pisos-bridge), menú «Búsqueda (Lares)» / «Visualización», galería de fotos,
-  panel privado :9443, logs + checks. Listado izquierdo: principal = solo 🔵 gusta + 🟢 contactado; «🟠 Propuestos» = nuevos del
+  panel privado :9444, logs + checks. Listado izquierdo: principal = solo 🔵 gusta + 🟢 contactado; «🟠 Propuestos» = nuevos del
   mapa + candidatos de Lares juntos (una sola categoría); «🔴 Descartados» = temporales (48 h, con «recuperar») + definitivos.
 - Pendiente:
   1. Fireworks (proveedor del modelo de Lares) suspendido → avisos de Lares al Bot Chat fallan (check `lares_cron` en rojo). Lo arregla Jon.
@@ -46,4 +46,5 @@ The user is Jon. He works at Nordic Solar (Hellerup). He prefers short, simple, 
   3. Pasar al mapa los candidatos que se marquen 🔵 en «Propuestos» (geocodificar + rutas: tools/route.py para esos ids y fusionar
      en data/rutas.json, como se hizo con 5680524/5680537/5680562).
   4. 14 pisos de Lejebolig de nuevos_desde_14oct.md con fecha sin confirmar (Lejebolig no la muestra sin sesión) — no añadidos.
+- Puertos ya usados en la Pi (no tocar): Portainer 8000/9000/9443. Nuestro: 127.0.0.1:8787 (API, Funnel :8443), 127.0.0.1:8790 (panel, serve :9444). Comprobar siempre con `ss -ltnp | grep :PUERTO` antes de usar uno nuevo.
 - Acceso a la Pi: clave SSH temporal de 1 h (expiry-time en authorized_keys, comentario «claude-pisos-1h»); pedir una nueva a Jon.
