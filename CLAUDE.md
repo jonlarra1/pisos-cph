@@ -63,6 +63,10 @@ The user is Jon. He works at Nordic Solar (Hellerup). He prefers short, simple, 
   6. Instalar en la Pi el piso_watch_monitor.py con depósito y prepago separados (campos `dep`/`pre`; local listo y probado
      el 2026-10-21; hace falta clave SSH temporal). Hasta entonces los candidatos de Lares no traen el desglose.
   7. Motor de rutas en vivo (backend/routing.py, bloque 1 en local): pendiente de probar y desplegar.
-  4. 14 pisos de Lejebolig de nuevos_desde_14oct.md con fecha sin confirmar (Lejebolig no la muestra sin sesión) — no añadidos.
+  4. nuevos_desde_14oct.md revisado el 2026-10-22: 34 pisos fuera del mapa/descartados; Lejebolig YA muestra la fecha («Vacant»).
+     Encajan por fecha y zona: 1917762, 1914015, 1914094 (Lejebolig), 5680590 (Boligportal); inmediatos: 1912011, 1917800;
+     sin fecha: 5680600, 5390028, 5202436. Falta verificar 3 dormitorios (plano) y que Jon elija. Datos: scratchpad recup/estado.json.
+  8. Hueco de Lares v2: solo lee 2 páginas de Lejebolig y 3 de Boligportal (lo más reciente) → los anuncios que bajan de página
+     desaparecen sin evaluarse (33 de 34 de la lista del 14-oct). Subir páginas o recorrer por zonas, al desplegar en la Pi.
 - Puertos ya usados en la Pi (no tocar): Portainer 8000/9000/9443. Nuestro: 127.0.0.1:8787 (API, Funnel :8443), 127.0.0.1:8790 (panel: serve https :9444 por nombre, y serve TCP :9445 por IP http://100.72.170.60:9445 para aparatos sin MagicDNS). Comprobar siempre con `ss -ltnp | grep :PUERTO` antes de usar uno nuevo.
 - Acceso a la Pi: clave SSH temporal de 1 h (expiry-time en authorized_keys, comentario «claude-pisos-1h»); pedir una nueva a Jon.
