@@ -733,12 +733,18 @@ h1{font-family:var(--f-display);font-size:22px;line-height:1.1;margin:0;letter-s
 .rail-foot summary{cursor:pointer;font-weight:600;padding:4px 0}
 .rail-foot p{margin:6px 0}
 .ctl{display:grid;gap:6px}
-.trip{display:flex;flex-wrap:wrap;align-items:center;gap:6px;font-size:13px;color:var(--muted);background:var(--bg);border-radius:10px;padding:8px 10px}
+.lp{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:8px 12px;box-shadow:0 1px 3px rgba(0,0,0,.06)}
+.lp>summary,.lines-card>summary{cursor:pointer;font:600 13px var(--f-display);color:var(--fg);list-style:none;display:flex;align-items:center;gap:6px}
+.lp>summary::-webkit-details-marker{display:none}
+.lp>summary::after{content:"▾";color:var(--muted);font-size:11px;margin-left:auto}
+.lp[open]>summary::after{content:"▴"}
+.lp>summary small{font:500 12px var(--f-body);color:var(--muted)}
+.trip{display:grid;gap:6px;font-size:13px;color:var(--muted);margin-top:8px}
+.trip label{display:flex;align-items:center;justify-content:space-between;gap:8px}
+.trip select{min-width:120px}
 .trip select{font:600 13px var(--f-body);color:var(--fg);background:var(--panel);border:1px solid var(--line);border-radius:6px;padding:4px 6px;cursor:pointer}
 .trip select:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
 .trip .chips{flex-basis:100%}
-.more summary{cursor:pointer;font:600 12.5px var(--f-body);color:var(--muted);padding:2px 0}
-.more summary small{font-weight:500;margin-left:4px}
 .more-b{display:grid;gap:10px;margin-top:8px}
 .lbl{font:600 11px var(--f-body);letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
 
@@ -753,7 +759,7 @@ html,body{overflow-x:hidden}
 .lines-card{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:8px 12px;box-shadow:var(--shadow);font-size:12px;max-height:calc(100% - 24px);overflow:auto}
 .lines-card summary{cursor:pointer;font:600 13px var(--f-display);list-style:none;display:flex;align-items:center;gap:6px}
 .lines-card summary::-webkit-details-marker{display:none}
-.lines-card summary::after{content:"▾";color:var(--muted);font-size:11px}
+.lines-card summary::after{content:"▾";color:var(--muted);font-size:11px;margin-left:auto}
 .lines-card[open] summary::after{content:"▴"}
 .lines-body{display:grid;gap:5px;margin-top:8px}
 .lines-card b{font-family:var(--f-display);font-size:13px}
@@ -889,7 +895,9 @@ html,body{overflow-x:hidden}
 .steps li{display:grid;grid-template-columns:44px 1fr;gap:8px;align-items:start}
 .steps .t{font-variant-numeric:tabular-nums;color:var(--muted);font-size:11.5px;padding-top:1px}
 .steps small{color:var(--muted)}
-.cfg-b{display:grid;gap:12px;margin-top:8px;width:250px}
+.cfg-b{display:grid;gap:12px;margin-top:8px}
+@media (min-width:761px){.rcol .lines-card{width:290px;box-sizing:border-box}}
+@media (max-width:760px){.rcol .lines-card{width:150px;box-sizing:border-box}.rcol .lines-card[open]{width:min(290px,calc(100vw - 24px))}}
 .pf{display:grid;gap:6px}
 .pf b{font-family:var(--f-display);font-size:13px}
 .pf small,.pfn{color:var(--muted);font-size:11px;line-height:1.35}
@@ -907,6 +915,7 @@ html,body{overflow-x:hidden}
 .addd-r{display:flex;gap:6px}
 .addd-r select{flex:1}
 .addd .btn{padding:5px 10px;font-size:12px}
+.late{color:#c0392b;font-weight:600}
 .who{color:var(--muted);font-weight:500;margin-left:2px}
 .rt-tabs{display:flex;flex-wrap:wrap;gap:4px}
 .rt-tabs button{border:1px solid var(--line);background:none;color:var(--fg);border-radius:14px;padding:4px 10px;font:600 12px var(--f-body);cursor:pointer}
@@ -921,12 +930,13 @@ html,body{overflow-x:hidden}
         <h1>Pisos en Copenhague</h1>
         <p class="sub" id="count"></p>
       </div>
+      <details class="lp" open><summary>Viaje <small id="trip-s"></small></summary>
       <div class="trip" role="group" aria-label="Viaje">
-        <span>Llegar antes de</span><select id="ttime" aria-label="Hora de llegada"></select>
-        <span>el</span><select id="tday" aria-label="Día"></select>
+        <label>Llegar antes de<select id="ttime" aria-label="Hora de llegada"></select></label>
+        <label>Día<select id="tday" aria-label="Día"></select></label>
         <div class="chips" id="hor" hidden></div>
-      </div>
-      <details class="more"><summary>Ver y filtrar <small id="more-s"></small></summary>
+      </div></details>
+      <details class="lp more"><summary>Ver y filtrar <small id="more-s"></small></summary>
         <div class="more-b">
           <div class="ctl"><span class="lbl">Colorear por</span>
           <div class="seg" role="group" aria-label="Color de los puntos">
@@ -1198,7 +1208,8 @@ const isMove=l=>l.m==="walk"||l.m==="bike";
 const chips=r=>r.legs.map(l=>isMove(l)?wchip(l):chip(l)).join('<span class="ar">›</span>');
 let routeDest="ns-jon", tripDay=RUTAS.days[0], tripTime="08:30";
 /* Perfiles: cómo se mueve cada uno además del transporte público y cuánto como máximo por tramo. */
-const PERF={jon:{n:"Jon",mode:"bike",lim:10},unai:{n:"Unai",mode:"foot",lim:10}};
+const PERF={jon:{n:"Jon",mode:"bike",lim:10,vw:5,vb:20},unai:{n:"Unai",mode:"foot",lim:10,vw:5,vb:20}};
+const VW=[[4,"🐢 Lento"],[5,"Normal"],[6,"⚡ Rápido"]], VB=[[15,"🐢 Tranquilo"],[20,"Normal"],[25,"⚡ Rápido"]];
 /* Filas de rutas: destino + quién va. */
 const ROWS=[{key:"ns-jon",k:"ns",who:"jon"},{key:"gn-unai",k:"gn",who:"unai"},{key:"dtu-jon",k:"dtu",who:"jon"},{key:"dtu-unai",k:"dtu",who:"unai"}];
 /* Destinos añadidos por cada uno (se guardan en su navegador). Rutas: bici/andando por calle al momento + Rejseplanen. */
@@ -1217,10 +1228,11 @@ function liveRoute(mode,a,b){const key=`${mode}|${a[0].toFixed(5)},${a[1].toFixe
   if(key in LIVE)return LIVE[key]; LIVE[key]="pending";
   fetch(`https://routing.openstreetmap.de/routed-${mode==="bike"?"bike":"foot"}/route/v1/driving/${a[1]},${a[0]};${b[1]},${b[0]}?overview=full&geometries=geojson`)
    .then(r=>r.json()).then(j=>{const x=j.routes&&j.routes[0];
-     LIVE[key]=x?{d:Math.round(x.distance),min:Math.max(1,Math.round((mode==="bike"?x.distance/(20/3.6):x.duration)/60)),path:x.geometry.coordinates.map(([lo,la])=>[la,lo])}:null; onLive();})
+     LIVE[key]=x?{d:Math.round(x.distance),path:x.geometry.coordinates.map(([lo,la])=>[la,lo])}:null; onLive();})
    .catch(()=>{LIVE[key]=null; onLive();});
   return "pending";}
-const liveFor=(p,row)=>liveRoute(PERF[row.who].mode,[p.lat,p.lon],row.extra.ll);
+const liveFor=(p,row)=>{const pf=PERF[row.who], lv=liveRoute(pf.mode,[p.lat,p.lon],row.extra.ll);
+  return lv&&lv!=="pending"?{...lv,min:Math.max(1,Math.round(lv.d/spd(pf,pf.mode)/60))}:lv;};
 let liveT=null;
 function onLive(){clearTimeout(liveT); liveT=setTimeout(()=>{if(!card.hidden)showCard(card.dataset.id);
   const id=sheet.classList.contains("open")?sheet.dataset.id:selId; if(id)drawRoute(id,routeDest,false);
@@ -1229,16 +1241,28 @@ function onLive(){clearTimeout(liveT); liveT=setTimeout(()=>{if(!card.hidden)sho
 {const wd=["dom","lun","mar","mié","jue","vie","sáb"][new Date().getDay()]; if(RUTAS.days.includes(wd))tripDay=wd;}
 try{const t=localStorage.getItem("tripTime");if(RUTAS.times.includes(t))tripTime=t;
   const pf=JSON.parse(localStorage.getItem("perfiles")||"{}");
-  for(const w in PERF){const x=pf[w]||{}; if(x.mode==="bike"||x.mode==="foot")PERF[w].mode=x.mode; if(RUTAS.lim.includes(+x.lim))PERF[w].lim=+x.lim;}}catch(e){}
+  for(const w in PERF){const x=pf[w]||{}; if(x.mode==="bike"||x.mode==="foot")PERF[w].mode=x.mode; if(RUTAS.lim.includes(+x.lim))PERF[w].lim=+x.lim;
+    if(VW.some(v=>v[0]===+x.vw))PERF[w].vw=+x.vw; if(VB.some(v=>v[0]===+x.vb))PERF[w].vb=+x.vb;}}catch(e){}
 /* Horarios guardados: {n:"nombre", row:"ns-jon", days:["lun",...], time:"08:30"} */
 const HORARIOS=[];
-const SPEED={foot:1.33,bike:20/3.6};
-const limTxt=(mode,m)=>`${m} min · ≈ ${km(Math.round(m*60*SPEED[mode]/50)*50)}`;
+const spd=(pf,mode)=>(mode==="bike"?pf.vb:pf.vw)/3.6;   // m/s
+const limTxt=(pf,m)=>`${m} min · ≈ ${km(Math.round(m*60*spd(pf,pf.mode)/50)*50)}`;
+/* Ajusta los tramos a pie / en bici a la velocidad de cada uno (los horarios del transporte no cambian). */
+const toMin=t=>+t.slice(0,2)*60+ +t.slice(3), toHM=m=>String(Math.floor(m/60)).padStart(2,"0")+":"+String(((m%60)+60)%60).padStart(2,"0");
+const ADJ=new Map();
+function adj(r,pf){const key=r; let c=ADJ.get(key); const sig=pf.vw+"/"+pf.vb; if(c&&c.sig===sig)return c.r;
+  const legs=r.legs.map(l=>{if(!isMove(l))return l; const v=l.m==="bike"?pf.vb/3.6:pf.vw/3.6, ref=l.m==="bike"?20/3.6:1.39;
+    return {...l,min:Math.max(1,Math.round((l.d?l.d/v:l.min*60*ref/v)/60))};});
+  const rides=legs.filter(l=>!isMove(l)); let out={...r,legs};
+  if(rides.length){const f=legs[0], z=legs[legs.length-1];
+    const sale=toMin(rides[0].dep)-(isMove(f)?f.min:0), llega=toMin(rides[rides.length-1].arr)+(isMove(z)?z.min:0);
+    out={...out,sale:toHM(sale),llega:toHM(llega),min:llega-sale};}
+  ADJ.set(key,{sig,r:out}); return out;}
 /* Opciones de ruta por destino (hasta 3: la más rápida y alternativas por otras líneas). ALT = opción elegida. */
 const ALT={};
 const RTS=(id,key)=>{const row=rowOf(key); if(!row||row.extra)return []; const pf=PERF[row.who];
   const i=((((RUTAS.ix[pf.mode]||{})[tripDay]||{})[tripTime]||{})[pf.lim]||{})[id]; let j=i&&i[row.k]; if(j==null)return []; if(!Array.isArray(j))j=[j];
-  return j.map(x=>RUTAS.routes[x]).filter(Boolean).sort((a,b)=>a.min-b.min||(a.sale<b.sale?1:-1));};  // la más rápida primero
+  return j.map(x=>RUTAS.routes[x]).filter(Boolean).map(r=>adj(r,pf)).sort((a,b)=>a.min-b.min||(a.sale<b.sale?1:-1));};  // la más rápida primero
 const RT=(id,key)=>{const o=RTS(id,key); if(!o.length)return null; return o[Math.min(ALT[id+"|"+key]||0,o.length-1)];};
 const mainLine=r=>{const rides=r.legs.filter(l=>!isMove(l)); if(!rides.length)return "";
   const m=rides.reduce((a,l)=>{const d=t=>+t.slice(0,2)*60+ +t.slice(3); return (d(l.arr)-d(l.dep))>(d(a.arr)-d(a.dep))?l:a;}); return m.line;};
@@ -1287,7 +1311,7 @@ function routesHtml(p){
       return `<div class="rt-i${row.key===routeDest?" on":""}" data-route="${p.id}|${row.key}" role="button" tabindex="0">${head}<b>${lv&&lv!=="pending"?lv.min+" min":lv==="pending"?"…":"—"}</b>
         <span class="ch">${lv==="pending"?"Calculando…":lv?`${bike?"🚲 Solo en bici":"🚶 Solo andando"} · ${km(lv.d)}`:"Sin ruta"} · <a href="${esc(rpLink(p,row.k))}" target="_blank" rel="noopener">Transporte en Rejseplanen ↗</a></span></div>`;}
     const r=RT(p.id,row.key);
-    const head=`<span class="rt-n">${rowName(row)}${r?` <small style="color:var(--muted)">sal ${r.sale}</small>`:""}</span>`;
+    const head=`<span class="rt-n">${rowName(row)}${r?` <small style="color:var(--muted)">sal ${r.sale}</small>${r.llega>tripTime?` <small class="late" title="Con tu velocidad llegarías a las ${r.llega}">⚠️ ${r.llega}</small>`:""}`:""}</span>`;
     if(!r)return `<div class="rt-i" style="cursor:default">${head}<b>—</b><span class="ch">Sin ruta con su configuración</span></div>`;
     return `<div class="rt-i${row.key===routeDest?" on":""}" data-route="${p.id}|${row.key}" role="button" tabindex="0">${head}<b>${r.min} min</b><span class="ch">${chips(r)}${r.trans>0?` · ${r.trans} transb.`:" · directo"}</span>${altBtns(p.id,row.key)}</div>`;}).join("")}</div>`;}
 const tabsHtml=p=>allRows().map(row=>{let m; if(row.extra){const lv=liveFor(p,row); m=lv&&lv!=="pending"?lv.min+"′":"…";}else{const r=RT(p.id,row.key); m=r?r.min+"′":"—";}
@@ -1295,12 +1319,12 @@ const tabsHtml=p=>allRows().map(row=>{let m; if(row.extra){const lv=liveFor(p,ro
 function stepsHtml(p,key){const row=rowOf(key)||allRows()[0]; key=row.key; const pf=PERF[row.who], r=RT(p.id,key), bike=pf.mode==="bike";
   if(row.extra){const lv=liveFor(p,row);
     return `<p style="margin:8px 0 0;font-size:12.5px"><b>${esc(row.extra.n)}</b> <small style="color:var(--muted)">${esc(row.extra.addr||"")}</small></p>
-    <p style="margin:6px 0 0;font-size:12.5px">${lv==="pending"?"Calculando ruta…":lv?`${bike?"🚲 Solo en bici (20 km/h)":"🚶 Solo andando"}: <b>${lv.min} min</b> · ${km(lv.d)} (dibujado en el mapa)`:"No se pudo calcular la ruta por calle."}</p>
+    <p style="margin:6px 0 0;font-size:12.5px">${lv==="pending"?"Calculando ruta…":lv?`${bike?`🚲 Solo en bici (${pf.vb} km/h)`:`🚶 Solo andando (${pf.vw} km/h)`}: <b>${lv.min} min</b> · ${km(lv.d)} (dibujado en el mapa)`:"No se pudo calcular la ruta por calle."}</p>
     <p style="margin:6px 0 0;font-size:11.5px;color:var(--muted)">Para este destino no hay rutas de transporte público precalculadas: ábrelo en Rejseplanen. Si quieres que salga como los otros tres, díselo a Jon/Claude y se añade fijo.</p>
     <a class="btn sec" style="margin-top:10px;width:100%;box-sizing:border-box" href="${esc(rpLink(p,row.k))}" target="_blank" rel="noopener">Ver en Rejseplanen ↗</a>`;}
-  const dir=DIRECTO[pf.mode]?.[p.id]?.[row.k];
-  const who=`<p style="margin:8px 0 0;font-size:12px;color:var(--muted)">${pf.n}: ${bike?"🚲 bici + S-tog/tren":"🚶 andando + bus, metro, tren"} · máx. ${limTxt(pf.mode,pf.lim)} por tramo (cámbialo en Configuración)</p>`;
-  const ref=dir?`<p style="margin:8px 0 0;font-size:11.5px;color:var(--muted)">Solo ${bike?"en bici (20 km/h)":"andando"}, sin transporte: ${dir.min} min · ${km(dir.d)}</p>`:"";
+  let dir=DIRECTO[pf.mode]?.[p.id]?.[row.k]; if(dir)dir={...dir,min:Math.max(1,Math.round(dir.d/spd(pf,pf.mode)/60))};
+  const who=`<p style="margin:8px 0 0;font-size:12px;color:var(--muted)">${pf.n}: ${bike?"🚲 bici + S-tog/tren":"🚶 andando + bus, metro, tren"} · ${bike?pf.vb:pf.vw} km/h · máx. ${limTxt(pf,pf.lim)} por tramo (cámbialo en Configuración)</p>`;
+  const ref=dir?`<p style="margin:8px 0 0;font-size:11.5px;color:var(--muted)">Solo ${bike?`en bici (${pf.vb} km/h)`:`andando (${pf.vw} km/h)`}, sin transporte: ${dir.min} min · ${km(dir.d)}</p>`:"";
   if(!r)return who+`<p style="font-size:12.5px">Sin ruta para llegar antes de las ${tripTime}. Cambia la hora o sube el máximo de ${pf.n} en Configuración.</p>`+ref;
   return who+`<p style="margin:8px 0 0">${altBtns(p.id,key)}</p><p style="margin:8px 0 0;font-size:12.5px"><b>${r.min} min</b> puerta a puerta · sal a las ${r.sale}, llegas a las ${r.llega}${r.trans>0?` · ${r.trans} transbordo${r.trans>1?"s":""}`:""}</p>
   <ol class="steps">${r.legs.map(l=>l.m==="bike"
@@ -1313,12 +1337,15 @@ function renderWalk(){
   const opt=(v,l,on)=>`<option value="${v}"${on?" selected":""}>${l}</option>`;
   document.getElementById("ttime").innerHTML=RUTAS.times.map(t=>opt(t,t.replace(/^0/,""),t===tripTime)).join("");
   document.getElementById("tday").innerHTML=RUTAS.days.map(d=>opt(d,DAYF[d],d===tripDay)).join("");
+  document.getElementById("trip-s").textContent=`· ${tripTime.replace(/^0/,"")} · ${DAYF[tripDay]}`;
   document.getElementById("cfg-b").innerHTML=Object.entries(PERF).map(([w,pf])=>`<div class="pf" data-pf="${w}">
      <b>${esc(pf.n)}</b>
      <div class="seg sm" role="group" aria-label="Cómo se mueve ${esc(pf.n)}">
        <button data-pfmode="${w}|foot" aria-pressed="${pf.mode==="foot"}">🚶 Andando</button><button data-pfmode="${w}|bike" aria-pressed="${pf.mode==="bike"}">🚲 Bici</button></div>
-     <label class="pfl">Máx. por tramo <select data-pflim="${w}">${RUTAS.lim.map(m=>opt(m,limTxt(pf.mode,m),m===pf.lim)).join("")}</select></label>
-     <small>${pf.mode==="bike"?"Bici a 20 km/h + S-tog / tren (sin bus ni metro)":"Andando + bus, metro, Letbane y tren"}</small></div>`).join("")+
+     <label class="pfl">Máx. por tramo <select data-pflim="${w}">${RUTAS.lim.map(m=>opt(m,limTxt(pf,m),m===pf.lim)).join("")}</select></label>
+     <label class="pfl">Andando <select data-pfvw="${w}">${VW.map(([v,t])=>opt(v,`${t} · ${v} km/h`,v===pf.vw)).join("")}</select></label>
+     <label class="pfl">En bici <select data-pfvb="${w}">${VB.map(([v,t])=>opt(v,`${t} · ${v} km/h`,v===pf.vb)).join("")}</select></label>
+     <small>${pf.mode==="bike"?`Bici + S-tog / tren / Letbane (sin bus ni metro)`:"Andando + bus, metro, Letbane y tren"}</small></div>`).join("")+
     `<div class="pf"><b>Destinos</b>
       ${ROWS.map(r=>`<div class="dst"><span>${esc(dName(r.k))}</span><small>${PERF[r.who].n}</small></div>`).join("")}
       ${EXTRA.map(d=>`<div class="dst"><span>${esc(d.n)}</span><small>${d.who==="both"?"Jon y Unai":PERF[d.who].n}</small><button class="lnk" data-deldest="${d.id}" title="Quitar">✕</button></div>`).join("")}
@@ -1335,7 +1362,9 @@ function tripChanged(){try{localStorage.setItem("tripTime",tripTime);localStorag
   if(!card.hidden)showCard(card.dataset.id);}
 document.querySelector(".trip").addEventListener("change",e=>{const t=e.target;
   if(t.id==="ttime")tripTime=t.value; if(t.id==="tday")tripDay=t.value; tripChanged();});
-document.getElementById("cfg-b").addEventListener("change",e=>{const s=e.target.closest("[data-pflim]"); if(!s)return; PERF[s.dataset.pflim].lim=+s.value; tripChanged();});
+document.getElementById("cfg-b").addEventListener("change",e=>{const t=e.target;
+  if(t.dataset.pflim)PERF[t.dataset.pflim].lim=+t.value; else if(t.dataset.pfvw)PERF[t.dataset.pfvw].vw=+t.value; else if(t.dataset.pfvb)PERF[t.dataset.pfvb].vb=+t.value; else return;
+  tripChanged();});
 document.getElementById("cfg-b").addEventListener("click",e=>{
   const del=e.target.closest("[data-deldest]"); if(del){EXTRA=EXTRA.filter(d=>d.id!==del.dataset.deldest); saveExtra(); tripChanged(); return;}
   const b=e.target.closest("[data-pfmode]"); if(!b)return; const [w,m]=b.dataset.pfmode.split("|"); PERF[w].mode=m; tripChanged();});
