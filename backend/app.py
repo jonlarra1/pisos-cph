@@ -1,6 +1,6 @@
 """Pisos CPH backend: shared flat status (gusta / nuevo / contactado / descartado).
 Python stdlib only. SQLite at /data/pisos.db."""
-import json, os, re, sqlite3, threading, time, tempfile, ssl, socket, http.client, urllib.request, collections
+import json, os, re, sqlite3, threading, time, tempfile, ssl, socket, http.client, urllib.request, urllib.parse, collections, hashlib
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 DB = os.environ.get("DB_PATH", "/data/pisos.db")
@@ -29,6 +29,11 @@ SITE = os.environ.get("SITE_URL", "https://jonlarra1.github.io/pisos-cph/")
 LARES_CRON = os.environ.get("LARES_CRON", "/lares_cron/jobs.json")
 ADMIN_USERS = [u for u in os.environ.get("ADMIN_USERS", "").split(",") if u]
 CHECKS = {}                                  # último resultado de cada comprobación
+IMG_DIR = os.path.join(os.path.dirname(DB) or "/data", "imgcache")
+IMG_HOSTS = {"image-lambda.boligportal.dk": "https://www.boligportal.dk/", "s3.eu-central-1.amazonaws.com": None}
+IMG_MAX_MB, IMG_CACHE_MB = 8, 300
+IMG_STATS = {"hit": 0, "fetch": 0, "error": 0}
+os.makedirs(IMG_DIR, exist_ok=True)
 RECENT = collections.deque(maxlen=300)       # últimas peticiones (también en api.jsonl)
 os.makedirs(LOGDIR, exist_ok=True)
 _loglock = threading.Lock()
@@ -66,6 +71,7 @@ def init():
         c.execute("CREATE TABLE IF NOT EXISTS estado (id TEXT PRIMARY KEY, st TEXT NOT NULL, stF TEXT NOT NULL, by TEXT, ts INTEGER NOT NULL)")
         c.execute("CREATE TABLE IF NOT EXISTS historial (n INTEGER PRIMARY KEY AUTOINCREMENT, id TEXT, st TEXT, stF TEXT, by TEXT, ts INTEGER)")
         c.execute("CREATE TABLE IF NOT EXISTS zonas (zona TEXT PRIMARY KEY, permitida INTEGER NOT NULL, by TEXT, ts INTEGER)")
+        c.execute("CREATE TABLE IF NOT EXISTS ajustes (k TEXT PRIMARY KEY, v TEXT NOT NULL, by TEXT, ts INTEGER)")
         for z, v in ZONAS_DEFAULT.items():
             c.execute("INSERT OR IGNORE INTO zonas (zona, permitida, by, ts) VALUES (?,?,?,?)", (z, v, "", 0))
     write_config()
@@ -73,6 +79,30 @@ def init():
 def all_estados():
     with db() as c:
         return {r[0]: {"st": r[1], "stF": r[2], "by": r[3] or "", "ts": r[4]} for r in c.execute("SELECT id, st, stF, by, ts FROM estado")}
+
+def filtros():
+    """Filtros de búsqueda de Lares (editables desde la web). Por defecto FILTROS."""
+    with db() as c:
+        r = c.execute("SELECT v FROM ajustes WHERE k='filtros'").fetchone()
+    f = dict(FILTROS)
+    if r:
+        try: f.update(json.loads(r[0]))
+        except Exception: pass
+    return f
+
+def validar_filtros(d):
+    f = {}
+    try:
+        f["precio_max"] = int(d["precio_max"]); assert 8000 <= f["precio_max"] <= 40000
+        f["dorm_min"] = int(d["dorm_min"]); assert 1 <= f["dorm_min"] <= 5
+        f["vaer_min"] = f["dorm_min"] + 1
+        for k in ("disp_desde", "disp_hasta"):
+            v = str(d[k]); assert re.match(r"^20\d\d-\d\d-\d\d$", v); f[k] = v
+        assert f["disp_desde"] <= f["disp_hasta"]
+        f["compartir"] = bool(d["compartir"]); f["contrato_largo"] = bool(d["contrato_largo"])
+    except Exception:
+        return None
+    return f
 
 def all_zonas():
     with db() as c:
@@ -82,7 +112,7 @@ def write_config():
     """config.json para Lares: filtros, zonas y pisos que ya tienen estado (no volver a proponerlos)."""
     if not os.path.isdir(BRIDGE):
         log("events", level="error", src="bridge", msg="carpeta compartida no montada"); return
-    cfg = {"actualizado": time.strftime("%Y-%m-%dT%H:%M:%S"), "filtros": FILTROS, "zonas": all_zonas(),
+    cfg = {"actualizado": time.strftime("%Y-%m-%dT%H:%M:%S"), "filtros": filtros(), "zonas": all_zonas(),
            "con_estado": all_estados()}
     fd, tmp = tempfile.mkstemp(dir=BRIDGE, prefix=".config", suffix=".tmp")
     with os.fdopen(fd, "w", encoding="utf-8") as f: json.dump(cfg, f, ensure_ascii=False, indent=1)
@@ -102,11 +132,43 @@ def candidatos():
         out.append({**p, "st": e.get("st", "nuevo"), "stF": e.get("stF"), "by": e.get("by", ""), "ts": e.get("ts")})
     return {"actualizado": c.get("actualizado") if isinstance(c, dict) else None, "pisos": out}
 
-def limited(ip):  # max 30 writes per minute per client
+def img_proxy(u):
+    """Foto de un anuncio desde los portales (con su Referer), cacheada en disco. Devuelve (bytes, content-type)."""
+    pu = urllib.parse.urlparse(u)
+    if pu.scheme != "https" or pu.hostname not in IMG_HOSTS: raise ValueError("host no permitido")
+    if pu.hostname.startswith("s3.") and not pu.path.startswith("/lejeboligdata/"): raise ValueError("ruta no permitida")
+    key = hashlib.sha1(u.encode()).hexdigest(); path = os.path.join(IMG_DIR, key)
+    if os.path.exists(path):
+        IMG_STATS["hit"] += 1
+        with open(path, "rb") as f: data = f.read()
+        ctype = open(path + ".t").read() if os.path.exists(path + ".t") else "image/jpeg"
+        return data, ctype
+    h = {"User-Agent": "Mozilla/5.0 (X11; Linux aarch64) Chrome/131.0", "Accept": "image/avif,image/webp,image/*"}
+    if IMG_HOSTS[pu.hostname]: h["Referer"] = IMG_HOSTS[pu.hostname]
+    r = urllib.request.urlopen(urllib.request.Request(u, headers=h), timeout=20)
+    ctype = r.headers.get("Content-Type", "image/jpeg").split(";")[0]
+    if not ctype.startswith("image/"): raise ValueError(f"no es imagen ({ctype})")
+    data = r.read(IMG_MAX_MB * 1024 * 1024 + 1)
+    if len(data) > IMG_MAX_MB * 1024 * 1024: raise ValueError("imagen demasiado grande")
+    with open(path + ".tmp", "wb") as f: f.write(data)
+    os.replace(path + ".tmp", path); open(path + ".t", "w").write(ctype)
+    IMG_STATS["fetch"] += 1
+    # limpiar caché si pasa del límite (borra las más antiguas)
+    files = [os.path.join(IMG_DIR, x) for x in os.listdir(IMG_DIR) if not x.endswith((".t", ".tmp"))]
+    total = sum(os.path.getsize(x) for x in files)
+    if total > IMG_CACHE_MB * 1024 * 1024:
+        for x in sorted(files, key=os.path.getmtime)[: len(files)//4]:
+            for y in (x, x + ".t"):
+                try: os.remove(y)
+                except OSError: pass
+        log("events", level="info", src="img", msg=f"caché de fotos limpiada ({total//1048576} MB)")
+    return data, ctype
+
+def limited(ip, cap=30):  # max `cap` requests per minute per client/key
     now = time.time()
     with lock:
         q = [t for t in hits.get(ip, []) if now-t < 60]
-        if len(q) >= 30: hits[ip] = q; return True
+        if len(q) >= cap: hits[ip] = q; return True
         q.append(now); hits[ip] = q; return False
 
 class H(BaseHTTPRequestHandler):
@@ -139,8 +201,21 @@ class H(BaseHTTPRequestHandler):
         self.send_response(204); self.cors(); self.send_header("Content-Length", "0"); self.end_headers()
     def do_GET(self):
         if self.path == "/api/health": return self.reply(200, {"ok": True})
+        if self.path.startswith("/api/img?"):
+            ip = self.headers.get("X-Forwarded-For", self.client_address[0]).split(",")[0].strip()
+            if limited("img:"+ip, 120): return self.reply(429, {"error": "too many requests"})
+            u = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query).get("u", [""])[0]
+            try:
+                data, ctype = img_proxy(u)
+            except Exception as e:
+                IMG_STATS["error"] += 1; log("events", level="warn", src="img", msg=f"{type(e).__name__}: {str(e)[:120]} · {u[:90]}")
+                return self.reply(502, {"error": "imagen no disponible"})
+            self.send_response(200); self.cors(); self.send_header("Content-Type", ctype); self.send_header("Content-Length", str(len(data)))
+            self.send_header("Cache-Control", "public, max-age=604800"); self.send_header("X-Content-Type-Options", "nosniff"); self.end_headers()
+            self.wfile.write(data); return
         if self.path == "/api/estados": return self.reply(200, all_estados())
         if self.path == "/api/zonas": return self.reply(200, all_zonas())
+        if self.path == "/api/filtros": return self.reply(200, filtros())
         if self.path == "/api/candidatos": return self.reply(200, candidatos())
         self.reply(404, {"error": "not found"})
     def do_POST(self):
@@ -153,7 +228,7 @@ class H(BaseHTTPRequestHandler):
             except Exception: return self.reply(400, {"error": "bad json"})
             log("client", level=str(d.get("level", "error"))[:10], msg=str(d.get("msg", ""))[:500], where=str(d.get("where", ""))[:200])
             return self.reply(200, {"ok": True})
-        if self.path not in ("/api/estado", "/api/zona"): return self.reply(404, {"error": "not found"})
+        if self.path not in ("/api/estado", "/api/zona", "/api/filtros"): return self.reply(404, {"error": "not found"})
         if KEY and self.headers.get("X-Pisos-Key") != KEY: return self.reply(403, {"error": "forbidden"})
         o = self.headers.get("Origin", "")
         if o and o not in ORIGINS: return self.reply(403, {"error": "origin"})
@@ -166,6 +241,14 @@ class H(BaseHTTPRequestHandler):
         if not isinstance(d, dict): return self.reply(400, {"error": "bad json"})
         by = str(d.get("by", "")).lower()
         if by not in WHO: return self.reply(400, {"error": "bad data"})
+        if self.path == "/api/filtros":
+            f = validar_filtros(d)
+            if f is None: return self.reply(400, {"error": "bad data"})
+            with lock, db() as c:
+                c.execute("INSERT INTO ajustes (k, v, by, ts) VALUES ('filtros',?,?,?) ON CONFLICT(k) DO UPDATE SET v=excluded.v, by=excluded.by, ts=excluded.ts",
+                          (json.dumps(f), by, int(time.time())))
+            write_config(); log("events", level="info", src="filtros", msg=json.dumps(f, ensure_ascii=False), by=by)
+            return self.reply(200, filtros())
         if self.path == "/api/zona":
             z, ok = str(d.get("zona", "")).strip(), d.get("permitida")
             if not ZONA_RE.match(z) or not isinstance(ok, bool): return self.reply(400, {"error": "bad data"})
@@ -258,10 +341,16 @@ def check_api_errors():
     cli = [r for r in tail("client", 100) if time.time() - r.get("t", 0) < 3600]
     return (not errs), f"{len(recent)} peticiones en la última hora · {len(errs)} errores 5xx · {len(cli)} errores de la página"
 
+def check_img():
+    files = [x for x in os.listdir(IMG_DIR) if not x.endswith((".t", ".tmp"))]
+    mb = sum(os.path.getsize(os.path.join(IMG_DIR, x)) for x in files) / 1048576
+    tot = sum(IMG_STATS.values()); err = IMG_STATS["error"]
+    return (tot == 0 or err / tot < 0.3), f"{len(files)} fotos en caché ({mb:.0f} MB) · desde el arranque: {IMG_STATS['hit']} de caché, {IMG_STATS['fetch']} descargadas, {err} errores"
+
 def monitor():
     while True:
         for name, fn in (("funnel_publico", check_funnel), ("web_github", check_site), ("lares_pasadas", check_lares_runs),
-                         ("lares_cron", check_lares_cron), ("buzon_compartido", check_bridge), ("api_errores", check_api_errors)):
+                         ("lares_cron", check_lares_cron), ("buzon_compartido", check_bridge), ("api_errores", check_api_errors), ("fotos", check_img)):
             chk(name, fn)
         time.sleep(300)
 
@@ -289,7 +378,7 @@ class Admin(BaseHTTPRequestHandler):
         if self.path in ("/", "/index.html"):
             return self.send(200, open(os.path.join(os.path.dirname(__file__), "admin.html"), encoding="utf-8").read(), "text/html; charset=utf-8")
         if self.path == "/checknow":
-            threading.Thread(target=lambda: [chk(n, f) for n, f in (("funnel_publico", check_funnel), ("web_github", check_site), ("lares_pasadas", check_lares_runs), ("lares_cron", check_lares_cron), ("buzon_compartido", check_bridge), ("api_errores", check_api_errors))], daemon=True).start()
+            threading.Thread(target=lambda: [chk(n, f) for n, f in (("funnel_publico", check_funnel), ("web_github", check_site), ("lares_pasadas", check_lares_runs), ("lares_cron", check_lares_cron), ("buzon_compartido", check_bridge), ("api_errores", check_api_errors), ("fotos", check_img))], daemon=True).start()
             return self.send(200, '{"ok":true}', "application/json")
         self.send(404, "not found", "text/plain")
 

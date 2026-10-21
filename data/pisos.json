@@ -31,7 +31,9 @@
   "barrio": "Herlev · Bakkekæret",
   "ubic": "edificio nuevo Vasekær 1A–1D (Lejebolig no muestra el número)",
   "st": "gusta",
-  "stF": "2026-10-21"
+  "stF": "2026-10-21",
+  "fotos": [],
+  "fotoPlano": false
  },
  {
   "id": "5436882",
@@ -65,7 +67,24 @@
   "barrio": "Herlev · Bakkekæret",
   "ubic": "exacta (Hørkær 8K)",
   "st": "gusta",
-  "stF": "2026-10-21"
+  "stF": "2026-10-21",
+  "fotos": [
+   "https://image-lambda.boligportal.dk/907dbf0f06fcf043a28f24e510a4f810",
+   "https://image-lambda.boligportal.dk/f0062d5d295d217db5202d48591ee540",
+   "https://image-lambda.boligportal.dk/dc351b4da059903ecfea6ab4deec04d5",
+   "https://image-lambda.boligportal.dk/3beea9887c1afe22b3f1049160710fed",
+   "https://image-lambda.boligportal.dk/92676a373b4f7eaa28c03ab126492746",
+   "https://image-lambda.boligportal.dk/ab22297fd4d94e2ec7fa14916b2a5490",
+   "https://image-lambda.boligportal.dk/9d6ca9913b47bd2409070f28b6125682",
+   "https://image-lambda.boligportal.dk/60a91a527838f738a09859cef424c3c4",
+   "https://image-lambda.boligportal.dk/efbd1a4ddad1b247f15182ad9c00f625",
+   "https://image-lambda.boligportal.dk/b9cb108f4743540abb24520fa7e2a8ac",
+   "https://image-lambda.boligportal.dk/9d7a196926e7bd7e384710aca7056f41",
+   "https://image-lambda.boligportal.dk/aea7cfc390f88b54bb904f4e4a88da47",
+   "https://image-lambda.boligportal.dk/40ed1b8b68c2a540f52002ded5331ef0",
+   "https://image-lambda.boligportal.dk/e95e3a40361486e9fcf07415cfd13dcc"
+  ],
+  "fotoPlano": false
  },
  {
   "id": "1899646",
@@ -99,7 +118,17 @@
   "barrio": "Søborg · Tobaksbyen",
   "ubic": "calle (Rosendal; Lejebolig no muestra el número)",
   "st": "gusta",
-  "stF": "2026-10-21"
+  "stF": "2026-10-21",
+  "fotos": [
+   "https://s3.eu-central-1.amazonaws.com/lejeboligdata/images/lease/1899700/529fa1c3-f140-4854-9442-adb191cf9c8f_large.jpg",
+   "https://s3.eu-central-1.amazonaws.com/lejeboligdata/images/lease/1899700/108d0a02-9aca-42e1-bbd4-6651901835b7_large.jpg",
+   "https://s3.eu-central-1.amazonaws.com/lejeboligdata/images/lease/1899700/1db30184-4e4a-4dab-b7b3-1821165a217f_large.jpg",
+   "https://s3.eu-central-1.amazonaws.com/lejeboligdata/images/lease/1899700/6bdc1389-c53a-4fc7-84e5-cf1cdc2b75aa_large.jpg",
+   "https://s3.eu-central-1.amazonaws.com/lejeboligdata/images/lease/1899700/abd55be3-d1da-48e4-a6af-f5f405955627_large.jpg",
+   "https://s3.eu-central-1.amazonaws.com/lejeboligdata/images/lease/1899700/a1485da5-15cc-4900-a41c-203ec5ba4d76_large.jpg",
+   "https://s3.eu-central-1.amazonaws.com/lejeboligdata/images/lease/1899700/d378817e-1a8d-4893-8ace-edc2ad4ac353_large.jpg"
+  ],
+  "fotoPlano": false
  },
  {
   "id": "5677213",
@@ -133,7 +162,17 @@
   "barrio": "Søborg · Gyngemose",
   "ubic": "exacta (Gyngemose Parkvej 2E)",
   "st": "gusta",
-  "stF": "2026-10-21"
+  "stF": "2026-10-21",
+  "fotos": [
+   "https://image-lambda.boligportal.dk/8754546b8368e6bb42136918cea7e57f",
+   "https://image-lambda.boligportal.dk/2abb587befd01be0f261ac970a0c4492",
+   "https://image-lambda.boligportal.dk/835eca698c922360fffb778b8f82e85c",
+   "https://image-lambda.boligportal.dk/59d57bc6afa98eaf734c71143585fcc7",
+   "https://image-lambda.boligportal.dk/1855d423ef90e8ad6d772d2abed2cc37",
+   "https://image-lambda.boligportal.dk/2dec3d2d4f0e9d67c48a553fb8ff2a0a",
+   "https://image-lambda.boligportal.dk/7a8a84ff40cfe8e54675a9bb106aae72"
+  ],
+  "fotoPlano": true
  },
  {
   "id": "1912010",
@@ -167,7 +206,18 @@
   "barrio": "Søborg · Gyngemose",
   "ubic": "calle (Lejebolig no muestra el número)",
   "st": "gusta",
-  "stF": "2026-10-21"
+  "stF": "2026-10-21",
+  "fotos": [
+   "https://s3.eu-central-1.amazonaws.com/lejeboligdata/images/lease/1912100/bfb5004c-07c9-4da8-afbf-af1be8b422f2_large.jpg",
+   "https://s3.eu-central-1.amazonaws.com/lejeboligdata/images/lease/1912100/91d06b6f-669d-4bb3-98d8-d94c893bd719_large.jpg",
+   "https://s3.eu-central-1.amazonaws.com/lejeboligdata/images/lease/1912100/ce709a55-16b5-4fb2-bd25-a42d44d534b7_large.jpg",
+   "https://s3.eu-central-1.amazonaws.com/lejeboligdata/images/lease/1912100/09de1ae1-d890-4a3c-a14c-dfa0e4ad5ebf_large.jpg",
+   "https://s3.eu-central-1.amazonaws.com/lejeboligdata/images/lease/1912100/3d9ceb30-2d5b-4d98-80cd-d024552ea971_large.jpg",
+   "https://s3.eu-central-1.amazonaws.com/lejeboligdata/images/lease/1912100/bd95cf33-f432-439a-9338-b2438abc1ec3_large.jpg",
+   "https://s3.eu-central-1.amazonaws.com/lejeboligdata/images/lease/1912100/183ccd24-3fc2-4797-a35a-f73ad8b391f5_large.jpg",
+   "https://s3.eu-central-1.amazonaws.com/lejeboligdata/images/lease/1912100/8d9d5490-cb2a-4746-9a72-527c4ce21003_large.jpg"
+  ],
+  "fotoPlano": false
  },
  {
   "id": "1917125",
@@ -201,7 +251,9 @@
   "barrio": "Søborg · Gyngemose",
   "ubic": "calle (Lejebolig no muestra el número)",
   "st": "gusta",
-  "stF": "2026-10-21"
+  "stF": "2026-10-21",
+  "fotos": [],
+  "fotoPlano": false
  },
  {
   "id": "5629725",
@@ -235,7 +287,24 @@
   "barrio": "Sydhavn · Teglholmen",
   "ubic": "exacta (Teglholm Tværvej 6)",
   "st": "gusta",
-  "stF": "2026-10-21"
+  "stF": "2026-10-21",
+  "fotos": [
+   "https://image-lambda.boligportal.dk/1b1e089b628f601f810cd974d9b40f80",
+   "https://image-lambda.boligportal.dk/b75f97b173030bff5b870ae51b521699",
+   "https://image-lambda.boligportal.dk/9a0d22ad6a8eac110cb0e0cdbc072dc9",
+   "https://image-lambda.boligportal.dk/8080887032257b2bdc07a76742f0e3ef",
+   "https://image-lambda.boligportal.dk/3c40b251071c93a1afb737dce9cd6b79",
+   "https://image-lambda.boligportal.dk/acfa9187e45074330d649471fd9467a5",
+   "https://image-lambda.boligportal.dk/48b8513b7b1e7fc7fbae46125c054aae",
+   "https://image-lambda.boligportal.dk/a8dea8439a14c1b28c08ab6a89e2c175",
+   "https://image-lambda.boligportal.dk/12ea477e1df3136c53dbf5423b8624e0",
+   "https://image-lambda.boligportal.dk/c38b4647588df7c2b1acf1319f200653",
+   "https://image-lambda.boligportal.dk/c497e3265a1aaa70c3b3034a0e95c3cb",
+   "https://image-lambda.boligportal.dk/c4f54857333d244e48dd14bc1d43a3a4",
+   "https://image-lambda.boligportal.dk/7d753f2bd5038b3313eb69482caa7997",
+   "https://image-lambda.boligportal.dk/d49a6e83b07bb970a484134e03ca3a56"
+  ],
+  "fotoPlano": false
  },
  {
   "id": "1870169",
@@ -269,7 +338,9 @@
   "barrio": "Lyngby · centro",
   "ubic": "calle (Mortonsvej; anuncio retirado, sin número)",
   "st": "nuevo",
-  "stF": "2026-10-21"
+  "stF": "2026-10-21",
+  "fotos": [],
+  "fotoPlano": false
  },
  {
   "id": "1915064",
@@ -303,7 +374,9 @@
   "barrio": "Sydhavn · Sluseholmen",
   "ubic": "calle (Molestien; anuncio retirado, sin número)",
   "st": "nuevo",
-  "stF": "2026-10-21"
+  "stF": "2026-10-21",
+  "fotos": [],
+  "fotoPlano": false
  },
  {
   "id": "5680524",
@@ -337,7 +410,20 @@
   "barrio": "Sydhavn · Sluseholmen",
   "ubic": "exacta (coordenadas del anuncio)",
   "st": "nuevo",
-  "stF": "2026-10-21"
+  "stF": "2026-10-21",
+  "fotos": [
+   "https://image-lambda.boligportal.dk/e8ab5731dd21108927210eea237a25f7",
+   "https://image-lambda.boligportal.dk/76dcd5a19da5ded7bd14135d61d77490",
+   "https://image-lambda.boligportal.dk/2ed4858820b54ade2e9861b14261cd58",
+   "https://image-lambda.boligportal.dk/d4c9d0368344159f8c74cb23e6daa301",
+   "https://image-lambda.boligportal.dk/62d28d31fb874d582795d709dca73734",
+   "https://image-lambda.boligportal.dk/ff789dc3b1b55cf60d0b558c0a1dab9b",
+   "https://image-lambda.boligportal.dk/da91e7638efdd0c8a2910e8a53af7a23",
+   "https://image-lambda.boligportal.dk/966c060478af1e9851b57e8cb1ea0d97",
+   "https://image-lambda.boligportal.dk/91a2072da25c1f6c6a5dd229b9abb747",
+   "https://image-lambda.boligportal.dk/6ed8b62dea30a9f45dcbb3ce0b09f97e"
+  ],
+  "fotoPlano": true
  },
  {
   "id": "5680537",
@@ -371,7 +457,20 @@
   "barrio": "Brønshøj · Frederikssundsvej",
   "ubic": "exacta (coordenadas del anuncio)",
   "st": "nuevo",
-  "stF": "2026-10-21"
+  "stF": "2026-10-21",
+  "fotos": [
+   "https://image-lambda.boligportal.dk/1bb14a0d0a33113d99edd74ef15652ee",
+   "https://image-lambda.boligportal.dk/9d372a38a9795d3b5ee015ff0ec43d31",
+   "https://image-lambda.boligportal.dk/f62dd388b8ac5ae5f272a6c111e0a2e6",
+   "https://image-lambda.boligportal.dk/7b1d3ca81a2d7c1165aba89fec815f4f",
+   "https://image-lambda.boligportal.dk/a8cae502092c32666da7d2276eceb0e3",
+   "https://image-lambda.boligportal.dk/f30c648c7f16b22cd8d77dc1d6944bbf",
+   "https://image-lambda.boligportal.dk/004f25aecce82bc5b11756074f89a496",
+   "https://image-lambda.boligportal.dk/0fa4d356d1ba06a9c744cf288ebcbb96",
+   "https://image-lambda.boligportal.dk/536c1de9879209b0998c984bbcec62ca",
+   "https://image-lambda.boligportal.dk/1e500e9def326939a9288e8f73cc09d7"
+  ],
+  "fotoPlano": true
  },
  {
   "id": "5680562",
@@ -405,6 +504,23 @@
   "barrio": "Rødovre · Anemonehuset",
   "ubic": "exacta (coordenadas del anuncio)",
   "st": "nuevo",
-  "stF": "2026-10-21"
+  "stF": "2026-10-21",
+  "fotos": [
+   "https://image-lambda.boligportal.dk/6ec86e30969a6b7a64862deed59e1ac0",
+   "https://image-lambda.boligportal.dk/84c194e0c1c8cff62952abb29d5f1a49",
+   "https://image-lambda.boligportal.dk/586209eb961d07308e8def1f613da2fe",
+   "https://image-lambda.boligportal.dk/e90405dc13d172b5120866f75a5d88fd",
+   "https://image-lambda.boligportal.dk/947946ae0d2a834ffca5fddeb91244ce",
+   "https://image-lambda.boligportal.dk/2bcfb642987565a5d830368211324f30",
+   "https://image-lambda.boligportal.dk/de2d475972c123d9f2adfda1f10029f2",
+   "https://image-lambda.boligportal.dk/b37f8ee1ec290c1d5ddae0799f8d3184",
+   "https://image-lambda.boligportal.dk/497b63defce8dfa2cb10cf73dc52fb52",
+   "https://image-lambda.boligportal.dk/e292d15b3a6dbf42d58f6346267c638b",
+   "https://image-lambda.boligportal.dk/961264621b8a20b0f1638f39307f3daf",
+   "https://image-lambda.boligportal.dk/d73fc9fa7d2607b8d600fa7bdfb7c573",
+   "https://image-lambda.boligportal.dk/8d3621ae13ff2cc9cce95a412980c6ad",
+   "https://image-lambda.boligportal.dk/b4b90d1269d10914006b875d2fd4d076"
+  ],
+  "fotoPlano": true
  }
 ]

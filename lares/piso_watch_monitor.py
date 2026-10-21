@@ -183,21 +183,23 @@ def evaluar(item, F, zonas):
         avisos.append("fecha de entrada sin confirmar")
     cm = item.get("contrato_meses")
     txt = item.get("texto", "")
-    if (cm and 0 < cm <= 12) or SHORT.search(txt):
+    if F.get("contrato_largo", True) and ((cm and 0 < cm <= 12) or SHORT.search(txt)):
         return False, f"contrato corto ({cm or '≤12'} meses)", avisos
-    if NO_SHARE.search(txt):
-        return False, "no permite compartir (texto del anuncio)", avisos
-    if not YES_SHARE.search(txt):
-        avisos.append("compartir sin confirmar")
+    if F.get("compartir", True):
+        if NO_SHARE.search(txt):
+            return False, "no permite compartir (texto del anuncio)", avisos
+        if not YES_SHARE.search(txt):
+            avisos.append("compartir sin confirmar")
     pl = item.get("plano_dorm")              # lo escribe Lares (IA) en planos.json tras mirar el plano
+    dmin = int(F.get("dorm_min", 3))
     if isinstance(pl, int):
-        if pl < 3:
+        if pl < dmin:
             return False, f"plano: {pl} dormitorios", avisos
         avisos.append(f"plano revisado: {pl} dormitorios")
     elif item.get("plano"):
         avisos.append("plano pendiente de revisar")
     else:
-        avisos.append("sin plano: 3 dormitorios por confirmar")
+        avisos.append(f"sin plano: {dmin} dormitorios por confirmar")
     return True, None, avisos
 
 
@@ -209,6 +211,7 @@ def main():
     except Exception:
         cfg = {}
     F = {**DEFAULT_FILTROS, **(cfg.get("filtros") or {})}
+    if "dorm_min" in F: F["vaer_min"] = int(F["dorm_min"]) + 1
     zonas = cfg.get("zonas") or {}
     try:   # {"<id>": {"dorm": 3, "nota": "..."}} — revisión de planos hecha por Lares (IA)
         planos = json.loads((BRIDGE / "planos.json").read_text(encoding="utf-8"))
