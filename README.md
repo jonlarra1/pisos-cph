@@ -2,7 +2,11 @@
 
 Mapa (Leaflet + OpenStreetMap) de pisos de alquiler de 3 dormitorios en Copenhague y alrededores, con puntuación, líneas de S-tog/metro/Letbane y la ruta más rápida en transporte público desde cada piso a: Nordic Solar (trabajo, Hellerup), GN (Ballerup) y DTU (Lyngby).
 
-## Ver el mapa
+## Link para compartir
+https://jonlarra1.github.io/pisos-cph/ (GitHub Pages; el link no cambia).
+Para actualizarlo: `git add -A && git commit -m "..." && git push` — en 1–2 min se ve la versión nueva.
+
+## Ver el mapa en local
 ```
 python3 -m http.server 8000   # dentro de esta carpeta
 ```
