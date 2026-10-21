@@ -20,9 +20,22 @@ td,th{padding:6px 10px;border-bottom:1px solid var(--line);text-align:left;verti
 tr.err td{color:var(--bad)}tr.warn td{color:var(--warn)}
 button{border:1px solid var(--line);background:var(--panel);color:var(--fg);border-radius:8px;padding:6px 12px;font:600 13px system-ui;cursor:pointer}
 .wrap{overflow-x:auto}
+.flow{display:grid;grid-template-columns:1fr 260px;gap:10px;align-items:start}
+@media (max-width:820px){.flow{grid-template-columns:1fr}}
+#fsvg{width:100%;height:auto;background:var(--panel);border:1px solid var(--line);border-radius:12px}
+.fside{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:12px;font-size:12.5px;max-height:470px;overflow:auto}
+.fside .d{color:var(--muted);margin:4px 0}.fside ul{margin:6px 0 0;padding-left:16px}.fside li{margin:2px 0}
+.flegend{display:flex;flex-wrap:wrap;gap:14px;font-size:12px;color:var(--muted);margin:6px 0 4px}.flegend i{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:5px}
+.node rect{fill:var(--panel);stroke:var(--c);stroke-width:2.5;rx:10}.node text{fill:var(--fg);font:600 12.5px system-ui}.node .s{fill:var(--muted);font:500 10.5px system-ui}
+.node{cursor:pointer}.node.sel rect{stroke-width:4}.edge{stroke:var(--line);stroke-width:2;fill:none}.edge.hot{stroke:#9aa7a3}
+.flash rect{animation:fl .6s ease-out}@keyframes fl{from{fill:color-mix(in srgb,var(--c) 30%,var(--panel))}}
 </style></head><body><main>
 <div class="top"><div><h1>Estado del sistema · Pisos CPH</h1><p class="sub" id="sub">Cargando…</p></div>
 <div><span class="global" id="global">…</span> <button id="now">Comprobar ahora</button></div></div>
+<h2>Flujo en tiempo real <small style="color:var(--muted);font-weight:500">· cada punto es una petición real de los logs · toca una pieza para ver su detalle</small></h2>
+<div class="flow"><svg id="fsvg" viewBox="0 0 1000 470" role="img" aria-label="Diagrama del sistema"></svg>
+  <div class="fside" id="fside"><b>Toca una pieza</b><p class="d">Verás sus últimas peticiones y su estado.</p></div></div>
+<div class="flegend"><span><i style="background:var(--ok)"></i>petición OK</span><span><i style="background:var(--bad)"></i>error</span><span><i style="background:#7b5ea7"></i>comprobación del monitor</span><span><i style="background:#ee8a12"></i>Lares</span><span id="frate"></span></div>
 <div class="grid" id="grid"></div>
 <h2>Eventos (caídas, recuperaciones, cambios)</h2><div class="wrap"><table id="ev"></table></div>
 <h2>Pasadas de Lares</h2><div class="wrap"><table id="lr"></table></div>
@@ -54,4 +67,74 @@ async function load(){
 }
 document.getElementById("now").onclick=async()=>{await fetch("checknow");setTimeout(load,4000);};
 load(); setInterval(load,15000);
+/* ---------- diagrama del flujo ---------- */
+const N={ // x,y = centro
+ nav:[90,90,"Navegador","Jon · Unai · amigos"], gh:[90,250,"GitHub Pages","web estática"],
+ funnel:[300,90,"Tailscale Funnel",":8443 público"], panel:[300,400,"Panel privado",":9444 / :9445"],
+ api:[520,170,"pisos-api","contenedor Docker"], db:[520,330,"SQLite","estados · zonas · filtros"],
+ img:[740,70,"Caché de fotos","/api/img"], bp:[920,150,"Boligportal","portal"], lb:[920,290,"Lejebolig","portal"],
+ bridge:[740,250,"Buzón compartido","vault/pisos-bridge"], lares:[740,410,"Lares","hermes-gateway · cron 3 h"], mon:[90,400,"Monitor","cada 5 min"]};
+const E=[["nav","gh"],["nav","funnel"],["funnel","api"],["api","db"],["api","img"],["img","bp"],["img","lb"],["api","bridge"],
+ ["lares","bp"],["lares","lb"],["lares","bridge"],["mon","funnel"],["mon","gh"],["mon","bridge"],["mon","lares"],["mon","img"],["mon","api"],["panel","api"]];
+const svg=document.getElementById("fsvg"), NS="http://www.w3.org/2000/svg";
+const el=(t,a,p)=>{const e=document.createElementNS(NS,t);for(const k in a)e.setAttribute(k,a[k]);(p||svg).appendChild(e);return e;};
+const gE=el("g",{}), gD=el("g",{}), gN=el("g",{});
+const edgeEl={}; E.forEach(([a,b])=>{edgeEl[a+">"+b]=edgeEl[b+">"+a]=el("line",{class:"edge",x1:N[a][0],y1:N[a][1],x2:N[b][0],y2:N[b][1]},gE);});
+const nodeEl={}, LOG={}; Object.entries(N).forEach(([k,[x,y,t,sub]])=>{LOG[k]=[];
+  const g=el("g",{class:"node",transform:`translate(${x-82},${y-26})`,"data-n":k},gN); g.style.setProperty("--c","var(--line)");
+  el("rect",{width:164,height:52,rx:10},g); const tt=el("text",{x:12,y:22},g); tt.textContent=t; const ss=el("text",{x:12,y:40,class:"s"},g); ss.textContent=sub;
+  nodeEl[k]={g,ss,sub}; g.addEventListener("click",()=>showNode(k));});
+let selNode=null;
+function showNode(k){selNode=k; Object.values(nodeEl).forEach(n=>n.g.classList.remove("sel")); nodeEl[k].g.classList.add("sel");
+  const L=LOG[k].slice(-20).reverse(), c=lastChecks[NODECHK[k]||""];
+  document.getElementById("fside").innerHTML=`<b>${esc(N[k][2])}</b><p class="d">${esc(N[k][3])}</p>${c?`<p class="d" style="color:${c.ok?"var(--ok)":"var(--bad)"}">${c.ok?"✓":"✗"} ${esc(c.detail)}</p>`:""}
+   <ul>${L.map(x=>`<li style="color:${x.bad?"var(--bad)":"inherit"}">${esc(x.txt)}</li>`).join("")||"<li>Sin actividad reciente</li>"}</ul>`;}
+const NODECHK={funnel:"funnel_publico",gh:"web_github",api:"api_errores",img:"fotos",bridge:"buzon_compartido",lares:"lares_pasadas"};
+let lastChecks={};
+function colorNodes(ch){lastChecks=ch;
+  const st=k=>{const c=ch[k];return !c?"var(--warn)":c.ok?"var(--ok)":"var(--bad)";};
+  const col={funnel:st("funnel_publico"),gh:st("web_github"),api:st("api_errores"),db:st("api_errores"),img:st("fotos"),bridge:st("buzon_compartido"),
+    lares:(ch.lares_pasadas&&ch.lares_cron)?((ch.lares_pasadas.ok&&ch.lares_cron.ok)?"var(--ok)":"var(--bad)"):"var(--warn)",
+    mon:Object.keys(ch).length?"var(--ok)":"var(--warn)",nav:"#7a8a86",panel:"var(--ok)",bp:portalCol.bp,lb:portalCol.lb};
+  for(const k in col)nodeEl[k].g.style.setProperty("--c",col[k]);
+  if(selNode)showNode(selNode);}
+const portalCol={bp:"var(--warn)",lb:"var(--warn)"};
+function note(k,txt,bad){LOG[k].push({txt,bad}); if(LOG[k].length>60)LOG[k].shift(); const n=nodeEl[k]; n.g.classList.remove("flash"); void n.g.getBBox(); n.g.classList.add("flash");}
+const hhmm=t=>new Date(t*1000).toLocaleTimeString().slice(0,8);
+function pathOf(it){
+  if(it.k==="api"){const via=it.via==="funnel"?["nav","funnel"]:["panel"]; const p=it.path||"";
+    if(p.startsWith("/api/img"))return [...via,"api","img",...(String(it.note||"").startsWith("portal:")?[it.note.endsWith("boligportal")?"bp":"lb"]:[])];
+    if(p==="/api/candidatos")return [...via,"api","bridge"];
+    if(it.m==="POST"&&/estado|zona|filtros/.test(p))return [...via,"api","db","bridge"];
+    if(/estados|zonas|filtros/.test(p))return [...via,"api","db"];
+    return [...via,"api"];}
+  if(it.k==="check")return {funnel_publico:["mon","funnel","api"],web_github:["mon","gh"],lares_pasadas:["mon","bridge"],lares_cron:["mon","lares"],buzon_compartido:["mon","bridge"],api_errores:["mon","api"],fotos:["mon","img"]}[it.name]||["mon"];
+  if(it.k==="lares")return ["lares","bp","lares","lb","lares","bridge"];
+  return [];}
+function describe(it){
+  if(it.k==="api")return `${hhmm(it.t)} ${it.m} ${it.path} → ${it.code} (${it.ms} ms)${it.note?" · "+it.note:""}${it.via?" · vía "+it.via:""}`;
+  if(it.k==="check")return `${hhmm(it.t)} comprobación ${it.name}: ${it.ok?"OK":"FALLO"} — ${String(it.detail).slice(0,90)}`;
+  if(it.k==="lares")return `${hhmm(it.t)} pasada de Lares: ${JSON.stringify(it.leidos||{})} · ${it.candidatos??0} candidatos${(it.errores||[]).length?" · errores: "+it.errores.join(", "):""}`;
+  return "";}
+function isBad(it){return it.k==="api"?it.code>=400:it.k==="check"?!it.ok:it.k==="lares"?(it.ok===false||(it.errores||[]).length>0):false;}
+function animate(it,delay){const path=pathOf(it); if(path.length<1)return; const bad=isBad(it), txt=describe(it);
+  const color=bad?"var(--bad)":it.k==="check"?"#7b5ea7":it.k==="lares"?"#ee8a12":"var(--ok)";
+  if(it.k==="lares"){portalCol.bp=(it.leidos||{}).Boligportal>0?"var(--ok)":"var(--bad)"; portalCol.lb=(it.leidos||{}).Lejebolig>0?"var(--ok)":"var(--bad)";}
+  if(it.k==="api"&&String(it.note||"").startsWith("portal:")){const k=it.note.endsWith("boligportal")?"bp":"lb"; portalCol[k]=bad?"var(--bad)":"var(--ok)";}
+  [...new Set(path)].forEach(k=>note(k,txt,bad));
+  setTimeout(()=>{const dot=el("circle",{r:6,fill:color,cx:N[path[0]][0],cy:N[path[0]][1]},gD); let i=0;
+    const seg=()=>{if(i>=path.length-1){dot.remove();return;} const a=N[path[i]],b=N[path[i+1]], ed=edgeEl[path[i]+">"+path[i+1]]; if(ed)ed.classList.add("hot");
+      const t0=performance.now(), dur=420; const step=now=>{const f=Math.min(1,(now-t0)/dur); dot.setAttribute("cx",a[0]+(b[0]-a[0])*f); dot.setAttribute("cy",a[1]+(b[1]-a[1])*f);
+        if(f<1)requestAnimationFrame(step); else{if(ed)setTimeout(()=>ed.classList.remove("hot"),300); i++; seg();}}; requestAnimationFrame(step);};
+    seg();},delay);}
+let since=Date.now()/1000-900, first=true, seen=0;
+async function pollFlow(){try{const r=await fetch("flow?since="+since,{cache:"no-store"}); if(!r.ok)throw 0; const d=await r.json();
+    colorNodes(d.checks||{}); const items=d.items||[];
+    if(first){items.slice(0,-25).forEach(it=>{[...new Set(pathOf(it))].forEach(k=>note(k,describe(it),isBad(it)));}); items.slice(-25).forEach((it,i)=>animate(it,i*180)); first=false;}
+    else items.forEach((it,i)=>animate(it,i*120));
+    if(items.length)since=items[items.length-1].t; seen+=items.length;
+    const recent=Object.values(LOG).flat().length; document.getElementById("frate").textContent=`${seen} eventos en los últimos 15 min + en directo`;
+  }catch(e){Object.values(nodeEl).forEach(n=>n.g.style.setProperty("--c","var(--bad)"));}}
+pollFlow(); setInterval(pollFlow,2500);
+
 </script></body></html>

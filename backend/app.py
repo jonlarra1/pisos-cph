@@ -142,7 +142,7 @@ def img_proxy(u):
         IMG_STATS["hit"] += 1
         with open(path, "rb") as f: data = f.read()
         ctype = open(path + ".t").read() if os.path.exists(path + ".t") else "image/jpeg"
-        return data, ctype
+        return data, ctype, "cache"
     h = {"User-Agent": "Mozilla/5.0 (X11; Linux aarch64) Chrome/131.0", "Accept": "image/avif,image/webp,image/*"}
     if IMG_HOSTS[pu.hostname]: h["Referer"] = IMG_HOSTS[pu.hostname]
     r = urllib.request.urlopen(urllib.request.Request(u, headers=h), timeout=20)
@@ -162,7 +162,7 @@ def img_proxy(u):
                 try: os.remove(y)
                 except OSError: pass
         log("events", level="info", src="img", msg=f"caché de fotos limpiada ({total//1048576} MB)")
-    return data, ctype
+    return data, ctype, "portal:" + ("boligportal" if "boligportal" in pu.hostname else "lejebolig")
 
 def limited(ip, cap=30):  # max `cap` requests per minute per client/key
     now = time.time()
@@ -175,13 +175,13 @@ class H(BaseHTTPRequestHandler):
     server_version = "pisos/1"
     def log_message(self, fmt, *a): pass
     def handle_one_request(self):
-        self._t0 = time.time(); self._code = None
+        self._t0 = time.time(); self._code = None; self._note = ""
         try:
             super().handle_one_request()
         except Exception as e:
             log("events", level="error", src="api", msg=f"{type(e).__name__}: {e}")
         if getattr(self, "command", None) and self._code is not None and self.path != "/api/health":
-            log("api", m=self.command, path=self.path.split("?")[0], code=self._code, ms=round((time.time()-self._t0)*1000),
+            log("api", m=self.command, path=self.path.split("?")[0], code=self._code, ms=round((time.time()-self._t0)*1000), note=self._note,
                 origin=self.headers.get("Origin", "") if self.headers else "", via="funnel" if self.headers and self.headers.get("Tailscale-Funnel-Request") else "")
     def send_response(self, code, message=None):
         self._code = code; super().send_response(code, message)
@@ -206,7 +206,7 @@ class H(BaseHTTPRequestHandler):
             if limited("img:"+ip, 120): return self.reply(429, {"error": "too many requests"})
             u = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query).get("u", [""])[0]
             try:
-                data, ctype = img_proxy(u)
+                data, ctype, self._note = img_proxy(u)
             except ValueError as e:      # petición no válida (host/ruta no permitidos, no es imagen)
                 log("events", level="warn", src="img", msg=f"rechazada: {str(e)[:120]} · {u[:90]}")
                 return self.reply(400, {"error": str(e)[:80]})
@@ -384,6 +384,20 @@ class Admin(BaseHTTPRequestHandler):
             return self.send(200, json.dumps(st, ensure_ascii=False), "application/json; charset=utf-8")
         if self.path in ("/", "/index.html"):
             return self.send(200, open(os.path.join(os.path.dirname(__file__), "admin.html"), encoding="utf-8").read(), "text/html; charset=utf-8")
+        if self.path.startswith("/flow"):
+            q = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
+            since = float(q.get("since", ["0"])[0] or 0)
+            items = [{"k": "api", **r} for r in tail("api", 300) if r.get("t", 0) > since]
+            items += [{"k": "check", **r} for r in tail("checks", 60) if r.get("t", 0) > since]
+            lp = os.path.join(BRIDGE, "lares_runs.jsonl")
+            if os.path.exists(lp):
+                for x in open(lp, encoding="utf-8").read().splitlines()[-20:]:
+                    try:
+                        r = json.loads(x)
+                        if r.get("t", 0) > since: items.append({"k": "lares", **r})
+                    except Exception: pass
+            items.sort(key=lambda r: r.get("t", 0))
+            return self.send(200, json.dumps({"now": time.time(), "checks": CHECKS, "items": items[-400:]}, ensure_ascii=False), "application/json; charset=utf-8")
         if self.path == "/checknow":
             threading.Thread(target=lambda: [chk(n, f) for n, f in (("funnel_publico", check_funnel), ("web_github", check_site), ("lares_pasadas", check_lares_runs), ("lares_cron", check_lares_cron), ("buzon_compartido", check_bridge), ("api_errores", check_api_errors), ("fotos", check_img))], daemon=True).start()
             return self.send(200, '{"ok":true}', "application/json")
