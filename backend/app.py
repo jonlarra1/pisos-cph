@@ -1,6 +1,6 @@
 """Pisos CPH backend: shared flat status (gusta / nuevo / contactado / descartado).
 Python stdlib only. SQLite at /data/pisos.db."""
-import contextlib, json, os, re, sqlite3, threading, time, tempfile, ssl, socket, http.client, urllib.request, urllib.parse, collections, hashlib, gzip, glob, shutil, datetime
+import base64, contextlib, json, os, re, sqlite3, threading, time, tempfile, ssl, socket, http.client, urllib.request, urllib.parse, collections, hashlib, gzip, glob, shutil, datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 DB = os.environ.get("DB_PATH", "/data/pisos.db")
@@ -52,6 +52,13 @@ DAY_CAP = 20_000_000                          # tope por tipo y día (bytes)
 _capped = set()
 
 def _today(): return time.strftime("%Y-%m-%d")
+
+def _txt(path):
+    """Lee un fichero de texto entero y lo cierra."""
+    with open(path, encoding="utf-8") as f: return f.read()
+
+def _put(path, txt):
+    with open(path, "w", encoding="utf-8") as f: f.write(txt)
 
 def log(kind, **kw):
     """Una línea JSON por evento en logs/<kind>/<hoy>.jsonl."""
@@ -116,7 +123,7 @@ def daily_summary(day):
     ms = [r.get("ms", 0) for r in api]
     lares = 0
     try:
-        for x in open(os.path.join(BRIDGE, "lares_runs.jsonl"), encoding="utf-8"):
+        for x in _txt(os.path.join(BRIDGE, "lares_runs.jsonl")).splitlines():
             if x.strip() and json.loads(x).get("ts", "").startswith(day): lares += 1
     except Exception: pass
     return {"dia": day, "peticiones": len(api), "por_ruta": dict(by.most_common(10)),
@@ -236,7 +243,7 @@ def img_proxy(u):
     if os.path.exists(path):
         IMG_STATS["hit"] += 1
         with open(path, "rb") as f: data = f.read()
-        ctype = open(path + ".t").read() if os.path.exists(path + ".t") else "image/jpeg"
+        ctype = _txt(path + ".t") if os.path.exists(path + ".t") else "image/jpeg"
         return data, ctype, "cache"
     h = {"User-Agent": "Mozilla/5.0 (X11; Linux aarch64) Chrome/131.0", "Accept": "image/avif,image/webp,image/*"}
     if IMG_HOSTS[pu.hostname]: h["Referer"] = IMG_HOSTS[pu.hostname]
@@ -246,7 +253,7 @@ def img_proxy(u):
     data = r.read(IMG_MAX_MB * 1024 * 1024 + 1)
     if len(data) > IMG_MAX_MB * 1024 * 1024: raise ValueError("imagen demasiado grande")
     with open(path + ".tmp", "wb") as f: f.write(data)
-    os.replace(path + ".tmp", path); open(path + ".t", "w").write(ctype)
+    os.replace(path + ".tmp", path); _put(path + ".t", ctype)
     IMG_STATS["fetch"] += 1
     # limpiar caché si pasa del límite (borra las más antiguas)
     files = [os.path.join(IMG_DIR, x) for x in os.listdir(IMG_DIR) if not x.endswith((".t", ".tmp"))]
@@ -622,20 +629,57 @@ def check_funnel():
     head = data.split(b"\r\n", 1)[0].decode(errors="replace")
     return (" 200 " in head and b'"ok": true' in data), f"{head} vía {ips[0]}"
 
+_SITE_CACHE = {"hash": None, "sin_rutas": [], "sri_t": 0, "sri_mal": []}
+
+def _get(url, timeout=15):
+    with urllib.request.urlopen(urllib.request.Request(url, headers={"User-Agent": "pisos-monitor"}), timeout=timeout) as r:
+        return r.status, r.read()
+
 def check_site():
-    r = urllib.request.urlopen(urllib.request.Request(SITE + f"?chk={int(time.time())}", headers={"User-Agent": "pisos-monitor"}), timeout=15)
-    body = r.read().decode("utf-8", "replace")
+    """La web publicada: responde, trae los datos, cada piso tiene rutas, tiene CSP y los scripts del CDN
+    siguen coincidiendo con su huella SRI (si no, el navegador los bloquea y el mapa no carga)."""
+    st, raw = _get(SITE + f"?chk={int(time.time())}"); body = raw.decode("utf-8", "replace")
+    js = body
+    if 'src="app.js"' in body:                                # JavaScript en su propio fichero
+        st2, raw2 = _get(SITE + f"app.js?chk={int(time.time())}"); js = raw2.decode("utf-8", "replace")
+        if st2 != 200: return False, f"app.js: HTTP {st2}"
+    problemas = []
     for k, name in (("pisos", "PISOS"), ("out", "OUT")):      # listas del mapa para el contador del panel
-        m = re.search(r"const %s = (\[.*?\]);\n" % name, body, re.S)
+        m = re.search(r"const %s = (\[.*?\]);\n" % name, js, re.S)
         if m:
             try: SITE_DATA[k] = json.loads(m.group(1))
-            except ValueError: pass
-    return (r.status == 200 and "const RUTAS" in body and "const PISOS" in body), f"HTTP {r.status}, {len(body)//1024} KB"
+            except ValueError: problemas.append(f"{name} no es JSON válido")
+        else: problemas.append(f"falta {name}")
+    h = hashlib.sha1(js.encode()).hexdigest()
+    if h != _SITE_CACHE["hash"]:                              # solo se analizan las rutas cuando cambia la web
+        _SITE_CACHE["hash"] = h; _SITE_CACHE["sin_rutas"] = []
+        m = re.search(r"^const RUTAS=(.*);$", js, re.M)
+        if not m: problemas.append("falta RUTAS")
+        else:
+            try:
+                ix = json.loads(m.group(1))["ix"]
+                con = {fid for mo in ix.values() for d in mo.values() for t in d.values() for l in t.values() for fid in l}
+                _SITE_CACHE["sin_rutas"] = [str(p.get("id")) for p in SITE_DATA.get("pisos", []) if str(p.get("id")) not in con]
+            except (ValueError, KeyError, AttributeError) as e: problemas.append(f"RUTAS ilegible ({type(e).__name__})")
+    if _SITE_CACHE["sin_rutas"]: problemas.append("pisos sin rutas: " + ", ".join(_SITE_CACHE["sin_rutas"][:5]))
+    if 'http-equiv="Content-Security-Policy"' not in body: problemas.append("sin CSP")
+    if time.time() - _SITE_CACHE["sri_t"] > 3600:             # scripts del CDN: como mucho una vez por hora
+        _SITE_CACHE["sri_t"] = time.time(); mal = []
+        for src, integ in re.findall(r'<script src="(https://[^"]+)" integrity="(sha384-[^"]+)"', body):
+            try:
+                _, b = _get(src)
+                if "sha384-" + base64.b64encode(hashlib.sha384(b).digest()).decode() != integ: mal.append(src.rsplit("/", 1)[-1])
+            except Exception as e: mal.append(f"{src.rsplit('/', 1)[-1]} ({type(e).__name__})")
+        _SITE_CACHE["sri_mal"] = mal
+    if _SITE_CACHE["sri_mal"]: problemas.append("el CDN cambió (SRI no coincide, el mapa no cargaría): " + ", ".join(_SITE_CACHE["sri_mal"]))
+    ok = st == 200 and not problemas
+    det = f"HTTP {st}, {len(raw)//1024} KB, {len(SITE_DATA.get('pisos', []))} pisos" + (" · " + " · ".join(problemas) if problemas else " · todos con rutas, CSP y SRI bien")
+    return ok, det
 
 def check_lares_runs():
     path = os.path.join(BRIDGE, "lares_runs.jsonl")
     try:
-        last = json.loads(open(path, encoding="utf-8").read().strip().splitlines()[-1])
+        last = json.loads(_txt(path).strip().splitlines()[-1])
     except FileNotFoundError:
         return False, "Lares aún no ha registrado ninguna pasada (lares_runs.jsonl no existe)"
     age = (time.time() - last.get("t", 0)) / 3600
@@ -645,7 +689,7 @@ def check_lares_runs():
 
 def check_lares_cron():
     """Estado de las tareas de pisos de Lares, que Lares copia al buzón en cada pasada (lares_cron.json)."""
-    d = json.load(open(os.path.join(BRIDGE, "lares_cron.json"), encoding="utf-8"))
+    d = json.loads(_txt(os.path.join(BRIDGE, "lares_cron.json")))
     jobs = d.get("jobs", [])
     out, ok = [], True
     for j in jobs:
@@ -737,7 +781,7 @@ class Admin(BaseHTTPRequestHandler):
         if self.path.startswith("/status"):
             st = {"ahora": time.strftime("%Y-%m-%dT%H:%M:%S%z"), "uptime_h": round((time.time()-STARTED)/3600, 2),
                   "checks": CHECKS, "eventos": tail("events", 60)[::-1], "api": tail("api", 80)[::-1], "cliente": tail("client", 30)[::-1],
-                  "lares": [json.loads(x) for x in (open(os.path.join(BRIDGE, "lares_runs.jsonl"), encoding="utf-8").read().splitlines()[-15:] if os.path.exists(os.path.join(BRIDGE, "lares_runs.jsonl")) else []) if x.strip()][::-1],
+                  "lares": [json.loads(x) for x in (_txt(os.path.join(BRIDGE, "lares_runs.jsonl")).splitlines()[-15:] if os.path.exists(os.path.join(BRIDGE, "lares_runs.jsonl")) else []) if x.strip()][::-1],
                   "listas": listas(),
                   "tiempo_real": {"abiertas": SSE["n"], "max": SSE_MAX, "desde_arranque": SSE["total"], "rechazadas": SSE["rechazadas"]},
                   "usuario": self.headers.get("Tailscale-User-Login", "") or "acceso por IP de Tailscale"}
@@ -751,7 +795,7 @@ class Admin(BaseHTTPRequestHandler):
             items += [{"k": "check", **r} for h in CHECK_HIST.values() for r in h if r.get("t", 0) > since]
             lp = os.path.join(BRIDGE, "lares_runs.jsonl")
             if os.path.exists(lp):
-                for x in open(lp, encoding="utf-8").read().splitlines()[-20:]:
+                for x in _txt(lp).splitlines()[-20:]:
                     try:
                         r = json.loads(x)
                         if r.get("t", 0) > since: items.append({"k": "lares", **r})
@@ -759,14 +803,14 @@ class Admin(BaseHTTPRequestHandler):
             items.sort(key=lambda r: r.get("t", 0))
             return self.send(200, json.dumps({"now": time.time(), "checks": CHECKS, "items": items[-400:]}, ensure_ascii=False), "application/json; charset=utf-8")
         if self.path == "/checknow":
-            threading.Thread(target=lambda: [chk(n, f) for n, f in (("funnel_publico", check_funnel), ("web_github", check_site), ("lares_pasadas", check_lares_runs), ("lares_cron", check_lares_cron), ("buzon_compartido", check_bridge), ("api_errores", check_api_errors), ("fotos", check_img), ("almacenamiento", check_storage), ("aislamiento_red", check_isolation))], daemon=True).start()
+            threading.Thread(target=lambda: [chk(n, f) for n, f in (("funnel_publico", check_funnel), ("web_github", check_site), ("lares_pasadas", check_lares_runs), ("lares_cron", check_lares_cron), ("buzon_compartido", check_bridge), ("api_errores", check_api_errors), ("fotos", check_img), ("almacenamiento", check_storage), ("aislamiento_red", check_isolation), ("motor_rutas", check_rutas))], daemon=True).start()
             return self.send(200, '{"ok":true}', "application/json")
         self.send(404, "not found", "text/plain")
 
 if __name__ == "__main__":
     migrate_old_logs()
     try:
-        for k, v in json.load(open(os.path.join(LOGDIR, "checks_recientes.json"), encoding="utf-8")).items():
+        for k, v in json.loads(_txt(os.path.join(LOGDIR, "checks_recientes.json"))).items():
             CHECK_HIST[k].extend(v[-10:]); CHECKS[k] = v[-1]
     except Exception: pass
     init()
