@@ -5,7 +5,7 @@ Corre en el cron de Lares cada 3 h, sin LLM. Pasos:
  1. Lee config.json del buzón compartido con el mapa (pisos-bridge/): filtros, zonas
     permitidas (editables desde la web) y pisos que ya tienen estado.
  2. Lee el mapa publicado (pisos.json + descartados.json en GitHub Pages) para no repetir.
- 3. Descarga los listados de Lejebolig y Boligportal (una página cada uno) y, solo para los
+ 3. Descarga los listados de Lejebolig y Boligportal (páginas adaptativas, ver PAGINAS) y, solo para los
     que pasan el primer filtro, abre la ficha (máx. MAX_DETAIL por pasada, con caché).
  4. Aplica los filtros en código y escribe:
       candidatos.json  -> los que pasan (el mapa los muestra como «Propuestos por Lares»)
@@ -18,14 +18,19 @@ from html import unescape
 from pathlib import Path
 
 UA = "Mozilla/5.0 (X11; Linux aarch64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0 Safari/537.36"
-BASE = Path("/opt/data/vault/Vivienda/piso-watch")
-BRIDGE = Path("/opt/data/vault/Vivienda/pisos-bridge")
+BASE = Path(os.environ.get("PISO_WATCH_BASE", "/opt/data/vault/Vivienda/piso-watch"))      # variables solo para los tests
+BRIDGE = Path(os.environ.get("PISOS_BRIDGE", "/opt/data/vault/Vivienda/pisos-bridge"))
 DB = BASE / "pisos.db"
 MAP_URLS = ["https://jonlarra1.github.io/pisos-cph/data/pisos.json",
             "https://jonlarra1.github.io/pisos-cph/data/descartados.json"]
-# Los portales ordenan por más nuevo; se leen pocas páginas (5 peticiones por pasada).
-LEJEBOLIG_URLS = ["https://en.lejebolig.dk/lejeboliger/koebenhavn", "https://en.lejebolig.dk/lejeboliger/koebenhavn?page=2"]
-BOLIGPORTAL_URLS = [f"https://www.boligportal.dk/lejligheder/k%C3%B8benhavn/?max_monthly_rent=23000&offset={o}" for o in (0, 18, 36)]
+# Los portales ordenan por más nuevo. Páginas adaptativas: como mínimo MIN_PAGES (lo de siempre) y se sigue
+# mientras salgan anuncios que Lares no ha visto nunca, hasta MAX_PAGES. Con pasadas cada 3 h casi siempre
+# se para en el mínimo; si un día entran muchos anuncios, no se pierden los que bajan de página.
+PAGINAS = {   # portal: (url de la página i, mínimo, máximo)
+    "lejebolig": (lambda i: "https://en.lejebolig.dk/lejeboliger/koebenhavn" + (f"?page={i+1}" if i else ""), 2, 6),
+    "boligportal": (lambda i: f"https://www.boligportal.dk/lejligheder/k%C3%B8benhavn/?max_monthly_rent=23000&offset={18*i}", 3, 8),
+}
+RECUERDO_DIAS = 7                    # un candidato que ya no sale en las páginas leídas se sigue proponiendo estos días
 MAX_DETAIL = 8                       # fichas abiertas por pasada (ritmo suave)
 DEFAULT_FILTROS = {"precio_max": 23000, "vaer_min": 4, "disp_desde": "2026-12-18", "disp_hasta": "2027-01-15"}
 BASE.mkdir(parents=True, exist_ok=True)
@@ -239,20 +244,25 @@ def main():
         except Exception:
             pass
 
-    listings, errors = {}, []
-    import time
-    for name, urls, parser in (("lejebolig", LEJEBOLIG_URLS, parse_lejebolig), ("boligportal", BOLIGPORTAL_URLS, parse_boligportal)):
-        for url in urls:
-            try:
-                listings.update(parser(fetch(url)))
-            except Exception as e:
-                errors.append(f"{name}: {type(e).__name__}"); break
-            time.sleep(2)
-
     con = sqlite3.connect(DB)
     con.execute("CREATE TABLE IF NOT EXISTS v2_detalle (id TEXT PRIMARY KEY, data TEXT, ts TEXT)")
     con.execute("CREATE TABLE IF NOT EXISTS v2_eval (id TEXT PRIMARY KEY, portal TEXT, link TEXT, ok INTEGER, motivo TEXT, "
                 "item TEXT, first_seen TEXT, last_seen TEXT, avisado INTEGER DEFAULT 0)")
+    vistos_antes = {r[0] for r in con.execute("SELECT id FROM v2_eval")} | known
+
+    listings, errors, paginas = {}, [], {}
+    import time
+    for name, parser in (("lejebolig", parse_lejebolig), ("boligportal", parse_boligportal)):
+        url_de, minimo, maximo = PAGINAS[name]
+        for i in range(maximo):
+            try:
+                page = parser(fetch(url_de(i)))
+            except Exception as e:
+                errors.append(f"{name}: {type(e).__name__}"); break
+            listings.update(page); paginas[name] = i + 1
+            time.sleep(2)
+            if not page: break                                   # se acabaron los anuncios
+            if i + 1 >= minimo and not (set(page) - vistos_antes): break   # todo lo de esta página ya lo conocíamos
     cache = {r[0]: json.loads(r[1]) for r in con.execute("SELECT id, data FROM v2_detalle")}
 
     budget = MAX_DETAIL
@@ -286,6 +296,17 @@ def main():
                 con.execute("UPDATE v2_eval SET avisado=1 WHERE id=?", (lid,))
         else:
             rech.append({**out, "motivo": motivo})
+    # candidatos de pasadas anteriores que ya no salen en las páginas leídas: se siguen proponiendo unos días
+    limite = (datetime.now(timezone.utc).timestamp() - RECUERDO_DIAS * 86400)
+    for lid, item, last in con.execute("SELECT id, item, last_seen FROM v2_eval WHERE ok=1"):
+        if lid in listings or lid in known: continue
+        try:
+            if datetime.fromisoformat(last).timestamp() < limite: continue
+            it = json.loads(item)
+        except Exception:
+            continue
+        it["avisos"] = [a for a in (it.get("avisos") or []) if not a.startswith("no visto desde")] + [f"no visto desde {last[:10]} (ya no sale en las primeras páginas)"]
+        cands.append(it)
     con.commit()
     historial(con, now)
     con.close()
@@ -296,7 +317,7 @@ def main():
 
     leidos = {}
     for it in listings.values(): leidos[it["portal"]] = leidos.get(it["portal"], 0) + 1
-    STATS.update(leidos=leidos, candidatos=len(cands), nuevos=len(nuevos), rechazados=len(rech), errores=errors,
+    STATS.update(leidos=leidos, paginas=paginas, candidatos=len(cands), nuevos=len(nuevos), rechazados=len(rech), errores=errors,
                  fichas_abiertas=MAX_DETAIL-budget, mapa_conocidos=len(known))
     for n in nuevos:
         print(f"NUEVO | {n['zona']} | {n['precio']} kr/mes | {n['m2'] or '?'} m², {n['vaer'] or '?'} vær. | "
