@@ -1314,8 +1314,10 @@ L.marker(WORK.ll,{icon:L.divIcon({className:"",html:'<div class="work">Nordic So
  .bindTooltip(WORK.name,{direction:"top",offset:[0,-14]}).addTo(map);
 
 const barLayer=L.layerGroup().addTo(map), barLbl=L.layerGroup();
+const BLBL={};   /* etiqueta de cada grupo de pisos; solo se ve si el grupo tiene algún piso visible (filtros de Visualización) */
 BORD.forEach(b=>{const t=BST[b];
-  L.marker(t.c,{interactive:false,icon:L.divIcon({className:"brr",html:`<span style="border-color:${BCOL[b]}">${esc(b)}</span>`,iconSize:null,iconAnchor:[0,-26]})}).addTo(barLbl);});
+  BLBL[b]=L.marker(t.c,{interactive:false,icon:L.divIcon({className:"brr",html:`<span style="border-color:${BCOL[b]}">${esc(b)}</span>`,iconSize:null,iconAnchor:[0,-26]})}).addTo(barLbl);});
+function updBarLbl(){BORD.forEach(b=>{const on=BAR[b].some(visible); on?barLbl.addLayer(BLBL[b]):barLbl.removeLayer(BLBL[b]);});}
 const markers={};
 /* ---------- rutas ---------- */
 const DSHORT={gn:"GN",ns:"Nordic Solar (trabajo)",dtu:"DTU"};
@@ -1709,7 +1711,7 @@ function renderChips(){
 }
 function applyFilter(fit){ if(typeof saveUI==="function")saveUI();
   PISOS.forEach(p=>visible(p)?markers[p.id].addTo(map):markers[p.id].remove());
-  renderChips();renderList();
+  updBarLbl(); renderChips();renderList();
   if(fit){const v=PISOS.filter(visible);const pts=v.map(p=>[p.lat,p.lon]);
     if(zsel.size===0)pts.push(WORK.ll);
     if(pts.length)map.flyToBounds(L.latLngBounds(pts).pad(.25),{maxZoom:14,duration:.6});}
@@ -1944,7 +1946,7 @@ function renderShow(){document.getElementById("showst").innerHTML=Object.entries
   const off=Object.keys(SHOW).filter(k=>!SHOW[k]).length; document.getElementById("more-s").textContent=(zsel.size?`· ${zsel.size} barrio${zsel.size>1?"s":""} `:"")+(off?`· ${off} oculto${off>1?"s":""}`:"");}
 document.getElementById("showst").addEventListener("click",e=>{const b=e.target.closest("[data-show]"); if(!b)return; const k=b.dataset.show; SHOW[k]=!SHOW[k];
   if(k==="nuevo"){SHOW.nuevo?candLayer.addTo(map):candLayer.remove();} renderShow(); applyFilter(false); saveUI();});
-renderShow(); if(!SHOW.nuevo)candLayer.remove();
+renderShow(); if(!SHOW.nuevo)candLayer.remove(); updBarLbl();
 {const ck=document.getElementById("barr-ck"); ck.checked=barriosOn; ck.addEventListener("change",()=>showBarrios(ck.checked));}
 /* ---------- búsqueda de Lares: filtros guardados en la Pi ---------- */
 let FB=null;
