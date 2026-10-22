@@ -1,7 +1,7 @@
 """Tests del vigilante de Lares (lares/piso_watch_monitor.py) sin internet: los portales se simulan.
     python3 -m unittest tests.test_lares -v
 """
-import importlib.util, json, os, sqlite3, sys, tempfile, unittest
+import contextlib, importlib.util, io, json, os, sqlite3, sys, tempfile, unittest
 from datetime import datetime, timedelta, timezone
 from unittest import mock
 
@@ -44,7 +44,8 @@ class Pasada:
         with mock.patch.object(self.m, "fetch", self.fetch), \
              mock.patch.object(self.m, "parse_boligportal", self.parser("boligportal")), \
              mock.patch.object(self.m, "parse_lejebolig", self.parser("lejebolig")), \
-             mock.patch.object(self.m, "detalle", lambda it: {}), mock.patch("time.sleep"):
+             mock.patch.object(self.m, "detalle", lambda it: {}), mock.patch("time.sleep"), \
+             contextlib.redirect_stdout(io.StringIO()) as self.salida:          # las líneas «NUEVO |…» que lee Lares
             self.m.STATS.clear(); self.m.main()
         return json.loads((self.m.BRIDGE / "candidatos.json").read_text(encoding="utf-8"))
 
