@@ -1,16 +1,16 @@
 #!/usr/bin/env bash
 # Tests rápidos de pisos-cph.
-#   ./tests/run.sh               backend + datos (~1 s, sin internet)
+#   ./tests/run.sh               backend + datos + Lares (~4 s, sin internet)
 #   ./tests/run.sh web           además la web en Chromium (~30 s)
 #   ./tests/run.sh -k estado     solo los tests cuyo nombre contiene «estado» (en todos los ficheros)
 set -euo pipefail
 cd "$(dirname "$0")/.."
 PY=python3; [ -x .venv/bin/python ] && PY=.venv/bin/python
-mods=(tests.test_backend tests.test_datos)
+mods=(tests.test_backend tests.test_datos tests.test_lares)
 args=()
 for a in "$@"; do
   if [ "$a" = "web" ]; then mods+=(tests.test_web); else args+=("$a"); fi
 done
 # con -k se buscan en todos los ficheros, también los de la web
-if [[ " ${args[*]-} " == *" -k "* ]]; then mods=(tests.test_backend tests.test_datos tests.test_web); fi
+if [[ " ${args[*]-} " == *" -k "* ]]; then mods=(tests.test_backend tests.test_datos tests.test_lares tests.test_web); fi
 exec "$PY" -m unittest "${mods[@]}" ${args[@]+"${args[@]}"}
