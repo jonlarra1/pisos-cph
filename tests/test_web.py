@@ -52,8 +52,10 @@ class Web(unittest.TestCase):
     def tearDownClass(cls):
         cls.browser.close(); cls.pw.stop(); cls.httpd.shutdown(); cls.httpd.server_close()
 
+    INIT = ""                                       # JS que se ejecuta antes de cargar (p. ej. localStorage)
     def setUp(self):
         self.ctx = self.browser.new_context(viewport={"width": 1400, "height": 900})
+        if self.INIT: self.ctx.add_init_script(self.INIT)
         self.page = self.ctx.new_page()
         self.errores, self.posts, self.alerts = [], [], []
         self.page.on("pageerror", lambda e: self.errores.append(str(e)))
@@ -80,6 +82,12 @@ class Web(unittest.TestCase):
             sse = getattr(self, "sse", None)
             if sse is None: return route.fulfill(status=404, headers=self.cors(), json={"error": "not found"})
             return route.fulfill(status=200, headers={**self.cors(), "Content-Type": "text/event-stream"}, body=sse)
+        if path == "/api/ruta":                     # motor de rutas simulado (o caído si self.ruta_caida)
+            if getattr(self, "ruta_caida", False): return route.fulfill(status=503, headers=self.cors(), json={"error": "motor no disponible"})
+            return route.fulfill(status=200, headers=self.cors(), json={"opciones": [{"min": 23, "sale": "08:04", "llega": "08:27", "trans": 1, "legs": [
+                {"m": "walk", "min": 8, "d": 600, "to": "Enghave Brygge St.", "path": [[55.649, 12.553], [55.653, 12.556]]},
+                {"m": "Metro", "line": "M4", "head": "Orientkaj", "from": "Enghave Brygge St.", "to": "København H", "dep": "08:12", "arr": "08:16", "n": 2, "path": [[55.653, 12.556], [55.672, 12.564]]},
+                {"m": "walk", "min": 11, "d": 800, "to": "Cris", "path": [[55.672, 12.564], [55.6935, 12.548]]}]}]})
         if path == "/api/img": return route.fulfill(status=200, headers=self.cors(), content_type="image/png", body=PNG)
         if path in FAKE: return route.fulfill(status=200, headers=self.cors(), json=FAKE[path])
         route.fulfill(status=404, headers=self.cors(), json={"error": "not found"})
@@ -194,6 +202,43 @@ class TestTiempoRealPi(Web):
         self.esperar("CANDS.length===1", 5000)
         self.js("window._c=CANDS"); self.js("pullCandidatos()"); self.page.wait_for_timeout(500)
         self.assertTrue(self.js("CANDS===window._c"), "se sustituyeron los propuestos aunque no cambiaron")
+
+
+class TestDestinoAnadido(Web):
+    INIT = "localStorage.setItem('destinos', JSON.stringify([{id:'xcris',n:'Cris',addr:'Nørrebrogade',ll:[55.6935,12.548],who:'unai'}]));"
+    def abrir(self):
+        pid = self.js("PISOS[0].id"); self.js("id=>{select(id,false); showPiso(id);}", pid); return pid
+    def test_transporte_de_la_pi(self):
+        pid = self.abrir()
+        self.esperar(f"RTS('{pid}','xcris-unai').length===1")
+        self.page.wait_for_timeout(300)
+        txt = self.page.inner_text("#sheet"); self.assertIn("M4", txt); self.assertIn("23 min", txt)
+        self.js(f"drawRoute('{pid}','xcris-unai',false)")                 # dibujar con los trazados de la respuesta
+    def test_si_la_pi_falla_queda_solo_andando(self):
+        self.ruta_caida = True; pid = self.abrir()
+        self.esperar("Object.values(TP).some(v=>v===null)")
+        self.page.wait_for_timeout(300)
+        self.assertEqual(self.js(f"RTS('{pid}','xcris-unai').length"), 0)
+        self.assertIn("sin transporte para esta hora", self.page.inner_text("#sheet"))
+
+
+class TestQuien(Web):
+    def test_lista_muestra_quien(self):
+        pid = self.js("PISOS[0].id")
+        self.js("id=>applyRemote({[id]:{st:'gusta',stF:'2026-10-23',by:'unai',ts:2}})", pid); self.js("renderList()")
+        self.assertIn("🔵 Unai", self.page.inner_text("#list"))
+    def test_pregunta_quien_eres_y_lo_guarda(self):
+        self.js("YO=''"); pid = self.js("PISOS.find(p=>p.st!=='contactado').id")
+        self.js("id=>{setEstado(id,'contactado')}", pid)
+        self.page.wait_for_selector("#quiensoy"); self.page.click("#quiensoy [data-soy='unai']")
+        self.esperar("YO==='unai'"); self.page.wait_for_timeout(300)
+        self.assertIn(("/api/estado", pid, "contactado", "unai"), [(p, d["id"], d["st"], d.get("by")) for p, d in self.posts])
+    def test_cancelar_no_cambia_nada(self):
+        self.js("YO=''"); pid = self.js("PISOS.find(p=>p.st!=='contactado').id"); antes = self.js("id=>PISOS.find(p=>p.id===id).st", pid)
+        self.js("id=>{setEstado(id,'contactado')}", pid)
+        self.page.wait_for_selector("#quiensoy"); self.page.click("#quiensoy [data-soy='']")
+        self.page.wait_for_timeout(300)
+        self.assertEqual(self.js("id=>PISOS.find(p=>p.id===id).st", pid), antes); self.assertEqual(self.posts, [])
 
 
 if __name__ == "__main__":
