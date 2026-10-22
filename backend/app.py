@@ -1,6 +1,6 @@
 """Pisos CPH backend: shared flat status (gusta / nuevo / contactado / descartado).
 Python stdlib only. SQLite at /data/pisos.db."""
-import json, os, re, sqlite3, threading, time, tempfile, ssl, socket, http.client, urllib.request, urllib.parse, collections, hashlib, gzip, glob, shutil, datetime
+import contextlib, json, os, re, sqlite3, threading, time, tempfile, ssl, socket, http.client, urllib.request, urllib.parse, collections, hashlib, gzip, glob, shutil, datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 DB = os.environ.get("DB_PATH", "/data/pisos.db")
@@ -149,10 +149,15 @@ def housekeeper():
         except Exception as e: log("events", level="error", src="logs", msg=f"housekeeping: {type(e).__name__}: {e}")
         time.sleep(3600)
 
+@contextlib.contextmanager
 def db():
+    """Conexión a SQLite: confirma (o deshace si hay error) y SIEMPRE la cierra al salir del `with`."""
     c = sqlite3.connect(DB, timeout=10)
-    c.execute("PRAGMA journal_mode=WAL")
-    return c
+    try:
+        c.execute("PRAGMA journal_mode=WAL")
+        with c: yield c
+    finally:
+        c.close()
 
 def init():
     with db() as c:
