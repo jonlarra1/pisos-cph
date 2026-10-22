@@ -169,7 +169,7 @@ async function load(){
   const ch=Object.values(st.checks), bad=ch.filter(c=>!c.ok);
   const g=document.getElementById("global"); g.style.background=!ch.length?"var(--warn)":bad.length?"var(--bad)":"var(--ok)";
   g.textContent=!ch.length?"Comprobando…":bad.length?`⚠ ${bad.length} con problemas: ${bad.map(c=>c.name).join(", ")}`:"✓ Todo funciona";
-  document.getElementById("sub").textContent=`Backend en marcha desde hace ${st.uptime_h} h · ${st.usuario||""} · actualizado ${new Date().toLocaleTimeString()}`;
+  const rt=st.tiempo_real; document.getElementById("sub").textContent=`Backend en marcha desde hace ${st.uptime_h} h · ${st.usuario||""}`+(rt?` · tiempo real: ${rt.abiertas}/${rt.max} conexiones abiertas (${rt.desde_arranque} desde el arranque${rt.rechazadas?`, ${rt.rechazadas} rechazadas por estar lleno`:""})`:"")+` · actualizado ${new Date().toLocaleTimeString()}`;
   drawListas(st.listas);
   const rows=(id,head,list,fn)=>{document.getElementById(id).innerHTML=`<tr>${head.map(h=>`<th>${h}</th>`).join("")}</tr>`+(list.length?list.map(fn).join(""):`<tr><td colspan="${head.length}" style="color:var(--muted)">Sin datos</td></tr>`);};
   rows("ev",["Hora","Origen","Nivel","Mensaje"],st.eventos,e=>`<tr class="${e.level==="error"?"err":e.level==="warn"?"warn":""}"><td>${esc((e.ts||"").slice(5,19).replace("T"," "))}</td><td>${esc(e.src)}</td><td>${esc(e.level)}</td><td>${esc(e.msg)}${e.by?` · ${esc(e.by)}`:""}</td></tr>`);
