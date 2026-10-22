@@ -50,7 +50,7 @@ class Web(unittest.TestCase):
 
     @classmethod
     def tearDownClass(cls):
-        cls.browser.close(); cls.pw.stop(); cls.httpd.shutdown()
+        cls.browser.close(); cls.pw.stop(); cls.httpd.shutdown(); cls.httpd.server_close()
 
     def setUp(self):
         self.ctx = self.browser.new_context(viewport={"width": 1400, "height": 900})

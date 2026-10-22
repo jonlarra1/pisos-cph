@@ -19,6 +19,10 @@ app.SSE_PING = 0.2                                   # en tests, las conexiones 
 ORIGIN = "https://jonlarra1.github.io"
 
 
+def tearDownModule():
+    if Servidor.srv: Servidor.srv.shutdown(); Servidor.srv.server_close()
+
+
 class Servidor:
     """API real en un puerto libre de 127.0.0.1, una vez para todos los tests."""
     srv = None

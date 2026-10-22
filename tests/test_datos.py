@@ -1,7 +1,7 @@
 """Tests de coherencia de los datos del mapa (data/*.json e index.html). Sin internet, ~1 s.
     python3 -m unittest tests.test_datos.TestRutas -v
 """
-import json, os, re, unittest, urllib.parse
+import json, os, re, sys, unittest, urllib.parse
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 def leer(*p):
@@ -16,11 +16,14 @@ PORTALES = {"www.boligportal.dk", "en.lejebolig.dk", "www.lejebolig.dk", "boligp
 FOTO_HOSTS = {"image-lambda.boligportal.dk", "s3.eu-central-1.amazonaws.com"}   # los que acepta /api/img
 
 
+sys.path.insert(0, os.path.join(ROOT, "tools"))
+import sync_web
+
+
 def const(nombre):
-    """Valor de `const NOMBRE = ...;` dentro de la web (una línea)."""
-    m = re.search(r"^const %s *= *(.*);$" % nombre, APP, re.M)
-    if not m: raise AssertionError(f"no encuentro const {nombre} en la web")
-    return json.loads(m.group(1))
+    """Valor de `const NOMBRE = ...;` dentro de la web (literal o JSON.parse('...'))."""
+    try: return sync_web.valor(APP, nombre)
+    except KeyError: raise AssertionError(f"no encuentro const {nombre} en la web")
 
 
 class TestWebIgualQueData(unittest.TestCase):
@@ -28,6 +31,23 @@ class TestWebIgualQueData(unittest.TestCase):
     def test_pisos(self): self.assertEqual(const("PISOS"), PISOS)
     def test_rutas(self): self.assertEqual(const("RUTAS"), RUTAS)
     def test_directo(self): self.assertEqual(const("DIRECTO"), DIRECTO)
+
+
+class TestFormatoRapido(unittest.TestCase):
+    """Los datos grandes van como JSON.parse('...'): la página arranca ~21 % antes (tools/sync_web.py)."""
+    def test_grandes_con_json_parse(self):
+        for n in ("RUTAS", "DIRECTO", "RAIL", "BARRIOS"):
+            with self.subTest(n=n): self.assertRegex(APP, r"(?m)^const %s=JSON\.parse\('" % n)
+    def test_pisos_como_lo_lee_el_monitor(self):
+        self.assertRegex(APP, r"const PISOS = (\[.*?\]);\n")
+    def test_sin_cierre_de_script_dentro(self):
+        s = max(re.findall(r"<script>(.*?)</script>", HTML, re.S), key=len)
+        self.assertNotIn("</script", s.lower())
+    def test_sync_no_cambia_nada(self):
+        """index.html ya está sincronizado con data/ (si falla: python3 tools/sync_web.py)."""
+        import tempfile, shutil
+        d = tempfile.mkdtemp(); p = os.path.join(d, "index.html"); shutil.copy(os.path.join(ROOT, "index.html"), p)
+        self.assertEqual(sync_web.sync(p), HTML); shutil.rmtree(d)
 
 
 class TestPisos(unittest.TestCase):
