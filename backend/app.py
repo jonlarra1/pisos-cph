@@ -651,7 +651,7 @@ def check_site():
     siguen coincidiendo con su huella SRI (si no, el navegador los bloquea y el mapa no carga)."""
     st, raw = _get(SITE + f"?chk={int(time.time())}"); body = raw.decode("utf-8", "replace")
     js = body
-    if 'src="app.js"' in body:                                # JavaScript en su propio fichero
+    if re.search(r'<script[^>]*\ssrc="app\.js"', body):    # JavaScript en su propio fichero (la etiqueta, no el texto)
         st2, raw2 = _get(SITE + f"app.js?chk={int(time.time())}"); js = raw2.decode("utf-8", "replace")
         if st2 != 200: return False, f"app.js: HTTP {st2}"
     problemas = []
