@@ -1489,8 +1489,24 @@ function applyRemote(rem){let ch=false; for(const id in rem){const p=PISOS.find(
   if(ch){PISOS.forEach(p=>markers[p.id].setIcon(pinIcon(p,p.id===selId))); applyFilter(false); renderOut(); if(!card.hidden)showCard(card.dataset.id);
     if(sheet.classList.contains("open")){const p=PISOS.find(x=>x.id===sheet.dataset.id),h=sheet.querySelector(".stw"); if(p&&h)h.outerHTML=stPill(p);}}}
 function apiStatus(ok){apiOK=ok; const el=document.getElementById("api-s"); if(el)el.textContent=ok?"✓ Estados compartidos (Raspberry Pi)":"Sin conexión con la Raspberry Pi: los cambios se guardan solo en este navegador";}
+/* ---------- tiempo real con la Pi (SSE /api/eventos): los cambios llegan al momento ----------
+   Si la Pi no lo tiene o falla, la página sigue preguntando cada 15 s (estados) y 60 s (propuestos).
+   Con la pestaña oculta más de 1 min se cierra la conexión (cada una ocupa un hilo en la Pi). */
+const TREAL={es:null,on:false,last:0,lastC:0,fallos:0,timer:null};
+function liveStart(){if(!window.EventSource||TREAL.es||document.hidden)return;
+  let es; try{es=new EventSource(API+"/api/eventos");}catch(e){return;} TREAL.es=es;
+  es.onopen=()=>{TREAL.on=true; TREAL.fallos=0; TREAL.last=TREAL.lastC=Date.now(); pullEstados(); pullCandidatos();};
+  es.addEventListener("estados",e=>{TREAL.last=Date.now(); try{applyRemote(JSON.parse(e.data)); apiStatus(true);}catch(err){}});
+  es.addEventListener("candidatos",()=>{TREAL.lastC=Date.now(); pullCandidatos();});
+  es.addEventListener("ajustes",()=>{pullZonas(); if(typeof pullBusq==="function")pullBusq();});
+  es.onmessage=()=>{TREAL.last=Date.now();};
+  es.onerror=()=>{TREAL.on=false; if(es.readyState===2){liveStop(); if(++TREAL.fallos<6)TREAL.timer=setTimeout(liveStart,Math.min(600000,30000*2**TREAL.fallos));}};}
+function liveStop(){if(TREAL.es){TREAL.es.close(); TREAL.es=null;} TREAL.on=false;}
+let liveHide=null;
+document.addEventListener("visibilitychange",()=>{clearTimeout(liveHide);
+  if(document.hidden)liveHide=setTimeout(liveStop,60000); else{clearTimeout(TREAL.timer); liveStart();}});
 async function pullEstados(){try{const c=new AbortController(); setTimeout(()=>c.abort(),5000);
-    const r=await fetch(API+"/api/estados",{signal:c.signal,cache:"no-store"}); if(!r.ok)throw 0; applyRemote(await r.json()); apiStatus(true);}catch(e){apiStatus(false);}}
+    const r=await fetch(API+"/api/estados",{signal:c.signal,cache:"no-cache"}); if(!r.ok)throw 0; applyRemote(await r.json()); apiStatus(true);}catch(e){apiStatus(false);}}
 async function pushEstado(id,st){try{const r=await fetch(API+"/api/estado",{method:"POST",headers:{"Content-Type":"application/json","X-Pisos-Key":API_KEY},body:JSON.stringify({id,st,by:YO})});
     if(!r.ok)throw 0; applyRemote(await r.json()); apiStatus(true); return true;}catch(e){apiStatus(false); return false;}}
 function setEstado(id,st){const p=PISOS.find(x=>x.id===id); if(!p||!ESTADOS[st])return; p.by=YO; pushEstado(id,st);
@@ -1759,7 +1775,7 @@ let uiReady=false;
 document.getElementById("lines").addEventListener("change",()=>setTimeout(saveUI,0));
 uiReady=true;
 renderWalk();renderChips();renderList();renderOut();
-pullEstados(); setInterval(()=>{if(!document.hidden)pullEstados();},15000);
+pullEstados(); setInterval(()=>{if(!document.hidden&&(!TREAL.on||Date.now()-TREAL.last>120000))pullEstados();},15000);
 /* ---------- propuestos por Lares (Raspberry Pi) ---------- */
 
 const kr0=n=>n==null?"?":fmt(n);
@@ -1784,7 +1800,8 @@ function renderCands(){const el=document.getElementById("lares"); if(!el)return;
   CANDS.filter(c=>c.st!=="descartado"&&c.lat&&c.lon).forEach(c=>{const lb=Math.round(((c.precio||0)+(c.aconto||0))/1000)+"k";
     L.marker([c.lat,c.lon],{zIndexOffset:950,icon:L.divIcon({className:"",iconSize:[30,30],iconAnchor:[15,15],
     html:`<div class="pin" style="width:30px;height:30px;background:${(ESTADOS[c.st]||ESTADOS.nuevo).c};font-size:12px">${lb}</div>`})}).bindTooltip(`Propuesto · ${esc(c.zona||"")} · ${kr0(c.precio)} kr`,{direction:"top"}).bindPopup(candItem(c),{maxWidth:280}).addTo(candLayer);});}
-async function pullCandidatos(){try{const r=await fetch(API+"/api/candidatos",{cache:"no-store"}); if(!r.ok)throw 0; const d=await r.json(); CANDS=d.pisos||[]; renderCands();
+let candSig="";
+async function pullCandidatos(){try{const r=await fetch(API+"/api/candidatos",{cache:"no-cache"}); if(!r.ok)throw 0; const d=await r.json(); const sig=JSON.stringify(d.pisos||[]); if(sig!==candSig){candSig=sig; CANDS=d.pisos||[]; renderCands();}
   const el=document.getElementById("lares-s"); if(el&&d.actualizado){const h=(Date.now()-Date.parse(d.actualizado))/36e5; el.textContent=`Última pasada de Lares: hace ${h<1?Math.round(h*60)+" min":h.toFixed(1)+" h"}.`;}}catch(e){}}
 document.addEventListener("click",async e=>{const b=e.target.closest("[data-cst]"); if(!b)return; if(PISOS.some(x=>x.id===b.dataset.cst.split("|")[0]))return; e.stopPropagation(); b.disabled=true;
   const [id,st]=b.dataset.cst.split("|"); if(await pushEstado(id,st)){const c=CANDS.find(x=>String(x.id)===id); if(c){c.st=st;} renderCands(); map.closePopup(); pullCandidatos();}
@@ -1793,12 +1810,12 @@ document.addEventListener("click",async e=>{const b=e.target.closest("[data-cst]
 let ZONASL={};
 function renderZonas(){const el=document.getElementById("zonas"); if(!el)return; const ks=Object.keys(ZONASL).sort((a,b)=>a.localeCompare(b,"da"));
   el.innerHTML=ks.length?ks.map(z=>`<button class="chip zchip" data-zona="${esc(z)}" aria-pressed="${!!ZONASL[z]}">${esc(z)}</button>`).join(""):"<small>Sin conexión con la Raspberry Pi.</small>";}
-async function pullZonas(){try{const r=await fetch(API+"/api/zonas",{cache:"no-store"}); if(!r.ok)throw 0; ZONASL=await r.json();}catch(e){ZONASL={};} renderZonas();}
+async function pullZonas(){try{const r=await fetch(API+"/api/zonas",{cache:"no-cache"}); if(!r.ok)throw 0; ZONASL=await r.json();}catch(e){ZONASL={};} renderZonas();}
 document.getElementById("zonas").addEventListener("click",async e=>{const b=e.target.closest("[data-zona]"); if(!b)return; const z=b.dataset.zona, on=!!ZONASL[z];
   if(!confirm(on?`⚠️ ESTE CAMBIO ES DE BÚSQUEDA, NO DE VISUALIZACIÓN\nCambia lo que Lares busca para todos (no solo lo que ves en el mapa).\n\n¿Quitar la zona «${z}»?\nLares dejará de proponer pisos de ${z}.`:`⚠️ ESTE CAMBIO ES DE BÚSQUEDA, NO DE VISUALIZACIÓN\nCambia lo que Lares busca para todos (no solo lo que ves en el mapa).\n\n¿Permitir la zona «${z}»?\nLares volverá a proponer pisos de ${z}.`))return;
   try{const r=await fetch(API+"/api/zona",{method:"POST",headers:{"Content-Type":"application/json","X-Pisos-Key":API_KEY},body:JSON.stringify({zona:z,permitida:!on,by:YO})});
     if(!r.ok)throw 0; ZONASL=await r.json(); renderZonas();}catch(err){alert("No se pudo guardar: la Raspberry Pi no responde.");}});
-pullCandidatos(); pullZonas(); setInterval(()=>{if(!document.hidden)pullCandidatos();},60000);
+pullCandidatos(); pullZonas(); setInterval(()=>{if(!document.hidden&&(!TREAL.on||Date.now()-TREAL.lastC>600000))pullCandidatos();},60000);
 /* ---------- visualización: qué estados se ven ---------- */
 function renderShow(){document.getElementById("showst").innerHTML=Object.entries(SHOWL).map(([k,[c,t]])=>`<button class="chip schip" data-show="${k}" aria-pressed="${SHOW[k]}"><i class="bsw" style="background:${c}"></i>${t}</button>`).join("");
   const off=Object.keys(SHOW).filter(k=>!SHOW[k]).length; document.getElementById("more-s").textContent=(zsel.size?`· ${zsel.size} barrio${zsel.size>1?"s":""} `:"")+(off?`· ${off} oculto${off>1?"s":""}`:"");}
@@ -1812,7 +1829,7 @@ function fillBusq(){const f=document.getElementById("fbusq"); if(!FB)return;
   f.precio_max.value=FB.precio_max; f.dorm_min.value=FB.dorm_min; f.disp_desde.value=FB.disp_desde; f.disp_hasta.value=FB.disp_hasta;
   f.compartir.checked=!!FB.compartir; f.contrato_largo.checked=!!FB.contrato_largo;
   document.getElementById("busq-s").textContent=`· ≤${fmt(FB.precio_max)} kr · ${FB.dorm_min}+ dorm.`;}
-async function pullBusq(){try{const r=await fetch(API+"/api/filtros",{cache:"no-store"}); if(!r.ok)throw 0; FB=await r.json(); fillBusq();}
+async function pullBusq(){try{const r=await fetch(API+"/api/filtros",{cache:"no-cache"}); if(!r.ok)throw 0; FB=await r.json(); fillBusq();}
   catch(e){document.getElementById("fbusq-m").textContent="Sin conexión con la Raspberry Pi.";}}
 document.getElementById("fbusq").addEventListener("submit",async e=>{e.preventDefault(); const f=e.target, m=document.getElementById("fbusq-m");
   const body={precio_max:+f.precio_max.value,dorm_min:+f.dorm_min.value,disp_desde:f.disp_desde.value,disp_hasta:f.disp_hasta.value,compartir:f.compartir.checked,contrato_largo:f.contrato_largo.checked,by:YO};
@@ -1825,6 +1842,8 @@ pullBusq();
 /* errores de la página -> log del backend (panel de estado) */
 let _errN=0; function clientLog(msg,where){if(_errN++>20)return; try{fetch(API+"/api/clientlog",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({level:"error",msg:String(msg).slice(0,400),where:String(where||location.pathname).slice(0,150)})}).catch(()=>{});}catch(e){}}
 addEventListener("error",e=>clientLog(e.message,(e.filename||"")+":"+(e.lineno||"")));
+document.addEventListener("securitypolicyviolation",e=>clientLog("CSP bloqueó "+e.violatedDirective+": "+String(e.blockedURI).slice(0,120)));
+liveStart();
 addEventListener("unhandledrejection",e=>clientLog("promise: "+(e.reason&&e.reason.message||e.reason)));
 setInterval(()=>{if(document.hidden||!PISOS.some(p=>p.st==="descartado"))return; PISOS.forEach(p=>markers[p.id].setIcon(pinIcon(p,p.id===selId))); applyFilter(false); renderOut();},300000);
 document.addEventListener("visibilitychange",()=>{if(!document.hidden){pullEstados(); pullCandidatos(); checkVersion();}});
