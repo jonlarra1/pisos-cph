@@ -99,7 +99,7 @@ class TestEstado(Base):
         code, _, d = escribir("/api/estado", {"id": "4641637", "st": "gusta", "by": "jon"})
         self.assertEqual(code, 200); self.assertEqual(d["4641637"]["st"], "gusta")
         self.assertEqual(pedir("/api/estados")[2]["4641637"]["by"], "jon")
-        cfg = json.load(open(os.path.join(os.environ["BRIDGE_DIR"], "config.json")))   # y Lares lo ve
+        cfg = json.loads(app._txt(os.path.join(os.environ["BRIDGE_DIR"], "config.json")))   # y Lares lo ve
         self.assertIn("4641637", cfg["con_estado"])
     def test_sin_clave_403(self):
         self.assertEqual(escribir("/api/estado", {"id": "1234", "st": "gusta"}, clave="mala")[0], 403)
@@ -244,6 +244,50 @@ class TestLogs(Base):
         self.assertTrue(ev and ev[-1]["msg"].startswith("CAÍDO"))
         app.chk("prueba_x", lambda: 1 / 0)                   # una comprobación que revienta cuenta como fallo
         self.assertFalse(app.CHECKS["prueba_x"]["ok"])
+
+
+class TestCheckSite(Base):
+    """check_site con una web falsa en local; los scripts del «CDN» también se simulan."""
+    LIB = b"console.log('leaflet')"
+    @classmethod
+    def setUpClass(cls):
+        import functools, http.server, hashlib, base64
+        cls.dir = tempfile.mkdtemp(prefix="pisos-site-")
+        h = functools.partial(type("Q", (http.server.SimpleHTTPRequestHandler,), {"log_message": lambda *a: None}), directory=cls.dir)
+        cls.httpd = ThreadingHTTPServer(("127.0.0.1", 0), h); threading.Thread(target=cls.httpd.serve_forever, daemon=True).start()
+        cls.sri = "sha384-" + base64.b64encode(hashlib.sha384(cls.LIB).digest()).decode()
+        cls._get_real = staticmethod(app._get)
+    @classmethod
+    def tearDownClass(cls): cls.httpd.shutdown(); cls.httpd.server_close(); app._get = cls._get_real
+    def setUp(self):
+        super().setUp(); app._SITE_CACHE.update(hash=None, sri_t=0, sri_mal=[], sin_rutas=[])
+        app.SITE = f"http://127.0.0.1:{self.httpd.server_address[1]}/"
+        self.cdn = self.LIB
+        app._get = lambda url, timeout=15: (200, self.cdn) if url.startswith("https://cdn") else self._get_real(url, timeout)
+    def web(self, pisos=("1",), rutas=("1",), csp=True, sri=None, appjs=False):
+        js = (f"const PISOS = {json.dumps([{'id': i} for i in pisos])};\nconst OUT = [];\n"
+              f"const RUTAS={json.dumps({'ix': {'foot': {'lun': {'09:00': {'30': {i: {} for i in rutas}}}}}})};\n")
+        head = ('<meta http-equiv="Content-Security-Policy" content="default-src \'self\'">' if csp else "")
+        head += f'<script src="https://cdn.x/leaflet.js" integrity="{sri or self.sri}" crossorigin="anonymous"></script>'
+        page = f"<html><head>{head}</head><body>" + ('<script src="app.js"></script>' if appjs else f"<script>\n{js}</script>") + "</body></html>"
+        for nombre, txt in (("index.html", page), ("app.js", js if appjs else None)):
+            if txt is not None:
+                with open(os.path.join(self.dir, nombre), "w") as f: f.write(txt)
+    def test_todo_bien(self):
+        self.web(); ok, det = app.check_site(); self.assertTrue(ok, det); self.assertIn("todos con rutas", det)
+    def test_piso_sin_rutas(self):
+        self.web(pisos=("1", "2")); ok, det = app.check_site(); self.assertFalse(ok); self.assertIn("pisos sin rutas: 2", det)
+    def test_cdn_cambiado(self):
+        self.web(); self.cdn = b"otra cosa"; ok, det = app.check_site(); self.assertFalse(ok); self.assertIn("SRI", det)
+    def test_sin_csp(self):
+        self.web(csp=False); ok, det = app.check_site(); self.assertFalse(ok); self.assertIn("sin CSP", det)
+    def test_con_app_js(self):
+        self.web(appjs=True); ok, det = app.check_site(); self.assertTrue(ok, det); self.assertEqual(app.SITE_DATA["pisos"], [{"id": "1"}])
+    def test_web_real_del_repo(self):
+        """La index.html actual del repo pasa la comprobación (salvo el CDN, simulado aquí)."""
+        import shutil; shutil.copy(os.path.join(ROOT, "index.html"), os.path.join(self.dir, "index.html"))
+        app._get = lambda url, timeout=15: (200, b"") if url.startswith("https://") else self._get_real(url, timeout)
+        ok, det = app.check_site(); self.assertIn("pisos", det); self.assertNotIn("sin rutas", det); self.assertNotIn("sin CSP", det)
 
 
 class TestComprobaciones(Base):

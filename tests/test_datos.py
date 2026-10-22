@@ -4,9 +4,11 @@
 import json, os, re, unittest, urllib.parse
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-def cargar(f): return json.load(open(os.path.join(ROOT, "data", f), encoding="utf-8"))
-HTML = open(os.path.join(ROOT, "index.html"), encoding="utf-8").read()
-APP = open(os.path.join(ROOT, "app.js"), encoding="utf-8").read() if os.path.exists(os.path.join(ROOT, "app.js")) else HTML
+def leer(*p):
+    with open(os.path.join(ROOT, *p), encoding="utf-8") as f: return f.read()
+def cargar(f): return json.loads(leer("data", f))
+HTML = leer("index.html")
+APP = leer("app.js") if os.path.exists(os.path.join(ROOT, "app.js")) else HTML
 PISOS, OUT, RUTAS, DIRECTO = cargar("pisos.json"), cargar("descartados.json"), cargar("rutas.json"), cargar("directo.json")
 BBOX = (55.55, 55.86, 12.20, 12.72)                 # zona de Copenhague (igual que backend/routing.py)
 ESTADOS = {"gusta", "nuevo", "contactado", "descartado"}
