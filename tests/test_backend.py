@@ -293,6 +293,13 @@ class TestCheckSite(Base):
         self.web(csp=False); ok, det = app.check_site(); self.assertFalse(ok); self.assertIn("sin CSP", det)
     def test_con_app_js(self):
         self.web(appjs=True); ok, det = app.check_site(); self.assertTrue(ok, det); self.assertEqual(app.SITE_DATA["pisos"], [{"id": "1"}])
+    def test_texto_app_js_dentro_del_codigo_no_cuenta(self):
+        """El JS de la página contiene script[src="app.js"] como texto: no debe pedir un app.js que no existe."""
+        self.web(); p = os.path.join(self.dir, "index.html")
+        with open(p) as f: h = f.read()
+        with open(p, "w") as f: f.write(h.replace("const OUT", "document.querySelector('script[src=\"app.js\"]');\nconst OUT"))
+        if os.path.exists(os.path.join(self.dir, "app.js")): os.remove(os.path.join(self.dir, "app.js"))
+        ok, det = app.check_site(); self.assertTrue(ok, det)
     def test_web_real_del_repo(self):
         """La index.html actual del repo pasa la comprobación (salvo el CDN, simulado aquí)."""
         import shutil; shutil.copy(os.path.join(ROOT, "index.html"), os.path.join(self.dir, "index.html"))
