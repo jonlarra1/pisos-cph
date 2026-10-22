@@ -208,6 +208,23 @@ class TestTiempoRealPi(Web):
         self.assertTrue(self.js("CANDS===window._c"), "se sustituyeron los propuestos aunque no cambiaron")
 
 
+class TestVisualizacion(Web):
+    def etiquetas(self): return self.js("barLbl.getLayers().map(l=>l.options.icon.options.html.replace(/<[^>]+>/g,''))")
+    def setUp(self):
+        super().setUp(); self.js("document.getElementById('d-ver').open=true")   # los botones están en «Visualización»
+    def test_ocultar_estados_quita_etiquetas_de_grupos_vacios(self):
+        todas = self.etiquetas(); self.assertTrue(todas)
+        for k in ("gusta", "nuevo", "contactado", "descartado"): self.page.click(f"#showst [data-show='{k}']")
+        self.assertEqual(self.etiquetas(), [])                                   # sin pisos visibles, sin etiquetas
+        self.page.click("#showst [data-show='gusta']")
+        con_gusta = self.js("BORD.filter(b=>BAR[b].some(p=>p.st==='gusta'&&!expired(p))).length")
+        self.assertEqual(len(self.etiquetas()), con_gusta)
+    def test_al_recargar_con_estados_ocultos(self):
+        for k in ("gusta", "nuevo", "contactado", "descartado"): self.page.click(f"#showst [data-show='{k}']")
+        self.page.reload(); self.esperar("window.map&&typeof barLbl!=='undefined'&&document.querySelectorAll('.pin').length>=0")
+        self.assertEqual(self.etiquetas(), [])
+
+
 class TestDestinoAnadido(Web):
     INIT = "localStorage.setItem('destinos', JSON.stringify([{id:'xcris',n:'Cris',addr:'Nørrebrogade',ll:[55.6935,12.548],who:'unai'}]));"
     def abrir(self):
@@ -274,6 +291,12 @@ class TestMomentos(Web):
         pid = self.momento("tarde", "mar"); self.esperar(f"RTS('{pid}','ns-jon').length===1")
         q = next(x for x in self.rutas_q if abs(float(x["olat"]) - 55.7335) < 0.01)
         self.assertEqual((q["modo"], q["hora"]), ("salir", "17:00"))
+    def test_avisa_de_la_espera_de_noche(self):
+        self.js("MOMENTO='madrugada'; tripTime='03:00'")
+        self.assertEqual(self.js("espera({sale:'04:54'})"), 114); self.assertIn("1 h 54 min", self.js("esperaTxt({sale:'04:54'})"))
+        self.assertEqual(self.js("esperaTxt({sale:'03:05'})"), "")                      # 5 min: normal
+        self.js("tripTime='23:30'"); self.assertEqual(self.js("espera({sale:'00:10'})"), 40)   # pasa de medianoche
+        self.js("MOMENTO='manana'"); self.assertEqual(self.js("espera({sale:'09:00'})"), 0)    # «llegar antes de»: no aplica
     def test_fin_de_semana_por_la_manana_usa_el_motor(self):
         pid = self.momento("manana", "sáb"); self.esperar(f"RTS('{pid}','ns-jon').length===1")
     def test_etiqueta_centro_solo_de_noche(self):
