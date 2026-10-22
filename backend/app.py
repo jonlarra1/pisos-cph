@@ -664,11 +664,13 @@ def check_site():
     h = hashlib.sha1(js.encode()).hexdigest()
     if h != _SITE_CACHE["hash"]:                              # solo se analizan las rutas cuando cambia la web
         _SITE_CACHE["hash"] = h; _SITE_CACHE["sin_rutas"] = []
-        m = re.search(r"^const RUTAS=(.*);$", js, re.M)
+        m = re.search(r"^const RUTAS ?= ?(.*?);[ \t]*$", js, re.M)
         if not m: problemas.append("falta RUTAS")
         else:
             try:
-                ix = json.loads(m.group(1))["ix"]
+                v = m.group(1); p = re.fullmatch(r"JSON\.parse\('(.*)'\)", v, re.S)     # formato rápido (tools/sync_web.py)
+                if p: v = re.sub(r"\\(.)", lambda x: x.group(1), p.group(1))
+                ix = json.loads(v)["ix"]
                 con = {fid for mo in ix.values() for d in mo.values() for t in d.values() for l in t.values() for fid in l}
                 _SITE_CACHE["sin_rutas"] = [str(p.get("id")) for p in SITE_DATA.get("pisos", []) if str(p.get("id")) not in con]
             except (ValueError, KeyError, AttributeError) as e: problemas.append(f"RUTAS ilegible ({type(e).__name__})")
