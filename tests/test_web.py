@@ -57,7 +57,7 @@ class Web(unittest.TestCase):
         self.ctx = self.browser.new_context(viewport={"width": 1400, "height": 900})
         if self.INIT: self.ctx.add_init_script(self.INIT)
         self.page = self.ctx.new_page()
-        self.errores, self.posts, self.alerts = [], [], []
+        self.errores, self.posts, self.alerts, self.rutas_q = [], [], [], []
         self.page.on("pageerror", lambda e: self.errores.append(str(e)))
         self.page.on("dialog", lambda d: (self.alerts.append(d.message), d.dismiss()))
         self.page.route(PI + "/**", self.pi)
@@ -83,6 +83,8 @@ class Web(unittest.TestCase):
             if sse is None: return route.fulfill(status=404, headers=self.cors(), json={"error": "not found"})
             return route.fulfill(status=200, headers={**self.cors(), "Content-Type": "text/event-stream"}, body=sse)
         if path == "/api/ruta":                     # motor de rutas simulado (o caído si self.ruta_caida)
+            import urllib.parse as up
+            self.rutas_q.append({k: v[0] for k, v in up.parse_qs(req.url.split("?", 1)[1]).items()})
             if getattr(self, "ruta_caida", False): return route.fulfill(status=503, headers=self.cors(), json={"error": "motor no disponible"})
             if getattr(self, "ruta_retenida", None) is not None: return self.ruta_retenida.append(route)   # el test la suelta luego
             return route.fulfill(status=200, headers=self.cors(), json={"opciones": [{"min": 23, "sale": "08:04", "llega": "08:27", "trans": 1, "legs": [
@@ -247,6 +249,42 @@ class TestQuien(Web):
         self.page.wait_for_selector("#quiensoy"); self.page.click("#quiensoy [data-soy='']")
         self.page.wait_for_timeout(300)
         self.assertEqual(self.js("id=>PISOS.find(p=>p.id===id).st", pid), antes); self.assertEqual(self.posts, [])
+
+
+class TestMomentos(Web):
+    """Mañana = precalculado; vuelta del trabajo, noche y madrugada = motor de la Pi con el sentido correcto."""
+    def momento(self, k, dia="vie"):
+        self.js(f"tripDay='{dia}'"); self.page.click(f"#mom [data-mom='{k}']"); self.page.wait_for_timeout(200)
+        pid = self.js("PISOS[0].id"); self.js("id=>{select(id,false); showPiso(id);}", pid); return pid
+    def test_manana_no_pregunta_a_la_pi(self):
+        self.momento("manana", "mar"); self.page.wait_for_timeout(800)
+        self.assertEqual(self.rutas_q, []); self.assertIn("Nordic Solar", self.page.inner_text("#sheet"))
+    def test_noche_al_centro(self):
+        pid = self.momento("noche")
+        self.esperar("document.querySelector('#sheet') && /Kongens Nytorv/.test(document.querySelector('#sheet').innerText)")
+        self.esperar(f"RTS('{pid}','centro-jon').length===1")
+        q = self.rutas_q[0]; self.assertEqual(q["modo"], "llegar"); self.assertAlmostEqual(float(q["dlat"]), 55.678939, 4)
+        self.assertEqual(q["hora"], "22:00")
+    def test_madrugada_vuelve_desde_el_centro_al_dia_siguiente(self):
+        pid = self.momento("madrugada", "vie"); self.esperar(f"RTS('{pid}','centro-unai').length===1")
+        q = self.rutas_q[0]; self.assertEqual(q["modo"], "salir"); self.assertAlmostEqual(float(q["olat"]), 55.678939, 4)
+        import datetime; self.assertEqual(datetime.date.fromisoformat(q["fecha"]).weekday(), 5)   # viernes noche -> sábado
+        self.assertIn("noche del viernes", self.page.inner_text("#sheet").lower())
+    def test_vuelta_del_trabajo_sale_de_nordic_solar(self):
+        pid = self.momento("tarde", "mar"); self.esperar(f"RTS('{pid}','ns-jon').length===1")
+        q = next(x for x in self.rutas_q if abs(float(x["olat"]) - 55.7335) < 0.01)
+        self.assertEqual((q["modo"], q["hora"]), ("salir", "17:00"))
+    def test_fin_de_semana_por_la_manana_usa_el_motor(self):
+        pid = self.momento("manana", "sáb"); self.esperar(f"RTS('{pid}','ns-jon').length===1")
+    def test_etiqueta_centro_solo_de_noche(self):
+        self.page.click("#mom [data-mom='noche']"); self.assertIn("Centro", self.js("extraLayer.getLayers().map(l=>l.getElement()?.innerText||'').join()"))
+        self.page.click("#mom [data-mom='manana']"); self.assertNotIn("Centro", self.js("extraLayer.getLayers().map(l=>l.getElement()?.innerText||'').join()"))
+    def test_lista_de_barrios_no_lanza_peticiones(self):
+        self.page.click("#mom [data-mom='noche']"); self.js("renderList()"); self.page.wait_for_timeout(800)
+        self.assertEqual(self.rutas_q, [])
+    def test_se_recuerda_al_recargar(self):
+        self.page.click("#mom [data-mom='madrugada']"); self.page.reload(); self.esperar("window.map&&MOMENTO==='madrugada'")
+        self.assertEqual(self.js("tripTime"), "02:00"); self.assertTrue(self.js("!!rowOf(routeDest)"))
 
 
 if __name__ == "__main__":
