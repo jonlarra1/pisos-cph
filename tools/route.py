@@ -13,7 +13,7 @@ import pickle, math, json, sys, bisect, collections, csv, datetime, multiprocess
 PISOS, OUT, SHAPES, PREPS = sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4:]
 P = json.load(open(PISOS))
 DEST = [("gn", "GN · Lautrupbjerg 7, Ballerup", 55.738723, 12.387155),
-        ("ns", "Nordic Solar · Strandvejen 102E, Hellerup", 55.733318, 12.575586),
+        ("ns", "Nordic Solar · Strandvejen 104B, Hellerup", 55.733517, 12.576916),
         ("dtu", "DTU · Anker Engelunds Vej 1, Lyngby", 55.7858465, 12.5214443)]
 TIMES = ["07:30", "08:00", "08:30", "09:00", "09:30", "10:00"]   # "llegar antes de"
 LIMITS = [5, 10, 15, 20, 25, 30]   # max minutes walking or biking per leg (profile setting)

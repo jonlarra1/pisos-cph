@@ -2,7 +2,7 @@
 Usage: python3 tools/direct.py data/pisos.json data/directo.json [cache.json]   (max 1 request/second)"""
 import json, sys, time, urllib.request, os
 P = json.load(open(sys.argv[1])); OUT = sys.argv[2]; CACHE = sys.argv[3] if len(sys.argv) > 3 else "directcache.json"
-DEST = {"gn": (55.738723, 12.387155), "ns": (55.733318, 12.575586), "dtu": (55.7858465, 12.5214443)}
+DEST = {"gn": (55.738723, 12.387155), "ns": (55.733517, 12.576916), "dtu": (55.7858465, 12.5214443)}
 PROF = {"bike": "routed-bike", "foot": "routed-foot"}
 cache = json.load(open(CACHE)) if os.path.exists(CACHE) else {}
 UA = "pisos-cph/1.0 (personal flat-hunting map; light use)"

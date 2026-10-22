@@ -12,7 +12,7 @@ The user is Jon. He works at Nordic Solar (Hellerup). He prefers short, simple, 
   - Basemap = OpenStreetMap standard tiles (CARTO now needs an API key). Dark theme = CSS filter `--tiles`.
   - `RAIL` — real S-tog, metro (M1–M4), Letbane and Bx geometry + exact station coords (from github.com/Miqell24/copenhagen-bus-map, OSM + Rejseplanen). KEEP THIS.
   - `ST`, `LINES`, `MST`, `MLINES`, `LETB` — station lists per line; used for "nearest station" in each flat card. KEEP.
-  - `WORK` — Jon's workplace = Nordic Solar, Strandvejen 102E, Hellerup. KEEP.
+  - `WORK` — Jon's workplace = Nordic Solar, Strandvejen 104B, Hellerup (entrada por el 3B). KEEP.
   - `RUTAS` — precomputed public-transport routes (GN, Nordic Solar, DTU) per weekday × arrival time × walking limit, from `tools/prep.py` + `tools/route.py` (see README). Deduplicated: `routes`, `paths`, index `ix[mode][day][time][limit][flatId][dest]`, mode = foot (walk + any transit) | bike (bike 20 km/h + S-tog/regional/Lokaltog only, no bus/metro, no lock time).
   - `PERF` — profiles in «Configuración» (right, under «Líneas»): Jon (bike) and Unai (foot); mode, max minutes per leg (5–30), walk speed 4/5/6 km/h, bike 15/20/25 km/h; saved per browser. `adj()` rescales walk/bike legs to the chosen speed (transit times fixed; ⚠️ if arriving late). `ROWS` — route rows: Nordic Solar→Jon, GN→Unai, DTU→Jon and DTU→Unai. `DIRECTO` — bike-only / walk-only reference times.
   - `EXTRA` — user-added destinations (Configuración → Destinos), saved per browser (localStorage "destinos"); routes: live bike/walk via FOSSGIS OSRM from the browser + Rejseplanen link (no precomputed transit). To make one permanent, add it to DEST in tools/route.py + tools/direct.py and recompute.
@@ -62,10 +62,13 @@ The user is Jon. He works at Nordic Solar (Hellerup). He prefers short, simple, 
   5. Futuro: monitorizar con Grafana (Loki/Promtail leyendo data/logs, ya en JSON por líneas) cuando Jon lo monte en el homelab.
   6. Instalar en la Pi el piso_watch_monitor.py con depósito y prepago separados (campos `dep`/`pre`; local listo y probado
      el 2026-10-21; hace falta clave SSH temporal). Hasta entonces los candidatos de Lares no traen el desglose.
-  7. Motor de rutas en vivo (backend/routing.py, bloque 1 en local): pendiente de probar y desplegar.
-  4. nuevos_desde_14oct.md revisado el 2026-10-22: 34 pisos fuera del mapa/descartados; Lejebolig YA muestra la fecha («Vacant»).
-     Encajan por fecha y zona: 1917762, 1914015, 1914094 (Lejebolig), 5680590 (Boligportal); inmediatos: 1912011, 1917800;
-     sin fecha: 5680600, 5390028, 5202436. Falta verificar 3 dormitorios (plano) y que Jon elija. Datos: scratchpad recup/estado.json.
+  7. Motor de rutas en vivo: /api/ruta hecho y probado en local (commit 0a1c981). Falta: desplegar en la Pi (mem_limit 512m,
+     clave SSH), web (botón «Ahora», hora libre, 7 días, llegar/salir, rutas en TP para destinos añadidos), pruebas desde fuera.
+  9. Desplegar en la Pi a la vez: Lares (dep/pre, historial.json), panel «Pisos» (contadores + gráfico), fix 502 de fotos.
+  10. Nordic Solar = Strandvejen 104B; Jon dice que se entra por el «3B»: preguntar de qué calle es y ajustar el destino.
+  4. Lista del 14-oct: añadidos al mapa 5680590 (Frederiksberg, plano 4 dorm.) y 1912011 (Søborg, texto 3 dorm.) el 2026-10-22.
+     1917762 = mismo piso que 5680524 (enlace añadido a su ficha). Sin confirmar dormitorios (Lejebolig no da fotos sin JS):
+     1914015, 1914094, 1917800. Sin fecha: 5680600, 5390028, 5202436. Datos: scratchpad recup/estado.json.
   8. Hueco de Lares v2: solo lee 2 páginas de Lejebolig y 3 de Boligportal (lo más reciente) → los anuncios que bajan de página
      desaparecen sin evaluarse (33 de 34 de la lista del 14-oct). Subir páginas o recorrer por zonas, al desplegar en la Pi.
 - Puertos ya usados en la Pi (no tocar): Portainer 8000/9000/9443. Nuestro: 127.0.0.1:8787 (API, Funnel :8443), 127.0.0.1:8790 (panel: serve https :9444 por nombre, y serve TCP :9445 por IP http://100.72.170.60:9445 para aparatos sin MagicDNS). Comprobar siempre con `ss -ltnp | grep :PUERTO` antes de usar uno nuevo.
