@@ -1757,7 +1757,7 @@ let uiReady=false;
 document.getElementById("lines").addEventListener("change",()=>setTimeout(saveUI,0));
 uiReady=true;
 renderWalk();renderChips();renderList();renderOut();
-pullEstados(); setInterval(()=>{if(!document.hidden)pullEstados();},60000);
+pullEstados(); setInterval(()=>{if(!document.hidden)pullEstados();},15000);
 /* ---------- propuestos por Lares (Raspberry Pi) ---------- */
 
 const kr0=n=>n==null?"?":fmt(n);
@@ -1795,7 +1795,7 @@ document.getElementById("zonas").addEventListener("click",async e=>{const b=e.ta
   if(!confirm(on?`⚠️ ESTE CAMBIO ES DE BÚSQUEDA, NO DE VISUALIZACIÓN\nCambia lo que Lares busca para todos (no solo lo que ves en el mapa).\n\n¿Quitar la zona «${z}»?\nLares dejará de proponer pisos de ${z}.`:`⚠️ ESTE CAMBIO ES DE BÚSQUEDA, NO DE VISUALIZACIÓN\nCambia lo que Lares busca para todos (no solo lo que ves en el mapa).\n\n¿Permitir la zona «${z}»?\nLares volverá a proponer pisos de ${z}.`))return;
   try{const r=await fetch(API+"/api/zona",{method:"POST",headers:{"Content-Type":"application/json","X-Pisos-Key":API_KEY},body:JSON.stringify({zona:z,permitida:!on,by:YO})});
     if(!r.ok)throw 0; ZONASL=await r.json(); renderZonas();}catch(err){alert("No se pudo guardar: la Raspberry Pi no responde.");}});
-pullCandidatos(); pullZonas(); setInterval(()=>{if(!document.hidden)pullCandidatos();},300000);
+pullCandidatos(); pullZonas(); setInterval(()=>{if(!document.hidden)pullCandidatos();},60000);
 /* ---------- visualización: qué estados se ven ---------- */
 function renderShow(){document.getElementById("showst").innerHTML=Object.entries(SHOWL).map(([k,[c,t]])=>`<button class="chip schip" data-show="${k}" aria-pressed="${SHOW[k]}"><i class="bsw" style="background:${c}"></i>${t}</button>`).join("");
   const off=Object.keys(SHOW).filter(k=>!SHOW[k]).length; document.getElementById("more-s").textContent=(zsel.size?`· ${zsel.size} barrio${zsel.size>1?"s":""} `:"")+(off?`· ${off} oculto${off>1?"s":""}`:"");}
@@ -1824,7 +1824,26 @@ let _errN=0; function clientLog(msg,where){if(_errN++>20)return; try{fetch(API+"
 addEventListener("error",e=>clientLog(e.message,(e.filename||"")+":"+(e.lineno||"")));
 addEventListener("unhandledrejection",e=>clientLog("promise: "+(e.reason&&e.reason.message||e.reason)));
 setInterval(()=>{if(document.hidden||!PISOS.some(p=>p.st==="descartado"))return; PISOS.forEach(p=>markers[p.id].setIcon(pinIcon(p,p.id===selId))); applyFilter(false); renderOut();},300000);
-document.addEventListener("visibilitychange",()=>{if(!document.hidden)pullEstados();});
+document.addEventListener("visibilitychange",()=>{if(!document.hidden){pullEstados(); pullCandidatos(); checkVersion();}});
+/* ---------- tiempo real: si se publica una versión nueva (p. ej. un piso añadido), la página se recarga sola ---------- */
+let VER=null, verNew=false, lastAct=Date.now();
+["pointerdown","keydown","wheel","touchstart"].forEach(t=>addEventListener(t,()=>{lastAct=Date.now();},{passive:true}));
+async function checkVersion(){try{const r=await fetch(location.pathname+"?v="+Date.now(),{method:"HEAD",cache:"no-store"});
+    const v=r.ok&&(r.headers.get("etag")||r.headers.get("last-modified")); if(!v)return;
+    if(VER===null){VER=v; return;} if(v!==VER){verNew=true; tryReload();}}catch(e){}}
+function reloadNow(){try{sessionStorage.setItem("vista",JSON.stringify({c:map.getCenter(),z:map.getZoom(),sel:selId,t:Date.now()}));}catch(e){} location.reload();}
+function tryReload(){if(!verNew)return; let last=0; try{last=+sessionStorage.getItem("recarga")||0;}catch(e){}
+  if(Date.now()-last<120000)return;   /* como mucho una recarga automática cada 2 min */
+  const ocupado=Date.now()-lastAct<20000||document.querySelector(".leaflet-popup")||document.activeElement?.matches?.("input,select,textarea");
+  if(document.hidden||!ocupado){try{sessionStorage.setItem("recarga",String(Date.now()));}catch(e){} reloadNow(); return;}
+  if(!document.getElementById("nuevaver")){const b=document.createElement("div"); b.id="nuevaver";
+    b.style.cssText="position:fixed;left:50%;bottom:16px;transform:translateX(-50%);z-index:3000;background:var(--panel,#fff);color:var(--fg,#111);border:1px solid var(--line,#ccc);border-radius:10px;padding:8px 12px;box-shadow:0 4px 16px rgba(0,0,0,.25);font-size:14px;display:flex;gap:10px;align-items:center;max-width:calc(100% - 32px)";
+    b.innerHTML='<span>🆕 Hay cambios nuevos en el mapa</span><button class="lnk" type="button">Actualizar</button>';
+    b.querySelector("button").onclick=reloadNow; document.body.appendChild(b);}}
+checkVersion(); setInterval(()=>{if(!document.hidden)checkVersion(); tryReload();},30000);
+/* al recargar, volver a la misma vista y piso */
+{let v=null; try{v=JSON.parse(sessionStorage.getItem("vista")||"null"); sessionStorage.removeItem("vista");}catch(e){}
+  if(v&&Date.now()-v.t<60000&&v.c){map.setView(v.c,v.z,{animate:false}); if(v.sel&&markers[v.sel])select(v.sel,false);}}
 </script>
 
 </body></html>
