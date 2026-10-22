@@ -11,7 +11,7 @@
 #   3. copia app.py, routing.py, admin.html, Dockerfile (y compose.yml con --con-compose)
 #   4. docker compose up -d --build y espera a /api/health
 #   5. smoke_test.py contra la URL pública (Funnel); si falla -> restaura la copia y reconstruye
-# Solo toca /home/docker/pisos-backend (regla del proyecto). Necesita la clave SSH temporal.
+# Solo toca /home/docker/pisos-backend (regla del proyecto). Necesita la clave SSH temporal: PI_KEY=/ruta/clave backend/deploy.sh ...
 set -euo pipefail
 cd "$(dirname "$0")/.."
 HOST="${1:?uso: backend/deploy.sh USUARIO@HOST [--aplicar] [--con-compose]}"; shift || true
@@ -21,7 +21,8 @@ DIR=/home/docker/pisos-backend
 URL=https://raspberrypi.tail9f1069.ts.net:8443
 FILES=(app.py routing.py admin.html Dockerfile)
 [ "$COMPOSE" = 1 ] && FILES+=(compose.yml)
-SSH=(ssh -o BatchMode=yes -o ConnectTimeout=10 "$HOST")
+KEYOPT=(); [ -n "${PI_KEY:-}" ] && KEYOPT=(-i "$PI_KEY" -o IdentitiesOnly=yes)   # PI_KEY=ruta de la clave temporal
+SSH=(ssh "${KEYOPT[@]}" -o BatchMode=yes -o ConnectTimeout=10 "$HOST")
 
 echo "== Diferencias repo -> Pi ($DIR)"
 for f in "${FILES[@]}" compose.yml; do
@@ -38,7 +39,7 @@ echo "== 1. Tests locales"
 
 B="backup-$(date +%Y%m%d-%H%M%S)"
 echo "== 2. Copia de seguridad en la Pi: $DIR/$B"
-"${SSH[@]}" "cd $DIR && mkdir $B && cp -a app.py routing.py admin.html Dockerfile compose.yml $B/"
+"${SSH[@]}" "cd $DIR && mkdir $B && for f in app.py routing.py admin.html Dockerfile compose.yml; do if [ -e \$f ]; then cp -a \$f $B/; fi; done && ls $B"
 
 volver() {
   echo "!! Algo falló: restaurando $B y reconstruyendo"
@@ -47,7 +48,7 @@ volver() {
 }
 
 echo "== 3. Copiando: ${FILES[*]}"
-for f in "${FILES[@]}"; do scp -q -o BatchMode=yes "backend/$f" "$HOST:$DIR/$f" || volver; done
+for f in "${FILES[@]}"; do scp -q "${KEYOPT[@]}" -o BatchMode=yes "backend/$f" "$HOST:$DIR/$f" || volver; done
 
 echo "== 4. Reconstruyendo el contenedor"
 "${SSH[@]}" "cd $DIR && docker compose up -d --build" || volver
