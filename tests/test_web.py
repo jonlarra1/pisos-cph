@@ -62,7 +62,7 @@ class Web(unittest.TestCase):
         self.page.route("https://tile.openstreetmap.org/**", lambda r: r.fulfill(status=200, content_type="image/png", body=PNG))
         self.page.route("https://fonts.googleapis.com/**", lambda r: r.fulfill(status=200, content_type="text/css", body=""))
         self.page.goto(self.url)
-        self.page.wait_for_function("window.map && document.querySelectorAll('.pin').length>0", timeout=15000)
+        self.esperar("window.map && document.querySelectorAll('.pin').length>0", 15000)
 
     def tearDown(self):
         self.assertEqual(self.errores, [], "errores de JavaScript en la página")
@@ -76,19 +76,32 @@ class Web(unittest.TestCase):
             d = json.loads(req.post_data or "{}"); self.posts.append((path, d))
             if path == "/api/estado": FAKE["/api/estados"][d["id"]] = {"st": d["st"], "stF": "2026-10-22", "by": d.get("by", ""), "ts": int(time.time())}
             return route.fulfill(status=200, headers=self.cors(), json=FAKE.get("/api/estados" if path == "/api/estado" else path, {"ok": True}))
+        if path == "/api/eventos":                 # por defecto como la Pi actual (sin tiempo real); los tests lo cambian
+            sse = getattr(self, "sse", None)
+            if sse is None: return route.fulfill(status=404, headers=self.cors(), json={"error": "not found"})
+            return route.fulfill(status=200, headers={**self.cors(), "Content-Type": "text/event-stream"}, body=sse)
         if path == "/api/img": return route.fulfill(status=200, headers=self.cors(), content_type="image/png", body=PNG)
         if path in FAKE: return route.fulfill(status=200, headers=self.cors(), json=FAKE[path])
         route.fulfill(status=404, headers=self.cors(), json={"error": "not found"})
 
     def cors(self): return {"Access-Control-Allow-Origin": "*", "Access-Control-Allow-Headers": "Content-Type, X-Pisos-Key"}
     def js(self, expr, *a): return self.page.evaluate(expr, *a)
+    def esperar(self, expr, timeout=5000):
+        """Como wait_for_function, pero sin eval dentro de la página (la CSP lo prohíbe, y así los tests corren con CSP)."""
+        fin = time.time() + timeout / 1000
+        while time.time() < fin:
+            try:
+                if self.page.evaluate(f"() => !!({expr})"): return
+            except Exception: pass
+            self.page.wait_for_timeout(100)
+        self.fail(f"no se cumplió en {timeout} ms: {expr}")
 
 
 class TestCarga(Web):
     def test_un_pin_por_piso(self):
         self.assertEqual(self.js("Object.keys(markers).length"), self.js("PISOS.length"))
     def test_conecta_con_la_pi(self):
-        self.page.wait_for_function("document.getElementById('api-s')?.textContent.includes('✓')", timeout=5000)
+        self.esperar("document.getElementById('api-s')?.textContent.includes('✓')", 5000)
     def test_atribucion_osm(self):
         self.assertIn("OpenStreetMap", self.page.inner_text(".leaflet-control-attribution"))
 
@@ -103,7 +116,7 @@ class TestEsc(Web):
 
 class TestPropuestos(Web):
     def test_salen_en_lista_y_mapa(self):
-        self.page.wait_for_function("CANDS.length===1", timeout=5000)
+        self.esperar("CANDS.length===1", 5000)
         self.assertIn("Piso de prueba", self.page.inner_text("#lares"))
         self.assertEqual(self.js("candLayer.getLayers().length"), 1)
     def test_datos_maliciosos_no_se_ejecutan(self):
@@ -114,7 +127,7 @@ class TestPropuestos(Web):
         r = self.js("(()=>{const e=document.getElementById('lares');return {img:e.querySelectorAll('img,svg,script,b,i').length,href:[...e.querySelectorAll('a')].map(a=>a.getAttribute('href'))}})()")
         self.assertEqual(r, {"img": 0, "href": ["#", "#"]}); self.assertEqual(self.alerts, [])
     def test_me_gusta_envia_a_la_pi(self):
-        self.page.wait_for_function("CANDS.length===1", timeout=5000)
+        self.esperar("CANDS.length===1", 5000)
         self.page.click("#lares [data-cst='7000001|gusta']")
         self.page.wait_for_timeout(500)
         self.assertIn(("/api/estado", {"id": "7000001", "st": "gusta", "by": self.js("YO")}), [(p, {k: d[k] for k in ("id", "st", "by")}) for p, d in self.posts])
@@ -151,10 +164,26 @@ class TestTiempoReal(Web):
         self.js("map.setView([55.70,12.50],14,{animate:false})")
         self.js("lastAct=0; VER='version-vieja'")              # simula: página parada y otra versión publicada
         with self.page.expect_event("load", timeout=10000): self.js("checkVersion()")
-        self.page.wait_for_function("window.map && map.getZoom()===14", timeout=10000)
+        self.esperar("window.map && map.getZoom()===14", 10000)
     def test_si_se_usa_la_pagina_avisa_en_vez_de_recargar(self):
         self.js("lastAct=Date.now(); VER='version-vieja'; checkVersion()")
         self.page.wait_for_selector("#nuevaver", timeout=5000)
+
+
+class TestTiempoRealPi(Web):
+    def test_sin_eventos_sigue_por_sondeo(self):
+        self.esperar("TREAL.fallos>=1", 5000)
+        self.assertFalse(self.js("TREAL.on"))
+        self.esperar("document.getElementById('api-s')?.textContent.includes('✓')", 5000)
+    def test_evento_de_estado_cambia_el_pin(self):
+        pid = self.js("PISOS.find(p=>p.st!=='contactado').id")
+        self.sse = "retry: 100000\n: conectado\n\nevent: estados\ndata: " + json.dumps({pid: {"st": "contactado", "stF": "2026-10-22", "by": "unai", "ts": int(time.time())}}) + "\n\n"
+        self.js("liveStop(); TREAL.fallos=0; liveStart()")
+        self.esperar(f"PISOS.find(p=>p.id==='{pid}').st==='contactado'", 5000)
+    def test_propuestos_no_se_repintan_si_no_cambian(self):
+        self.esperar("CANDS.length===1", 5000)
+        self.js("window._c=CANDS"); self.js("pullCandidatos()"); self.page.wait_for_timeout(500)
+        self.assertTrue(self.js("CANDS===window._c"), "se sustituyeron los propuestos aunque no cambiaron")
 
 
 if __name__ == "__main__":
