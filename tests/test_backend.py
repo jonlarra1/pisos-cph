@@ -75,6 +75,11 @@ class TestImgUrl(Base):
                   "https://image-lambda.boligportal.dk/%2e%2e/x", "https://s3.eu-central-1.amazonaws.com/otro-bucket/x.jpg",
                   "file:///etc/passwd", "https://127.0.0.1/x", ""):
             with self.subTest(u=u), self.assertRaises(ValueError): app.img_proxy(u)
+    def test_redirecciones_solo_a_portales(self):
+        h = app._RedirSoloPortales(); req = urllib.request.Request("https://image-lambda.boligportal.dk/a")
+        for u in ("https://evil.com/x", "http://image-lambda.boligportal.dk/x", "https://127.0.0.1/x", "https://image-lambda.boligportal.dk:8443/x"):
+            with self.subTest(u=u), self.assertRaises(ValueError): h.redirect_request(req, None, 302, "Found", {}, u)
+        self.assertIsNotNone(h.redirect_request(req, None, 302, "Found", {}, "https://image-lambda.boligportal.dk/b"))
     def test_endpoint_responde_400(self):
         code, _, d = pedir("/api/img?u=" + urllib.request.quote("https://evil.com/a.jpg"))
         self.assertEqual(code, 400)
@@ -157,6 +162,7 @@ class TestVarios(Base):
         self.assertEqual(pedir("/api/clientlog", {"level": "error", "msg": "prueba", "where": "test"})[0], 200)
         self.assertEqual(app.tail("client", 1)[-1]["msg"], "prueba")
         self.assertEqual(pedir("/api/clientlog", b"x" * 3000)[0], 400)
+        self.assertEqual(pedir("/api/clientlog", {"msg": "spam"}, headers={"Origin": "https://evil.com"})[0], 403)
     def test_ruta_sin_motor_503_y_params_400(self):
         app.MOTOR["m"] = None
         self.assertEqual(pedir("/api/ruta?olat=55.7&olon=12.5&dlat=55.7&dlon=12.5&fecha=2026-10-26&hora=09:00")[0], 503)
