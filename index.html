@@ -981,6 +981,41 @@ html,body{overflow-x:hidden}
 .rt-tabs button{border:1px solid var(--line);background:none;color:var(--fg);border-radius:14px;padding:4px 10px;font:600 12px var(--f-body);cursor:pointer}
 .rt-tabs button.on{background:var(--accent);border-color:var(--accent);color:var(--panel)}
 
+
+/* ---------- animaciones más fluidas y barras de desplazamiento (2026-10-23) ---------- */
+:root{interpolate-size:allow-keywords;--ease-out:cubic-bezier(.2,.8,.2,1)}
+/* menús de la derecha: la altura se anima al abrir/cerrar (Chrome/Edge 131+; en otros navegadores, como antes) */
+.lines-card::details-content{block-size:0;overflow:clip;transition:block-size .28s var(--ease-out),content-visibility .28s allow-discrete}
+.lines-card[open]::details-content{block-size:auto}
+@media (min-width:761px){.rcol .lines-card{transition:width .28s var(--ease-out),box-shadow .2s}}
+.lines-card summary::after,.lines-card[open] summary::after{content:"▾";transition:transform .28s var(--ease-out)}
+.lines-card[open] summary::after{transform:rotate(180deg)}
+/* barra de desplazamiento fina y con aire: el contenido ya no queda pegado a ella */
+.lines-card,.sh-body,.out-s,.list,.rcol{scrollbar-width:thin;scrollbar-color:color-mix(in srgb,var(--fg) 28%,transparent) transparent}
+/* la columna derecha hace scroll entera (una sola barra, con hueco propio); las tarjetas no se aplastan */
+.rcol{overflow-y:auto;overflow-x:hidden;overscroll-behavior:contain;scrollbar-gutter:stable;padding:0 2px 10px 12px;margin-left:-12px}
+.rcol>.lines-card{flex-shrink:0;max-height:none;overflow:visible}
+#mom{display:grid;grid-template-columns:1fr 1fr;gap:6px;margin:2px 0 8px}
+#mom .chip{text-align:center;padding:5px 6px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+/* ficha del piso y avisos: entran con suavidad */
+@keyframes sheetIn{from{opacity:0;transform:translateX(-10px)}to{opacity:1;transform:none}}
+@keyframes popIn{from{opacity:0;transform:translateY(-6px) scale(.98)}to{opacity:1;transform:none}}
+@keyframes fadeIn{from{opacity:0}to{opacity:1}}
+.sheet.open{animation:sheetIn .26s var(--ease-out)}
+#toasts>div{animation:popIn .26s var(--ease-out)}
+#nuevaver,#quiensoy{animation:fadeIn .2s ease-out}
+.pin{transition:transform .2s var(--ease-out),box-shadow .2s}
+.chip,.rt-i,.lall button{transition:background-color .15s,border-color .15s,color .15s}
+/* rutas animadas: cada patrón con su ciclo exacto (antes andar y bici daban un salto en cada vuelta) */
+.route-ant{animation:ant .9s linear infinite}                 /* transporte: guiones 10+8 = 18 px */
+.route-ant.walk{animation:ant-walk 1.4s linear infinite}      /* andar: 1+7 = 8 px (2 ciclos) */
+.route-ant.bike{animation:ant-bike .93s linear infinite}      /* bici: 6+6 = 12 px (2 ciclos) */
+@keyframes ant-walk{to{stroke-dashoffset:-16}}
+@keyframes ant-bike{to{stroke-dashoffset:-24}}
+@media (prefers-reduced-motion:reduce){
+  .lines-card::details-content,.lines-card summary::after,.pin,.rcol .lines-card{transition:none}
+  .sheet.open,#toasts>div,#nuevaver,#quiensoy{animation:none}
+  .route-ant,.route-ant.walk,.route-ant.bike{animation:none}}
 </style>
 
 <div class="app">
