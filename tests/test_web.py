@@ -136,6 +136,7 @@ class TestPropuestos(Web):
         self.assertEqual(r, {"img": 0, "href": ["#", "#"]}); self.assertEqual(self.alerts, [])
     def test_me_gusta_envia_a_la_pi(self):
         self.esperar("CANDS.length===1", 5000)
+        self.js("YO='jon'")                              # ya ha dicho quién es (si no, sale «¿Quién eres?»)
         self.page.click("#lares [data-cst='7000001|gusta']")
         self.page.wait_for_timeout(500)
         self.assertIn(("/api/estado", {"id": "7000001", "st": "gusta", "by": self.js("YO")}), [(p, {k: d[k] for k in ("id", "st", "by")}) for p, d in self.posts])
