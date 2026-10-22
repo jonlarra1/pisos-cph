@@ -15,6 +15,7 @@ sys.path.insert(0, os.path.join(ROOT, "backend"))
 spec = importlib.util.spec_from_file_location("app", os.path.join(ROOT, "backend", "app.py"))
 app = importlib.util.module_from_spec(spec); spec.loader.exec_module(app)
 app.init()
+app.SSE_PING = 0.2                                   # en tests, las conexiones SSE cerradas se liberan rápido
 ORIGIN = "https://jonlarra1.github.io"
 
 
@@ -93,7 +94,7 @@ class TestEstado(Base):
     def test_get_estados(self):
         code, hd, d = pedir("/api/estados")
         self.assertEqual(code, 200); self.assertIsInstance(d, dict)
-        self.assertEqual(hd["Access-Control-Allow-Origin"], ORIGIN); self.assertEqual(hd["Cache-Control"], "no-store")
+        self.assertEqual(hd["Access-Control-Allow-Origin"], ORIGIN); self.assertEqual(hd["Cache-Control"], "no-cache"); self.assertTrue(hd["ETag"])
     def test_post_valido_y_aparece(self):
         code, _, d = escribir("/api/estado", {"id": "4641637", "st": "gusta", "by": "jon"})
         self.assertEqual(code, 200); self.assertEqual(d["4641637"]["st"], "gusta")
@@ -159,6 +160,70 @@ class TestVarios(Base):
     def test_ruta_sin_motor_503_y_params_400(self):
         app.MOTOR["m"] = None
         self.assertEqual(pedir("/api/ruta?olat=55.7&olon=12.5&dlat=55.7&dlon=12.5&fecha=2026-10-26&hora=09:00")[0], 503)
+
+
+class TestEtag(Base):
+    def test_304_si_no_cambia(self):
+        code, hd, _ = pedir("/api/zonas"); tag = hd["ETag"]
+        self.assertEqual(code, 200); self.assertEqual(hd["Cache-Control"], "no-cache")
+        code2, hd2, body = pedir("/api/zonas", headers={"If-None-Match": tag})
+        self.assertEqual((code2, body), (304, b"")); self.assertEqual(hd2["Access-Control-Allow-Origin"], ORIGIN)
+    def test_200_si_cambia(self):
+        tag = pedir("/api/estados")[1]["ETag"]
+        escribir("/api/estado", {"id": "8888001", "st": "contactado", "by": "jon"})
+        self.assertEqual(pedir("/api/estados", headers={"If-None-Match": tag})[0], 200)
+    def test_post_sin_etag(self):
+        self.assertIsNone(escribir("/api/estado", {"id": "8888002", "st": "nuevo"})[1].get("ETag"))
+
+
+class TestEventos(Base):
+    """GET /api/eventos (SSE): los cambios llegan al momento."""
+    def tearDown(self):
+        fin = time.time() + 3                      # el servidor nota el cierre en el siguiente ping
+        while app.SSE["n"] and time.time() < fin: time.sleep(0.05)
+        self.assertEqual(app.SSE["n"], 0, "quedan conexiones SSE abiertas")
+    def abrir(self):
+        import socket
+        s = socket.create_connection(("127.0.0.1", int(Servidor.url().rsplit(":", 1)[1])), timeout=5)
+        s.sendall(f"GET /api/eventos HTTP/1.1\r\nHost: x\r\nOrigin: {ORIGIN}\r\n\r\n".encode())
+        return s
+    def leer_hasta(self, s, texto, t=5):
+        data, fin = b"", time.time() + t
+        while texto.encode() not in data and time.time() < fin:
+            try: data += s.recv(4096)
+            except TimeoutError: break
+        return data.decode()
+    def test_aviso_de_estado(self):
+        s = self.abrir()
+        try:
+            self.assertIn("text/event-stream", self.leer_hasta(s, ": conectado"))
+            escribir("/api/estado", {"id": "8888003", "st": "gusta", "by": "unai"})
+            out = self.leer_hasta(s, "8888003")
+            self.assertIn("event: estados", out); self.assertIn('"8888003":{"st":"gusta"', out)
+        finally: s.close()
+    def test_aviso_de_zonas(self):
+        s = self.abrir()
+        try:
+            self.leer_hasta(s, ": conectado"); escribir("/api/zona", {"zona": "Valby", "permitida": False})
+            self.assertIn("event: ajustes", self.leer_hasta(s, "event: ajustes"))
+        finally: s.close()
+    def test_limite_por_ip(self):
+        socks = [self.abrir() for _ in range(app.SSE_IP)]
+        try:
+            for s in socks: self.assertIn(": conectado", self.leer_hasta(s, ": conectado"))
+            extra = self.abrir()
+            try: self.assertIn(" 503 ", self.leer_hasta(extra, "\r\n").split("\r\n")[0])
+            finally: extra.close()
+        finally:
+            for s in socks: s.close()
+    def test_vigilar_candidatos(self):
+        p = os.path.join(os.environ["BRIDGE_DIR"], "candidatos.json")
+        with open(p, "w") as f: json.dump({"actualizado": "a", "pisos": []}, f)
+        threading.Thread(target=app.vigilar_candidatos, kwargs={"cada": 0.1}, daemon=True).start()
+        time.sleep(0.3); n0 = app._ultimo["n"]
+        with open(p, "w") as f: json.dump({"actualizado": "b", "pisos": [{"id": "1"}]}, f)
+        os.utime(p, (time.time() + 5, time.time() + 5)); time.sleep(0.5)
+        self.assertGreater(app._ultimo["n"], n0); self.assertIn('"b"', app._ultimo["data"])
 
 
 class TestLogs(Base):
