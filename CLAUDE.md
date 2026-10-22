@@ -75,8 +75,10 @@ The user is Jon. He works at Nordic Solar (Hellerup). He prefers short, simple, 
   7. Motor de rutas en vivo: /api/ruta hecho y probado en local (commit 0a1c981). Falta: desplegar en la Pi (mem_limit 512m,
      clave SSH), web (botón «Ahora», hora libre, 7 días, llegar/salir, rutas en TP para destinos añadidos), pruebas desde fuera.
   9. Desplegar en la Pi a la vez: Lares (dep/pre, historial.json), panel «Pisos» (contadores + gráfico), fix 502 de fotos,
-     backend nuevo (SSE /api/eventos + ETag, check_site ampliado, vigilar_candidatos). Pasos: copiar backend/ a /home/docker/pisos-backend,
-     `docker compose up -d --build`, comprobar /api/health, abrir la web y ver `TREAL.on===true` (si Funnel corta el SSE, la web sigue por sondeo).
+     backend nuevo (SSE /api/eventos + ETag, check_site ampliado, vigilar_candidatos). Probado en Docker local con python:3.12-slim y las
+     mismas restricciones (70 tests + smoke_test: 304, SSE, aviso de Lares, tope 20 conexiones, 27 MB, 26 procesos).
+     Instalar: `backend/deploy.sh USUARIO@100.72.170.60` (solo mira) y luego `--aplicar` (tests, copia de seguridad, compose up --build,
+     smoke_test contra el Funnel y vuelta atrás automática si falla). `--con-compose` sube también compose.yml (mem_limit 512m: preguntar a Jon).
      Después (fase 2): mover el <script> a app.js y quitar 'unsafe-inline' de script-src (check_site ya lo soporta).
   11. Chrome «acceso a red local»: en aparatos con MagicDNS el nombre de la Pi resuelve a 100.72.170.60 y Chrome pide permiso (headless lo deniega).
   10. Nordic Solar = Strandvejen 104B; Jon dice que se entra por el «3B»: preguntar de qué calle es y ajustar el destino.
