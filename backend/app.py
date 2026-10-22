@@ -281,6 +281,38 @@ def limited(key, cap=30, glob_key=None, glob_cap=None):
             if k: hits.setdefault(k, []).append(now); hits[k] = [t for t in hits[k] if now-t < 60]
     return False
 
+# ------------------------------------------------------------------ tiempo real (Server-Sent Events)
+# La web abre GET /api/eventos y la Pi le avisa al momento de cada cambio (en vez de preguntar cada pocos segundos):
+#   event: estados    data: {todos los estados}          (alguien cambió un estado)
+#   event: candidatos data: {"actualizado": ...}          (Lares escribió candidatos.json)
+#   event: ajustes    data: {}                            (zonas o filtros de búsqueda)
+# Cada hilo de conexión cuenta en pids_limit del contenedor (100): como mucho SSE_MAX en total y SSE_IP por IP.
+SSE_MAX, SSE_IP, SSE_PING, SSE_VIDA = 20, 4, 25, 1800
+SSE = {"n": 0, "por_ip": collections.Counter(), "total": 0, "rechazadas": 0}
+_cambio = threading.Condition()
+_ultimo = {"n": 0, "tipo": "", "data": "{}"}       # último aviso: cada conexión compara el número para no perderse ninguno
+
+def avisar(tipo, data):
+    with _cambio:
+        _ultimo.update(n=_ultimo["n"] + 1, tipo=tipo, data=json.dumps(data, ensure_ascii=False, separators=(",", ":")))
+        _cambio.notify_all()
+
+def vigilar_candidatos(cada=10):
+    """Avisa cuando Lares reescribe candidatos.json (y lo deja en el log de eventos)."""
+    p = os.path.join(BRIDGE, "candidatos.json"); antes = os.path.getmtime(p) if os.path.exists(p) else 0
+    while True:
+        time.sleep(cada)
+        try:
+            m = os.path.getmtime(p) if os.path.exists(p) else 0
+            if m != antes:
+                antes = m; c = candidatos()
+                avisar("candidatos", {"actualizado": c.get("actualizado")})
+                log("events", level="info", src="lares", msg=f"candidatos actualizados: {len(c['pisos'])} pisos")
+        except Exception as e:
+            log("events", level="warn", src="lares", msg=f"vigilar candidatos: {type(e).__name__}: {e}"[:200])
+
+def etag(b): return '"' + hashlib.sha1(b).hexdigest()[:20] + '"'
+
 class H(BaseHTTPRequestHandler):
     server_version = "pisos/1"
     def client_ip(self):
@@ -308,10 +340,48 @@ class H(BaseHTTPRequestHandler):
             self.send_header("Access-Control-Allow-Headers", "Content-Type, X-Pisos-Key")
     def reply(self, code, obj):
         b = json.dumps(obj, ensure_ascii=False).encode()
+        tag = etag(b) if code == 200 and self.command == "GET" else None
+        if tag and self.headers.get("If-None-Match") == tag:      # la web ya lo tiene: «sin cambios», sin cuerpo
+            self.send_response(304); self.cors(); self.send_header("ETag", tag); self.send_header("Cache-Control", "no-cache")
+            self.end_headers(); self._note = (self._note + " 304").strip(); return
         self.send_response(code); self.cors()
         self.send_header("Content-Type", "application/json; charset=utf-8"); self.send_header("Content-Length", str(len(b)))
-        self.send_header("Cache-Control", "no-store"); self.send_header("X-Content-Type-Options", "nosniff")
+        if tag: self.send_header("ETag", tag)
+        self.send_header("Cache-Control", "no-cache" if tag else "no-store"); self.send_header("X-Content-Type-Options", "nosniff")
         self.end_headers(); self.wfile.write(b)
+    def eventos(self):
+        """GET /api/eventos: conexión abierta (SSE) por la que llegan los cambios al momento."""
+        ip = self.client_ip()
+        with lock:
+            if SSE["n"] >= SSE_MAX or SSE["por_ip"][ip] >= SSE_IP:
+                SSE["rechazadas"] += 1; lleno = True
+            else:
+                SSE["n"] += 1; SSE["por_ip"][ip] += 1; SSE["total"] += 1; lleno = False
+        if lleno: return self.reply(503, {"error": "demasiadas conexiones en tiempo real"})
+        t0 = time.time()
+        try:
+            self.send_response(200); self.cors()
+            self.send_header("Content-Type", "text/event-stream; charset=utf-8"); self.send_header("Cache-Control", "no-cache")
+            self.send_header("X-Accel-Buffering", "no"); self.send_header("Connection", "close"); self.end_headers()
+            self.close_connection = True
+            with _cambio: visto = _ultimo["n"]
+            self.wfile.write(b"retry: 5000\n: conectado\n\n"); self.wfile.flush()
+            while time.time() - t0 < SSE_VIDA:
+                with _cambio:
+                    _cambio.wait_for(lambda: _ultimo["n"] != visto, timeout=SSE_PING)
+                    nuevo = dict(_ultimo) if _ultimo["n"] != visto else None
+                if nuevo:
+                    visto = nuevo["n"]; msg = f"event: {nuevo['tipo']}\ndata: {nuevo['data']}\n\n"
+                else:
+                    msg = ": ping\n\n"                      # mantiene viva la conexión (y detecta si el cliente se fue)
+                self.wfile.write(msg.encode()); self.wfile.flush()
+        except (BrokenPipeError, ConnectionResetError, TimeoutError, OSError):
+            pass                                            # el navegador cerró la pestaña: normal
+        finally:
+            with lock:
+                SSE["n"] -= 1; SSE["por_ip"][ip] -= 1
+                if SSE["por_ip"][ip] <= 0: del SSE["por_ip"][ip]
+            self._note = f"sse {round(time.time()-t0)} s"
     def do_OPTIONS(self):
         self.send_response(204); self.cors(); self.send_header("Content-Length", "0"); self.end_headers()
     def do_GET(self):
@@ -332,6 +402,7 @@ class H(BaseHTTPRequestHandler):
             self.send_response(200); self.cors(); self.send_header("Content-Type", ctype); self.send_header("Content-Length", str(len(data)))
             self.send_header("Cache-Control", "public, max-age=604800"); self.send_header("X-Content-Type-Options", "nosniff"); self.end_headers()
             self.wfile.write(data); return
+        if self.path == "/api/eventos": return self.eventos()
         if self.path == "/api/estados": return self.reply(200, all_estados())
         if self.path == "/api/zonas": return self.reply(200, all_zonas())
         if self.path == "/api/filtros": return self.reply(200, filtros())
@@ -372,13 +443,14 @@ class H(BaseHTTPRequestHandler):
                 c.execute("INSERT INTO ajustes (k, v, by, ts) VALUES ('filtros',?,?,?) ON CONFLICT(k) DO UPDATE SET v=excluded.v, by=excluded.by, ts=excluded.ts",
                           (json.dumps(f), by, int(time.time())))
             write_config(); log("events", level="info", src="filtros", msg=json.dumps(f, ensure_ascii=False), by=by)
-            return self.reply(200, filtros())
+            avisar("ajustes", {}); return self.reply(200, filtros())
         if self.path == "/api/zona":
             z, ok = str(d.get("zona", "")).strip(), d.get("permitida")
             if not ZONA_RE.match(z) or not isinstance(ok, bool): return self.reply(400, {"error": "bad data"})
             with lock, db() as c:
                 c.execute("INSERT INTO zonas (zona, permitida, by, ts) VALUES (?,?,?,?) ON CONFLICT(zona) DO UPDATE SET permitida=excluded.permitida, by=excluded.by, ts=excluded.ts", (z, int(ok), by, int(time.time())))
-            write_config(); log("events", level="info", src="zonas", msg=f"{z} -> {'permitida' if ok else 'excluida'}", by=by); return self.reply(200, all_zonas())
+            write_config(); log("events", level="info", src="zonas", msg=f"{z} -> {'permitida' if ok else 'excluida'}", by=by)
+            avisar("ajustes", {}); return self.reply(200, all_zonas())
         pid, st = str(d.get("id", "")), d.get("st")
         stF = time.strftime("%Y-%m-%d")
         if not ID_RE.match(pid) or st not in ESTADOS or by not in WHO: return self.reply(400, {"error": "bad data"})
@@ -386,7 +458,8 @@ class H(BaseHTTPRequestHandler):
         with lock, db() as c:
             c.execute("INSERT INTO estado (id, st, stF, by, ts) VALUES (?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET st=excluded.st, stF=excluded.stF, by=excluded.by, ts=excluded.ts", (pid, st, stF, by, ts))
             c.execute("INSERT INTO historial (id, st, stF, by, ts) VALUES (?,?,?,?,?)", (pid, st, stF, by, ts))
-        write_config(); log("events", level="info", src="estado", msg=f"{pid} -> {st}", by=by); self.reply(200, all_estados())
+        write_config(); log("events", level="info", src="estado", msg=f"{pid} -> {st}", by=by)
+        est = all_estados(); avisar("estados", est); self.reply(200, est)
 
 # ------------------------------------------------------------------ comprobaciones
 # ------------------------------------------------------------------ motor de rutas (horarios GTFS de Rejseplanen)
@@ -666,6 +739,7 @@ class Admin(BaseHTTPRequestHandler):
                   "checks": CHECKS, "eventos": tail("events", 60)[::-1], "api": tail("api", 80)[::-1], "cliente": tail("client", 30)[::-1],
                   "lares": [json.loads(x) for x in (open(os.path.join(BRIDGE, "lares_runs.jsonl"), encoding="utf-8").read().splitlines()[-15:] if os.path.exists(os.path.join(BRIDGE, "lares_runs.jsonl")) else []) if x.strip()][::-1],
                   "listas": listas(),
+                  "tiempo_real": {"abiertas": SSE["n"], "max": SSE_MAX, "desde_arranque": SSE["total"], "rechazadas": SSE["rechazadas"]},
                   "usuario": self.headers.get("Tailscale-User-Login", "") or "acceso por IP de Tailscale"}
             return self.send(200, json.dumps(st, ensure_ascii=False), "application/json; charset=utf-8")
         if self.path in ("/", "/index.html"):
@@ -700,5 +774,6 @@ if __name__ == "__main__":
     threading.Thread(target=housekeeper, daemon=True).start()
     threading.Thread(target=gtfs_worker, daemon=True).start()
     threading.Thread(target=monitor, daemon=True).start()
+    threading.Thread(target=vigilar_candidatos, daemon=True).start()
     threading.Thread(target=lambda: ThreadingHTTPServer(("0.0.0.0", 8790), Admin).serve_forever(), daemon=True).start()
     ThreadingHTTPServer(("0.0.0.0", 8787), H).serve_forever()
