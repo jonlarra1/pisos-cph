@@ -1484,11 +1484,24 @@ function pinIcon(p,sel){const sz=sel?36:30;
     html:`<div class="pin${sel?" sel":""}${p.st==="descartado"&&leftH(p)>0?" has-cd":""}" title="${p.st==="descartado"&&leftH(p)>0?`Descartado · desaparece del mapa en ${Math.ceil(leftH(p))} h`:""}" style="width:${sz}px;height:${sz}px;background:${col(p)};font-size:${String(MODES[mode].lbl(p)).length>2?10.5:12}px">${MODES[mode].lbl(p)}${p.st==="descartado"&&leftH(p)>0?`<span class="cd">${Math.ceil(leftH(p))}h</span>`:""}</div>`});}
 const stPill=p=>`<div class="stw"><div class="stp" style="--sc:${ESTADOS[p.st].c}"><i></i>${ESTADOS[p.st].t}<small>desde ${esc(p.stF)}${p.by?` · por ${esc(PERF[p.by]?.n||p.by)}`:""}${p.st==="descartado"&&leftH(p)>0?` · ⏳ sale del mapa en ${Math.ceil(leftH(p))} h`:""}</small></div>
   <div class="stb" role="group" aria-label="Cambiar estado">${Object.entries(ESTADOS).map(([k,e])=>`<button data-setst="${p.id}|${k}" aria-pressed="${p.st===k}" style="--sc:${e.c}" title="${e.t}"><i></i>${e.t.split(" ·")[0].replace(" con el casero","")}</button>`).join("")}</div></div>`;
-function applyRemote(rem){let ch=false; for(const id in rem){const p=PISOS.find(x=>x.id===id), o=rem[id]; if(!p||!ESTADOS[o.st])continue;
-    if(p.st!==o.st||p.stF!==o.stF||p.by!==o.by||p.ts!==o.ts){p.st=o.st;p.stF=o.stF;p.by=o.by;p.ts=o.ts;ch=true;}}
+/* avisos breves cuando OTRA persona cambia un estado (no al cargar la página ni por tus propios cambios) */
+let remoteReady=false;
+function toast(txt){let box=document.getElementById("toasts");
+  if(!box){box=document.createElement("div"); box.id="toasts"; box.setAttribute("aria-live","polite");
+    box.style.cssText="position:fixed;left:50%;top:12px;transform:translateX(-50%);z-index:3000;display:flex;flex-direction:column;gap:6px;max-width:calc(100% - 32px);pointer-events:none";
+    document.body.appendChild(box);}
+  while(box.children.length>=3)box.firstChild.remove();
+  const t=document.createElement("div"); t.textContent=txt;
+  t.style.cssText="background:var(--panel,#fff);color:var(--fg,#111);border:1px solid var(--line,#ccc);border-radius:10px;padding:8px 12px;box-shadow:0 4px 16px rgba(0,0,0,.2);font-size:14px";
+  box.appendChild(t); setTimeout(()=>t.remove(),6000);}
+function applyRemote(rem){let ch=false; const avisos=[]; for(const id in rem){const p=PISOS.find(x=>x.id===id), o=rem[id]; if(!p||!ESTADOS[o.st])continue;
+    if(p.st!==o.st||p.stF!==o.stF||p.by!==o.by||p.ts!==o.ts){
+      if(remoteReady&&p.st!==o.st&&o.by&&o.by!==YO)avisos.push(`${PERF[o.by]?.n||o.by} marcó ${String(p.calle||p.id).split(" · ")[0]} como «${ESTADOS[o.st].t.split(" ·")[0]}»`);
+      p.st=o.st;p.stF=o.stF;p.by=o.by;p.ts=o.ts;ch=true;}}
+  remoteReady=true; avisos.slice(0,3).forEach(toast);
   if(ch){PISOS.forEach(p=>markers[p.id].setIcon(pinIcon(p,p.id===selId))); applyFilter(false); renderOut(); if(!card.hidden)showCard(card.dataset.id);
     if(sheet.classList.contains("open")){const p=PISOS.find(x=>x.id===sheet.dataset.id),h=sheet.querySelector(".stw"); if(p&&h)h.outerHTML=stPill(p);}}}
-function apiStatus(ok){apiOK=ok; const el=document.getElementById("api-s"); if(el)el.textContent=ok?"✓ Estados compartidos (Raspberry Pi)":"Sin conexión con la Raspberry Pi: los cambios se guardan solo en este navegador";}
+function apiStatus(ok){apiOK=ok; const el=document.getElementById("api-s"); if(el)el.textContent=ok?"✓ Estados compartidos (Raspberry Pi)"+(typeof TREAL!=="undefined"&&TREAL.on?" · 🟢 en directo":""):"Sin conexión con la Raspberry Pi: los cambios se guardan solo en este navegador";}
 /* ---------- tiempo real con la Pi (SSE /api/eventos): los cambios llegan al momento ----------
    Si la Pi no lo tiene o falla, la página sigue preguntando cada 15 s (estados) y 60 s (propuestos).
    Con la pestaña oculta más de 1 min se cierra la conexión (cada una ocupa un hilo en la Pi). */
