@@ -84,6 +84,7 @@ class Web(unittest.TestCase):
             return route.fulfill(status=200, headers={**self.cors(), "Content-Type": "text/event-stream"}, body=sse)
         if path == "/api/ruta":                     # motor de rutas simulado (o caído si self.ruta_caida)
             if getattr(self, "ruta_caida", False): return route.fulfill(status=503, headers=self.cors(), json={"error": "motor no disponible"})
+            if getattr(self, "ruta_retenida", None) is not None: return self.ruta_retenida.append(route)   # el test la suelta luego
             return route.fulfill(status=200, headers=self.cors(), json={"opciones": [{"min": 23, "sale": "08:04", "llega": "08:27", "trans": 1, "legs": [
                 {"m": "walk", "min": 8, "d": 600, "to": "Enghave Brygge St.", "path": [[55.649, 12.553], [55.653, 12.556]]},
                 {"m": "Metro", "line": "M4", "head": "Orientkaj", "from": "Enghave Brygge St.", "to": "København H", "dep": "08:12", "arr": "08:16", "n": 2, "path": [[55.653, 12.556], [55.672, 12.564]]},
@@ -215,6 +216,12 @@ class TestDestinoAnadido(Web):
         self.page.wait_for_timeout(300)
         txt = self.page.inner_text("#sheet"); self.assertIn("M4", txt); self.assertIn("23 min", txt)
         self.js(f"drawRoute('{pid}','xcris-unai',false)")                 # dibujar con los trazados de la respuesta
+    def test_barra_de_progreso(self):
+        self.ruta_retenida = []; pid = self.abrir()
+        self.esperar("document.querySelector('#sheet .tp-bar')")
+        self.assertIn("0 de 1 ruta (0 %)", self.page.inner_text("#sheet .tp-bar"))
+        r = self.ruta_retenida.pop(); self.ruta_retenida = None; self.pi(r)          # la Pi contesta
+        self.esperar(f"RTS('{pid}','xcris-unai').length===1 && !document.querySelector('#sheet .tp-bar')")
     def test_si_la_pi_falla_queda_solo_andando(self):
         self.ruta_caida = True; pid = self.abrir()
         self.esperar("Object.values(TP).some(v=>v===null)")
