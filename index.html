@@ -1411,8 +1411,16 @@ function drawRoute(id,key,fit){
     map.flyToBounds(L.latLngBounds(focusPts),{duration:.6,maxZoom:14,paddingTopLeft:tl,paddingBottomRight:br});}
   document.querySelectorAll("[data-route]").forEach(b=>b.classList.toggle("on",b.dataset.route===id+"|"+key));
 }
+/* barra de progreso de las rutas en transporte de los destinos añadidos (cuenta rutas, no tiempo:
+   la primera de un día nuevo tarda ~1,5 s en la Pi y las siguientes 0,03–0,3 s) */
+function tpBar(p){const ex=allRows().filter(r=>r.extra); if(!ex.length)return "";
+  const st=ex.map(r=>tpFor(p,r)), done=st.filter(x=>x!=="pending").length; if(done===ex.length)return "";
+  const pc=Math.round(done/ex.length*100);
+  return `<div class="tp-bar" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${pc}" style="margin:6px 0 8px;font-size:12px;color:var(--muted)">
+    🚆 Calculando transporte con los horarios de Rejseplanen: ${done} de ${ex.length} ruta${ex.length>1?"s":""} (${pc} %)
+    <div style="height:6px;border-radius:3px;background:var(--line);margin-top:4px;overflow:hidden"><i style="display:block;height:100%;width:${Math.max(4,pc)}%;background:#2b6fd6;transition:width .3s"></i></div></div>`;}
 function routesHtml(p){
-  return `<div class="rt"><div class="rt-h">Llegar antes de las ${tripTime} · ${DAYF[tripDay]}</div>${allRows().map(row=>{
+  return `<div class="rt"><div class="rt-h">Llegar antes de las ${tripTime} · ${DAYF[tripDay]}</div>${tpBar(p)}${allRows().map(row=>{
     if(row.extra&&!RTS(p.id,row.key).length){const tp=tpFor(p,row), lv=liveFor(p,row), bike=PERF[row.who].mode==="bike";
       const head=`<span class="rt-n">${rowName(row)}</span>`;
       if(tp==="pending")return `<div class="rt-i" data-route="${p.id}|${row.key}" role="button" tabindex="0">${head}<b>…</b><span class="ch">🚆 Calculando transporte (horarios de Rejseplanen)…</span></div>`;
