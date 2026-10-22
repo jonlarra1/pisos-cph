@@ -62,6 +62,8 @@ class Web(unittest.TestCase):
         self.page.on("dialog", lambda d: (self.alerts.append(d.message), d.dismiss()))
         self.page.route(PI + "/**", self.pi)
         self.page.route("https://tile.openstreetmap.org/**", lambda r: r.fulfill(status=200, content_type="image/png", body=PNG))
+        self.page.route("https://routing.openstreetmap.de/**", lambda r: r.fulfill(status=200, json={"code": "Ok", "routes": [
+            {"distance": 4000, "duration": 900, "geometry": {"coordinates": [[12.585, 55.679], [12.553, 55.649]]}}]}))   # bici/andando por calle
         self.page.route("https://fonts.googleapis.com/**", lambda r: r.fulfill(status=200, content_type="text/css", body=""))
         self.page.goto(self.url)
         self.esperar("window.map && document.querySelectorAll('.pin').length>0", 15000)
@@ -297,6 +299,11 @@ class TestMomentos(Web):
         self.assertEqual(self.js("esperaTxt({sale:'03:05'})"), "")                      # 5 min: normal
         self.js("tripTime='23:30'"); self.assertEqual(self.js("espera({sale:'00:10'})"), 40)   # pasa de medianoche
         self.js("MOMENTO='manana'"); self.assertEqual(self.js("espera({sale:'09:00'})"), 0)    # «llegar antes de»: no aplica
+    def test_de_noche_con_espera_sale_solo_en_bici(self):
+        self.js("tripTime='02:00'"); pid = self.momento("madrugada")          # la ruta simulada sale 08:04 -> mucha espera
+        self.esperar(f"RTS('{pid}','centro-jon').length===1")
+        self.esperar("/solo en bici \\d+ min/.test(document.querySelector('#sheet .rt').innerText)")
+        self.assertIn("sin transporte: 12 min", self.page.inner_text("#rt-steps"))          # 4 km a 20 km/h
     def test_fin_de_semana_por_la_manana_usa_el_motor(self):
         pid = self.momento("manana", "sáb"); self.esperar(f"RTS('{pid}','ns-jon').length===1")
     def test_etiqueta_centro_solo_de_noche(self):
