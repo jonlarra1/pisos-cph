@@ -1006,7 +1006,8 @@ html,body{overflow-x:hidden}
     <div class="rcol">
       <details class="lines-card" id="d-viaje" open><summary>Viaje <small id="trip-s"></small></summary>
       <div class="trip" role="group" aria-label="Viaje">
-        <label>Llegar antes de<select id="ttime" aria-label="Hora de llegada"></select></label>
+        <div class="chips" id="mom" role="group" aria-label="Momento del viaje"></div>
+        <label><span id="ttime-l">Llegar antes de</span><select id="ttime" aria-label="Hora"></select></label>
         <label>Día<select id="tday" aria-label="Día"></select></label>
         <div class="chips" id="hor" hidden></div>
       </div></details>
@@ -1303,14 +1304,29 @@ const PERF={jon:{n:"Jon",mode:"bike",lim:10,vw:5,vb:20},unai:{n:"Unai",mode:"foo
 const VW=[[4,"🐢 Lento"],[5,"Normal"],[6,"⚡ Rápido"]], VB=[[15,"🐢 Tranquilo"],[20,"Normal"],[25,"⚡ Rápido"]];
 /* Filas de rutas: destino + quién va. */
 const ROWS=[{key:"ns-jon",k:"ns",who:"jon"},{key:"gn-unai",k:"gn",who:"unai"},{key:"dtu-jon",k:"dtu",who:"jon"},{key:"dtu-unai",k:"dtu",who:"unai"}];
+/* Momentos del viaje. Mañana L–V 7:30–10:00 = rutas precalculadas (instantáneo); el resto lo calcula el motor de la Pi.
+   «salir»: del destino al piso. Madrugada: el día elegido es la noche de ese día (la fecha real es el día siguiente). */
+const CENTRO={k:"centro",name:"Centro · Kongens Nytorv",ll:[55.678939,12.585511]};   // Kongens Nytorv St. (OSM)
+const CROWS=[{key:"centro-jon",k:"centro",who:"jon"},{key:"centro-unai",k:"centro",who:"unai"}];
+const MOMENTOS={
+  manana:{n:"🌅 Mañana",t:"Llegar antes de",modo:"llegar",ida:true,rows:ROWS,def:"08:30",times:RUTAS.times},
+  tarde:{n:"🏠 Vuelta del trabajo",t:"Salir a las",modo:"salir",ida:false,rows:ROWS,def:"17:00",times:["15:00","15:30","16:00","16:30","17:00","17:30","18:00","18:30","19:00","19:30","20:00"]},
+  noche:{n:"🍻 Noche al centro",t:"Llegar antes de",modo:"llegar",ida:true,rows:CROWS,def:"22:00",times:["19:00","19:30","20:00","20:30","21:00","21:30","22:00","22:30","23:00","23:30"]},
+  madrugada:{n:"🌙 Volver de noche",t:"Salir a las",modo:"salir",ida:false,rows:CROWS,def:"02:00",times:["00:00","00:30","01:00","01:30","02:00","02:30","03:00","03:30","04:00","04:30","05:00"]}};
+let MOMENTO="manana"; try{const m=localStorage.getItem("momento"); if(MOMENTOS[m])MOMENTO=m;}catch(e){}
+const MOM=()=>MOMENTOS[MOMENTO], DIAS7=["lun","mar","mié","jue","vie","sáb","dom"];
+/* rutas ya calculadas (solo mañana L–V); el resto, al motor de la Pi */
+const precalc=row=>!row.extra&&row.k!=="centro"&&MOMENTO==="manana"&&RUTAS.days.includes(tripDay)&&RUTAS.times.includes(tripTime);
+const usaMotor=row=>!precalc(row);
 /* Destinos añadidos por cada uno (se guardan en su navegador). Rutas: bici/andando por calle al momento + Rejseplanen. */
 let EXTRA=[]; try{EXTRA=JSON.parse(localStorage.getItem("destinos")||"[]").filter(d=>d&&d.id&&Array.isArray(d.ll));}catch(e){}
 const extraLayer=L.layerGroup().addTo(map);
-function allRows(){return ROWS.concat(EXTRA.flatMap(d=>(d.who==="both"?["jon","unai"]:[d.who]).map(w=>({key:d.id+"-"+w,k:d.id,who:w,extra:d}))));}
+function allRows(){return MOM().rows.concat(EXTRA.flatMap(d=>(d.who==="both"?["jon","unai"]:[d.who]).map(w=>({key:d.id+"-"+w,k:d.id,who:w,extra:d}))));}
 const rowOf=key=>allRows().find(r=>r.key===key);
-const dName=k=>{const x=EXTRA.find(d=>d.id===k); return x?x.n:DSHORT[k].replace(" (trabajo)","");};
-const dLL=k=>{const x=EXTRA.find(d=>d.id===k); return x?x.ll:RUTAS.dest.find(d=>d.k===k).ll;};
+const dName=k=>{if(k==="centro")return CENTRO.name; const x=EXTRA.find(d=>d.id===k); return x?x.n:DSHORT[k].replace(" (trabajo)","");};
+const dLL=k=>{if(k==="centro")return CENTRO.ll; const x=EXTRA.find(d=>d.id===k); return x?x.ll:RUTAS.dest.find(d=>d.k===k).ll;};
 function drawExtraMarkers(){extraLayer.clearLayers();
+  if(MOM().rows===CROWS)L.marker(CENTRO.ll,{icon:L.divIcon({className:"",html:`<div class="work dest">Centro</div>`,iconSize:null,iconAnchor:[30,12]}),zIndexOffset:880}).bindTooltip("Kongens Nytorv (centro)",{direction:"top",offset:[0,-14]}).addTo(extraLayer);
   EXTRA.forEach(d=>L.marker(d.ll,{icon:L.divIcon({className:"",html:`<div class="work dest">${esc(d.n)}</div>`,iconSize:null,iconAnchor:[30,12]}),zIndexOffset:880}).bindTooltip(esc(d.addr||d.n),{direction:"top",offset:[0,-14]}).addTo(extraLayer));}
 function saveExtra(){try{localStorage.setItem("destinos",JSON.stringify(EXTRA));}catch(e){} drawExtraMarkers();}
 drawExtraMarkers();
@@ -1322,20 +1338,22 @@ function liveRoute(mode,a,b){const key=`${mode}|${a[0].toFixed(5)},${a[1].toFixe
      LIVE[key]=x?{d:Math.round(x.distance),path:x.geometry.coordinates.map(([lo,la])=>[la,lo])}:null; onLive();})
    .catch(()=>{LIVE[key]=null; onLive();});
   return "pending";}
-const liveFor=(p,row)=>{const pf=PERF[row.who], lv=liveRoute(pf.mode,[p.lat,p.lon],row.extra.ll);
+const liveFor=(p,row)=>{const pf=PERF[row.who], lv=liveRoute(pf.mode,[p.lat,p.lon],dLL(row.k));
   return lv&&lv!=="pending"?{...lv,min:Math.max(1,Math.round(lv.d/spd(pf,pf.mode)/60))}:lv;};
 /* destinos añadidos: transporte público con el motor de la Pi (/api/ruta, horarios GTFS de Rejseplanen),
    para el día, la hora y el perfil elegidos. Si la Pi no responde, queda la ruta solo en bici / andando. */
 const TP={};
 function tripDate(){const now=new Date(), want=["dom","lun","mar","mié","jue","vie","sáb"].indexOf(tripDay), dt=new Date(now);
-  dt.setDate(now.getDate()+((want-now.getDay()+7)%7)); return `${dt.getFullYear()}-${String(dt.getMonth()+1).padStart(2,"0")}-${String(dt.getDate()).padStart(2,"0")}`;}
-function tpFor(p,row){const pf=PERF[row.who], fecha=tripDate(), key=[p.id,row.key,fecha,tripTime,pf.mode,pf.lim,pf.vw,pf.vb].join("|");
+  dt.setDate(now.getDate()+((want-now.getDay()+7)%7)+(MOMENTO==="madrugada"?1:0)); return `${dt.getFullYear()}-${String(dt.getMonth()+1).padStart(2,"0")}-${String(dt.getDate()).padStart(2,"0")}`;}
+function tpFor(p,row){const pf=PERF[row.who], M=MOM(), fecha=tripDate(), key=[p.id,row.key,MOMENTO,fecha,tripTime,pf.mode,pf.lim,pf.vw,pf.vb].join("|");
   if(key in TP)return TP[key]; TP[key]="pending";
-  const q=new URLSearchParams({olat:p.lat,olon:p.lon,dlat:row.extra.ll[0],dlon:row.extra.ll[1],dname:String(row.extra.n||"Destino").slice(0,60),
-    fecha,hora:tripTime,modo:"llegar",perfil:pf.mode,lim:pf.lim,vw:pf.vw,vb:pf.vb});
+  const dest=dLL(row.k), casa=[p.lat,p.lon], a=M.ida?casa:dest, b=M.ida?dest:casa;
+  const q=new URLSearchParams({olat:a[0],olon:a[1],dlat:b[0],dlon:b[1],dname:String(M.ida?dName(row.k):String(p.calle||"Casa").split(" · ")[0]).slice(0,60),
+    fecha,hora:tripTime,modo:M.modo,perfil:pf.mode,lim:pf.lim,vw:pf.vw,vb:pf.vb});
   fetch(API+"/api/ruta?"+q,{cache:"no-cache"}).then(r=>r.ok?r.json():Promise.reject(r.status))
    .then(d=>{TP[key]=Array.isArray(d.opciones)&&d.opciones.length?d.opciones:null; onLive();})
-   .catch(()=>{TP[key]=null; onLive();});
+   .catch(st=>{TP[key]=null; onLive();
+     if(st===429||st===503)setTimeout(()=>{if(TP[key]===null){delete TP[key]; onLive();}},30000);});   /* Pi ocupada: reintentar */
   return "pending";}
 let liveT=null;
 function onLive(){clearTimeout(liveT); liveT=setTimeout(()=>{if(!card.hidden)showCard(card.dataset.id);
@@ -1343,8 +1361,9 @@ function onLive(){clearTimeout(liveT); liveT=setTimeout(()=>{if(!card.hidden)sho
   const st=document.getElementById("rt-steps"); if(st&&sheet.classList.contains("open")){const p=PISOS.find(x=>x.id===sheet.dataset.id); if(p)st.innerHTML=stepsHtml(p,routeDest);
     const rb=document.querySelector("#sheet .rt"); if(rb&&p)rb.outerHTML=routesHtml(p);   /* lista «Cómo llegar» con lo que acaba de llegar */
     const tb=document.querySelector("#sheet .rt-tabs"); if(tb&&p)tb.innerHTML=tabsHtml(p);}},80);}
-{const wd=["dom","lun","mar","mié","jue","vie","sáb"][new Date().getDay()]; if(RUTAS.days.includes(wd))tripDay=wd;}
-try{const t=localStorage.getItem("tripTime");if(RUTAS.times.includes(t))tripTime=t;
+{const wd=["dom","lun","mar","mié","jue","vie","sáb"][new Date().getDay()]; if(DIAS7.includes(wd))tripDay=wd;}
+if(!MOM().times.includes(tripTime))tripTime=MOM().def;
+try{const t=localStorage.getItem("tripTime");if(MOM().times.includes(t))tripTime=t;
   const pf=JSON.parse(localStorage.getItem("perfiles")||"{}");
   for(const w in PERF){const x=pf[w]||{}; if(x.mode==="bike"||x.mode==="foot")PERF[w].mode=x.mode; if(RUTAS.lim.includes(+x.lim))PERF[w].lim=+x.lim;
     if(VW.some(v=>v[0]===+x.vw))PERF[w].vw=+x.vw; if(VB.some(v=>v[0]===+x.vb))PERF[w].vb=+x.vb;}}catch(e){}
@@ -1365,11 +1384,15 @@ function adj(r,pf){const key=r; let c=ADJ.get(key); const sig=pf.vw+"/"+pf.vb; i
   ADJ.set(key,{sig,r:out}); return out;}
 /* Opciones de ruta por destino (hasta 3: la más rápida y alternativas por otras líneas). ALT = opción elegida. */
 const ALT={};
+function preRTS(id,row,day,time){const pf=PERF[row.who];
+  const i=((((RUTAS.ix[pf.mode]||{})[day]||{})[time]||{})[pf.lim]||{})[id]; let j=i&&i[row.k]; if(j==null)return []; if(!Array.isArray(j))j=[j];
+  return j.map(x=>RUTAS.routes[x]).filter(Boolean).map(r=>adj(r,pf)).sort((a,b)=>a.min-b.min||(a.sale<b.sale?1:-1));}  // la más rápida primero
 const RTS=(id,key)=>{const row=rowOf(key); if(!row)return [];
-  if(row.extra){const P=PISOS.find(x=>x.id===id), t=P&&tpFor(P,row); return Array.isArray(t)?t.slice().sort((a,b)=>a.min-b.min):[];}
-  const pf=PERF[row.who];
-  const i=((((RUTAS.ix[pf.mode]||{})[tripDay]||{})[tripTime]||{})[pf.lim]||{})[id]; let j=i&&i[row.k]; if(j==null)return []; if(!Array.isArray(j))j=[j];
-  return j.map(x=>RUTAS.routes[x]).filter(Boolean).map(r=>adj(r,pf)).sort((a,b)=>a.min-b.min||(a.sale<b.sale?1:-1));};  // la más rápida primero
+  if(usaMotor(row)){const P=PISOS.find(x=>x.id===id), t=P&&tpFor(P,row); return Array.isArray(t)?t.slice().sort((a,b)=>a.min-b.min):[];}
+  return preRTS(id,row,tripDay,tripTime);};
+/* siempre la mañana precalculada (para la lista de barrios: no lanza peticiones a la Pi) */
+const RTman=(id,key)=>{const row=ROWS.find(r=>r.key===key); if(!row)return null;
+  const o=preRTS(id,row,RUTAS.days.includes(tripDay)?tripDay:RUTAS.days[0],RUTAS.times.includes(tripTime)?tripTime:"08:30"); return o[0]||null;};
 const RT=(id,key)=>{const o=RTS(id,key); if(!o.length)return null; return o[Math.min(ALT[id+"|"+key]||0,o.length-1)];};
 const mainLine=r=>{const rides=r.legs.filter(l=>!isMove(l)); if(!rides.length)return "";
   const m=rides.reduce((a,l)=>{const d=t=>+t.slice(0,2)*60+ +t.slice(3); return (d(l.arr)-d(l.dep))>(d(a.arr)-d(a.dep))?l:a;}); return m.line;};
@@ -1378,12 +1401,12 @@ const altBtns=(id,key)=>{const o=RTS(id,key); if(o.length<2)return ""; const cur
 const rowName=r=>`${esc(dName(r.k))} <small class="who">${PERF[r.who].mode==="bike"?"🚲":"🚶"} ${PERF[r.who].n}</small>`;
 const LP=l=>RUTAS.paths[l.p];
 const DAYL={lun:"L",mar:"M",mié:"X",jue:"J",vie:"V",sáb:"S",dom:"D"}, DAYF={lun:"lunes",mar:"martes",mié:"miércoles",jue:"jueves",vie:"viernes",sáb:"sábado",dom:"domingo"};
-function rpLink(p,k){const now=new Date(), want=["dom","lun","mar","mié","jue","vie","sáb"].indexOf(tripDay);
-  const dt=new Date(now); dt.setDate(now.getDate()+((want-now.getDay()+7)%7));
-  const dd=String(dt.getDate()).padStart(2,"0")+"."+String(dt.getMonth()+1).padStart(2,"0")+"."+String(dt.getFullYear()).slice(2);
+function rpLink(p,k){const [y,m,d]=tripDate().split("-"), dd=`${d}.${m}.${y.slice(2)}`, M=MOM();
   const id=(ll,n)=>`A=16@X=${Math.round(ll[1]*1e6)}@Y=${Math.round(ll[0]*1e6)}@O=${n}`;
-  return "https://www.rejseplanen.dk/bin/query.exe/mn?SID="+encodeURIComponent(id([p.lat,p.lon],p.calle.replace(/@/g,"")))+"&ZID="+encodeURIComponent(id(dLL(k),dName(k).replace(/@/g,"")))+
-    `&date=${dd}&time=${tripTime}&timesel=arrive&start=1`;}
+  const casa=id([p.lat,p.lon],p.calle.replace(/@/g,"")), dst=id(dLL(k),dName(k).replace(/@/g,""));
+  return "https://www.rejseplanen.dk/bin/query.exe/mn?SID="+encodeURIComponent(M.ida?casa:dst)+"&ZID="+encodeURIComponent(M.ida?dst:casa)+
+    `&date=${dd}&time=${tripTime}&timesel=${M.ida?"arrive":"depart"}&start=1`;}
+const diaTxt=()=>MOMENTO==="madrugada"?`noche del ${DAYF[tripDay]}`:DAYF[tripDay];
 const routeR=L.svg({padding:.5}), routeLayer=L.layerGroup().addTo(map);
 /* Dibuja las rutas de todas las filas; la elegida resaltada, las otras más suaves. */
 function drawRoute(id,key,fit){
@@ -1391,9 +1414,9 @@ function drawRoute(id,key,fit){
   const rows=allRows(), order=rows.map(r=>r.key).filter(x=>x!==key).concat([key]), P=PISOS.find(x=>x.id===id);
   order.forEach(rk=>{const row=rows.find(x=>x.key===rk); if(!row)return; const on=rk===key;
     let r=RT(id,rk);
-    if(row.extra&&P&&!r){const lv=liveFor(P,row); if(lv&&lv!=="pending"){r={legs:[{m:PERF[row.who].mode==="bike"?"bike":"walk",min:lv.min,d:lv.d,live:lv.path}]};}}
+    if(usaMotor(row)&&P&&!r){const lv=liveFor(P,row); if(lv&&lv!=="pending"){r={legs:[{m:PERF[row.who].mode==="bike"?"bike":"walk",min:lv.min,d:lv.d,live:lv.path}]};}}
     if(!r)return;
-    const sig=row.extra?rk:r.legs.map(l=>l.p).join(","); if(!on&&seen.has(sig))return; seen.add(sig);
+    const sig=usaMotor(row)?rk:r.legs.map(l=>l.p).join(","); if(!on&&seen.has(sig))return; seen.add(sig);
     const op=on?1:.4, w=on?1:.7, dname=dName(row.k), ant=on?"route-ant ":"";
     r.legs.forEach(l=>{const path=l.live||l.path||LP(l); if(on)focusPts.push(...path);
       if(isMove(l)){const bike=l.m==="bike";
@@ -1413,36 +1436,36 @@ function drawRoute(id,key,fit){
 }
 /* barra de progreso de las rutas en transporte de los destinos añadidos (cuenta rutas, no tiempo:
    la primera de un día nuevo tarda ~1,5 s en la Pi y las siguientes 0,03–0,3 s) */
-function tpBar(p){const ex=allRows().filter(r=>r.extra); if(!ex.length)return "";
+function tpBar(p){const ex=allRows().filter(usaMotor); if(!ex.length)return "";
   const st=ex.map(r=>tpFor(p,r)), done=st.filter(x=>x!=="pending").length; if(done===ex.length)return "";
   const pc=Math.round(done/ex.length*100);
   return `<div class="tp-bar" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${pc}" style="margin:6px 0 8px;font-size:12px;color:var(--muted)">
     🚆 Calculando transporte con los horarios de Rejseplanen: ${done} de ${ex.length} ruta${ex.length>1?"s":""} (${pc} %)
     <div style="height:6px;border-radius:3px;background:var(--line);margin-top:4px;overflow:hidden"><i style="display:block;height:100%;width:${Math.max(4,pc)}%;background:#2b6fd6;transition:width .3s"></i></div></div>`;}
 function routesHtml(p){
-  return `<div class="rt"><div class="rt-h">Llegar antes de las ${tripTime} · ${DAYF[tripDay]}</div>${tpBar(p)}${allRows().map(row=>{
-    if(row.extra&&!RTS(p.id,row.key).length){const tp=tpFor(p,row), lv=liveFor(p,row), bike=PERF[row.who].mode==="bike";
+  return `<div class="rt"><div class="rt-h">${MOM().n} · ${MOM().t.toLowerCase()} ${tripTime} · ${diaTxt()}</div>${tpBar(p)}${allRows().map(row=>{
+    if(usaMotor(row)&&!RTS(p.id,row.key).length){const tp=tpFor(p,row), lv=liveFor(p,row), bike=PERF[row.who].mode==="bike";
       const head=`<span class="rt-n">${rowName(row)}</span>`;
       if(tp==="pending")return `<div class="rt-i" data-route="${p.id}|${row.key}" role="button" tabindex="0">${head}<b>…</b><span class="ch">🚆 Calculando transporte (horarios de Rejseplanen)…</span></div>`;
       return `<div class="rt-i${row.key===routeDest?" on":""}" data-route="${p.id}|${row.key}" role="button" tabindex="0">${head}<b>${lv&&lv!=="pending"?lv.min+" min":lv==="pending"?"…":"—"}</b>
         <span class="ch">${lv==="pending"?"Calculando…":lv?`${bike?"🚲 Solo en bici":"🚶 Solo andando"} · ${km(lv.d)}`:"Sin ruta"} · sin transporte para esta hora · <a href="${esc(rpLink(p,row.k))}" target="_blank" rel="noopener">Transporte en Rejseplanen ↗</a></span></div>`;}
     const r=RT(p.id,row.key);
-    const head=`<span class="rt-n">${rowName(row)}${r?` <small style="color:var(--muted)">sal ${r.sale}</small>${r.llega>tripTime?` <small class="late" title="Con tu velocidad llegarías a las ${r.llega}">⚠️ ${r.llega}</small>`:""}`:""}</span>`;
+    const head=`<span class="rt-n">${rowName(row)}${r?` <small style="color:var(--muted)">sal ${r.sale}${MOM().ida?"":` · llegas ${r.llega}`}</small>${MOM().ida&&r.llega>tripTime?` <small class="late" title="Con tu velocidad llegarías a las ${r.llega}">⚠️ ${r.llega}</small>`:""}`:""}</span>`;
     if(!r)return `<div class="rt-i" style="cursor:default">${head}<b>—</b><span class="ch">Sin ruta con su configuración</span></div>`;
     return `<div class="rt-i${row.key===routeDest?" on":""}" data-route="${p.id}|${row.key}" role="button" tabindex="0">${head}<b>${r.min} min</b><span class="ch">${chips(r)}${r.trans>0?` · ${r.trans} transb.`:" · directo"}</span>${altBtns(p.id,row.key)}</div>`;}).join("")}</div>`;}
-const tabsHtml=p=>allRows().map(row=>{let m; if(row.extra&&!RTS(p.id,row.key).length){const lv=liveFor(p,row); m=lv&&lv!=="pending"?lv.min+"′":"…";}else{const r=RT(p.id,row.key); m=r?r.min+"′":"—";}
+const tabsHtml=p=>allRows().map(row=>{let m; if(usaMotor(row)&&!RTS(p.id,row.key).length){const lv=liveFor(p,row); m=lv&&lv!=="pending"?lv.min+"′":"…";}else{const r=RT(p.id,row.key); m=r?r.min+"′":"—";}
   return `<button data-route="${p.id}|${row.key}" class="${row.key===routeDest?"on":""}">${esc(dName(row.k))} · ${PERF[row.who].n} · ${m}</button>`;}).join("");
 function stepsHtml(p,key){const row=rowOf(key)||allRows()[0]; key=row.key; const pf=PERF[row.who], r=RT(p.id,key), bike=pf.mode==="bike";
-  if(row.extra&&!r){const lv=liveFor(p,row), tp=tpFor(p,row);
-    if(tp==="pending")return `<p style="margin:8px 0 0;font-size:12.5px"><b>${esc(row.extra.n)}</b> · 🚆 calculando transporte con los horarios de Rejseplanen…</p>`;
-    return `<p style="margin:8px 0 0;font-size:12.5px"><b>${esc(row.extra.n)}</b> <small style="color:var(--muted)">${esc(row.extra.addr||"")}</small></p>
+  if(usaMotor(row)&&!r){const lv=liveFor(p,row), tp=tpFor(p,row);
+    if(tp==="pending")return `<p style="margin:8px 0 0;font-size:12.5px"><b>${esc(dName(row.k))}</b> · 🚆 calculando transporte con los horarios de Rejseplanen…</p>`;
+    return `<p style="margin:8px 0 0;font-size:12.5px"><b>${esc(dName(row.k))}</b> <small style="color:var(--muted)">${esc(row.extra?.addr||"")}</small></p>
     <p style="margin:6px 0 0;font-size:12.5px">${lv==="pending"?"Calculando ruta…":lv?`${bike?`🚲 Solo en bici (${pf.vb} km/h)`:`🚶 Solo andando (${pf.vw} km/h)`}: <b>${lv.min} min</b> · ${km(lv.d)} (dibujado en el mapa)`:"No se pudo calcular la ruta por calle."}</p>
     <p style="margin:6px 0 0;font-size:11.5px;color:var(--muted)">No hay ruta en transporte para llegar a esa hora con tu configuración (o la Raspberry Pi no responde). Prueba otra hora o mira Rejseplanen.</p>
     <a class="btn sec" style="margin-top:10px;width:100%;box-sizing:border-box" href="${esc(rpLink(p,row.k))}" target="_blank" rel="noopener">Ver en Rejseplanen ↗</a>`;}
   let dir=DIRECTO[pf.mode]?.[p.id]?.[row.k]; if(dir)dir={...dir,min:Math.max(1,Math.round(dir.d/spd(pf,pf.mode)/60))};
   const who=`<p style="margin:8px 0 0;font-size:12px;color:var(--muted)">${pf.n}: ${bike?"🚲 bici + S-tog/tren":"🚶 andando + bus, metro, tren"} · ${bike?pf.vb:pf.vw} km/h · máx. ${limTxt(pf,pf.lim)} por tramo (cámbialo en Configuración)</p>`;
   const ref=dir?`<p style="margin:8px 0 0;font-size:11.5px;color:var(--muted)">Solo ${bike?`en bici (${pf.vb} km/h)`:`andando (${pf.vw} km/h)`}, sin transporte: ${dir.min} min · ${km(dir.d)}</p>`:"";
-  if(!r)return who+`<p style="font-size:12.5px">Sin ruta para llegar antes de las ${tripTime}. Cambia la hora o sube el máximo de ${pf.n} en Configuración.</p>`+ref;
+  if(!r)return who+`<p style="font-size:12.5px">Sin ruta para «${MOM().t.toLowerCase()} ${tripTime}». Cambia la hora o sube el máximo de ${pf.n} en Configuración.</p>`+ref;
   return who+`<p style="margin:8px 0 0;font-size:12.5px"><b>${r.min} min</b> puerta a puerta · sal a las ${r.sale}, llegas a las ${r.llega}${r.trans>0?` · ${r.trans} transbordo${r.trans>1?"s":""}`:""}</p>
   <ol class="steps">${r.legs.map(l=>l.m==="bike"
     ?`<li><span class="t">🚲 ${l.min}′</span><span>En bici${l.d?` ${km(l.d)}`:""} hasta <b>${esc(l.to)}</b></span></li>`
@@ -1452,9 +1475,11 @@ function stepsHtml(p,key){const row=rowOf(key)||allRows()[0]; key=row.key; const
   <a class="btn sec" style="margin-top:10px;width:100%;box-sizing:border-box" href="${esc(rpLink(p,row.k))}" target="_blank" rel="noopener">Ver en Rejseplanen ↗</a>`;}
 function renderWalk(){
   const opt=(v,l,on)=>`<option value="${v}"${on?" selected":""}>${l}</option>`;
-  document.getElementById("ttime").innerHTML=RUTAS.times.map(t=>opt(t,t.replace(/^0/,""),t===tripTime)).join("");
-  document.getElementById("tday").innerHTML=RUTAS.days.map(d=>opt(d,DAYF[d],d===tripDay)).join("");
-  document.getElementById("trip-s").textContent=`· ${tripTime.replace(/^0/,"")} · ${DAYF[tripDay]}`;
+  document.getElementById("mom").innerHTML=Object.entries(MOMENTOS).map(([k,m])=>`<button class="chip" type="button" data-mom="${k}" aria-pressed="${k===MOMENTO}">${m.n}</button>`).join("");
+  document.getElementById("ttime-l").textContent=MOM().t;
+  document.getElementById("ttime").innerHTML=MOM().times.map(t=>opt(t,t.replace(/^0(?=\d:)/,""),t===tripTime)).join("");
+  document.getElementById("tday").innerHTML=DIAS7.map(d=>opt(d,MOMENTO==="madrugada"?`noche del ${DAYF[d]}`:DAYF[d],d===tripDay)).join("");
+  document.getElementById("trip-s").textContent=`· ${MOM().n.split(" ")[0]} ${tripTime.replace(/^0(?=\d:)/,"")} · ${DAYF[tripDay]}`;
   document.getElementById("cfg-b").innerHTML=`<div class="pf"><label class="pfl"><b>Soy</b><select id="yo"><option value="">—</option>${Object.entries(PERF).map(([w,pf])=>opt(w,pf.n,w===YO)).join("")}</select></label>
      <small id="api-s">${apiOK==null?"Conectando con la Raspberry Pi…":apiOK?"✓ Estados compartidos (Raspberry Pi)":"Sin conexión con la Raspberry Pi: los cambios se guardan solo en este navegador"}</small></div>`+Object.entries(PERF).map(([w,pf])=>`<div class="pf" data-pf="${w}">
      <b>${esc(pf.n)}</b>
@@ -1473,7 +1498,7 @@ function renderWalk(){
         <small id="addd-m"></small></form></div>`;
   const h=document.getElementById("hor"); h.hidden=!HORARIOS.length;
   h.innerHTML=HORARIOS.map((x,i)=>`<button class="chip" data-hor="${i}" aria-pressed="${x.row===routeDest&&x.time===tripTime&&x.days.includes(tripDay)}">${esc(x.n)} <small>${x.days.map(d=>DAYL[d]).join("")} · ${x.time}</small></button>`).join("");}
-function tripChanged(){try{localStorage.setItem("tripTime",tripTime);localStorage.setItem("perfiles",JSON.stringify(PERF));}catch(_){} saveUI();
+function tripChanged(){try{localStorage.setItem("tripTime",tripTime);localStorage.setItem("momento",MOMENTO);localStorage.setItem("perfiles",JSON.stringify(PERF));}catch(_){} saveUI();
   renderWalk(); renderList();
   const id=sheet.classList.contains("open")?sheet.dataset.id:selId;
   if(id){drawRoute(id,routeDest,false); if(sheet.classList.contains("open"))openSheet(id);}
@@ -1493,6 +1518,9 @@ document.getElementById("cfg-b").addEventListener("submit",async e=>{e.preventDe
     const j=await r.json(); if(!j.length){msg.textContent="No encuentro esa dirección. Prueba con calle, número y código postal."; return;}
     EXTRA.push({id:"x"+Date.now().toString(36),n,addr:a,ll:[+(+j[0].lat).toFixed(6),+(+j[0].lon).toFixed(6)],who:w});
     saveExtra(); tripChanged();}catch(err){msg.textContent="No se pudo buscar la dirección (sin conexión).";}});
+document.getElementById("mom").addEventListener("click",e=>{const b=e.target.closest("[data-mom]"); if(!b||b.dataset.mom===MOMENTO)return;
+  MOMENTO=b.dataset.mom; if(!MOM().times.includes(tripTime))tripTime=MOM().def; drawExtraMarkers();
+  if(!rowOf(routeDest))routeDest=allRows()[0].key; tripChanged();});
 document.getElementById("hor").addEventListener("click",e=>{const b=e.target.closest("[data-hor]");if(!b)return;
   const x=HORARIOS[+b.dataset.hor]; routeDest=x.row; tripTime=x.time; if(!x.days.includes(tripDay))tripDay=x.days[0]; tripChanged();});
 document.addEventListener("click",e=>{
@@ -1674,7 +1702,7 @@ function renderList(){
     const r=t.mMin===t.mMax?fmt(t.mMin):`${fmt(t.mMin)}–${fmt(t.mMax)}`;
     return `<section class="grp" style="--bc:${BCOL[b]}">
      <header class="grp-h"><div class="grp-t"><i class="bsw"></i><b>${esc(b)}</b><span>${n} piso${n>1?"s":""}</span></div>
-      <p class="grp-k"><b>${r} kr</b>/mes · S-tog ${esc(t.st)} ${t.stD.toFixed(1)} km · <b>${(()=>{const m=BAR[b].map(p=>RT(p.id,"ns-jon")).filter(Boolean).map(r=>r.min);return m.length?Math.min(...m)+" min":"—";})()}</b> a Nordic Solar</p>${BNOTE[b]?`<p class="grp-n">${esc(BNOTE[b])}</p>`:""}</header>
+      <p class="grp-k"><b>${r} kr</b>/mes · S-tog ${esc(t.st)} ${t.stD.toFixed(1)} km · <b>${(()=>{const m=BAR[b].map(p=>RTman(p.id,"ns-jon")).filter(Boolean).map(r=>r.min);return m.length?Math.min(...m)+" min":"—";})()}</b> a Nordic Solar</p>${BNOTE[b]?`<p class="grp-n">${esc(BNOTE[b])}</p>`:""}</header>
      ${BAR[b].filter(inMain).map(item).join("")}</section>`;}).join(""));
   if(document.getElementById("lares"))renderCands();
 }
@@ -1743,11 +1771,14 @@ function openSheet(id){
        <div class="stat"><b>${p.pre==null?"—":fmt(p.pre)}</b><span>prepago</span></div>
        <div class="stat"><b>${Math.round(p.alq/p.m2)}</b><span>kr/m²</span></div>
      </div>
-     <div class="sec"><h4>Cómo llegar · ${DAYF[tripDay]}, antes de las ${tripTime}</h4>
+     <div class="sec"><h4>Cómo llegar · ${MOM().n} · ${diaTxt()}, ${MOM().t.toLowerCase()} ${tripTime}</h4>
        ${routesHtml(p)}
        <h4 style="margin-top:14px">Paso a paso</h4>
        <div id="rt-steps">${stepsHtml(p,routeDest)}</div>
-       <p style="margin:8px 0 0;font-size:11.5px;color:var(--muted)">Calculado con los horarios de Rejseplanen (semana del ${esc(RUTAS.week)}): la salida más tarde que llega a tiempo, con la configuración de cada uno. El botón abre Rejseplanen con su propio cálculo para el próximo ${DAYF[tripDay]}.</p></div>
+       <p style="margin:8px 0 0;font-size:11.5px;color:var(--muted)">${MOMENTO==="manana"&&RUTAS.days.includes(tripDay)&&RUTAS.times.includes(tripTime)
+         ?`Calculado con los horarios de Rejseplanen (semana del ${esc(RUTAS.week)}): la salida más tarde que llega a tiempo, con la configuración de cada uno.`
+         :`Calculado al momento en la Raspberry Pi con los horarios de Rejseplanen (${MOM().ida?"la salida más tarde que llega a tiempo":"lo primero que sale a esa hora"}), con la configuración de cada uno. Horario previsto, sin retrasos.`}
+         El botón abre Rejseplanen con su propio cálculo para el próximo ${DAYF[tripDay]}.</p></div>
      <div class="sec"><h4>Fotos${p.fotoPlano?" · plano primero":""}</h4>${galHtml(p)}</div>
      <div class="sec"><h4>Dinero</h4><dl class="kv">
        ${row("Alquiler",kr(p.alq))}${row("Aconto",p.aconto==null?"No indicado (se calcula con 1.000)":kr(p.aconto))}
@@ -1814,10 +1845,11 @@ function saveUI(){if(!uiReady)return; try{localStorage.setItem("ui",JSON.stringi
   open:Object.fromEntries(["d-viaje","d-busq","d-ver","d-lineas","cfg"].map(id=>[id,!!document.getElementById(id)?.open]))}));}catch(e){}}
 let uiReady=false;
 {let u={}; try{u=JSON.parse(localStorage.getItem("ui")||"{}");}catch(e){}
-  if(RUTAS.days.includes(u.day))tripDay=u.day;
+  if(DIAS7.includes(u.day))tripDay=u.day;
   if(u.show&&typeof u.show==="object")for(const k in SHOW)if(typeof u.show[k]==="boolean")SHOW[k]=u.show[k];
   if(u.alt&&typeof u.alt==="object")Object.assign(ALT,u.alt);
   if(typeof u.dest==="string"&&rowOf(u.dest))routeDest=u.dest;
+  if(!rowOf(routeDest))routeDest=allRows()[0].key;   /* p. ej. guardado «Noche»: no hay fila Nordic Solar */
   (u.zsel||[]).forEach(z=>{if(ZONAS.includes(z))zsel.add(z);});
   if(u.open)for(const id in u.open){const d=document.getElementById(id); if(d)d.open=!!u.open[id];}
   /* líneas: por defecto apagadas; después, las que dejó cada uno */
