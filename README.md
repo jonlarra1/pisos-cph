@@ -39,7 +39,7 @@ Abre http://localhost:8000 (no con file://).
    ```
    python3 tools/route.py data/pisos.json data/rutas.json /tmp/gtfs/shapes.txt prep_2026102*.pkl prep_20261030.pkl
    ```
-4. Sustituye la línea `const RUTAS=...;` de `index.html` por el contenido de `data/rutas.json`.
+4. Copia los datos a la web: `python3 tools/sync_web.py` (PISOS, OUT, RUTAS y DIRECTO desde `data/`, en el formato que arranca más rápido) y pasa `./tests/run.sh`.
 
 Modos (siempre con transporte público): 🚶 andando + bus/metro/Letbane/tren (Unai), 🚲 bici a 20 km/h + solo S-tog/tren regional/Lokaltog, con la bici dentro (Jon). Defaults: Nordic Solar 🚲, GN 🚶, DTU 🚶; se cambian en cada ruta.
 Tras `route.py`, ejecuta `python3 tools/walkpaths.py data/rutas.json` (tramos a pie/bici por calle; solo una vez) y `python3 tools/fixlate.py data/rutas.json` y `python3 tools/direct.py data/pisos.json data/directo.json` (referencia solo bici / solo andando).
