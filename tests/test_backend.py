@@ -296,6 +296,31 @@ class TestCheckSite(Base):
         ok, det = app.check_site(); self.assertIn("pisos", det); self.assertNotIn("sin rutas", det); self.assertNotIn("sin CSP", det)
 
 
+class TestPanel(Base):
+    """Panel privado (puerto 8790): /status y la página."""
+    @classmethod
+    def setUpClass(cls):
+        cls.srv = ThreadingHTTPServer(("127.0.0.1", 0), app.Admin); threading.Thread(target=cls.srv.serve_forever, daemon=True).start()
+        cls.url = f"http://127.0.0.1:{cls.srv.server_address[1]}"
+    @classmethod
+    def tearDownClass(cls): cls.srv.shutdown(); cls.srv.server_close()
+    def get(self, p, h=None):
+        try:
+            with urllib.request.urlopen(urllib.request.Request(self.url + p, headers=h or {}), timeout=10) as r: return r.status, r.read()
+        except urllib.error.HTTPError as e:
+            e.close(); return e.code, b""
+    def test_status(self):
+        code, b = self.get("/status"); d = json.loads(b)
+        self.assertEqual(code, 200)
+        for k in ("checks", "eventos", "api", "listas", "tiempo_real"): self.assertIn(k, d)
+    def test_pagina(self):
+        code, b = self.get("/"); self.assertEqual(code, 200); self.assertIn(b"tiempo real", b)
+    def test_login_ajeno_403(self):
+        app.ADMIN_USERS[:] = ["larrabajojon@"]
+        self.assertEqual(self.get("/status", {"Tailscale-User-Login": "otro@gmail.com"})[0], 403)
+        self.assertEqual(self.get("/status", {"Tailscale-User-Login": "larrabajojon@gmail.com"})[0], 200)
+
+
 class TestComprobaciones(Base):
     def test_bridge(self):
         ok, det = app.check_bridge(); self.assertIn("config.json", det)
