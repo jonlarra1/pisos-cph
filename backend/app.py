@@ -232,6 +232,15 @@ def candidatos():
         out.append({**p, "st": e.get("st", "nuevo"), "stF": e.get("stF"), "by": e.get("by", ""), "ts": e.get("ts")})
     return {"actualizado": c.get("actualizado") if isinstance(c, dict) else None, "pisos": out}
 
+class _RedirSoloPortales(urllib.request.HTTPRedirectHandler):
+    """El proxy de fotos solo sigue redirecciones a los mismos hosts permitidos (nada de saltar a otra web o a la red local)."""
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        pu = urllib.parse.urlparse(newurl)
+        if pu.scheme != "https" or pu.hostname not in IMG_HOSTS or pu.username or pu.port not in (None, 443):
+            raise ValueError(f"redirección a host no permitido ({pu.hostname})")
+        return super().redirect_request(req, fp, code, msg, headers, newurl)
+_IMG_OPENER = urllib.request.build_opener(_RedirSoloPortales)
+
 def img_proxy(u):
     """Foto de un anuncio desde los portales (con su Referer), cacheada en disco. Devuelve (bytes, content-type)."""
     pu = urllib.parse.urlparse(u)
@@ -247,10 +256,10 @@ def img_proxy(u):
         return data, ctype, "cache"
     h = {"User-Agent": "Mozilla/5.0 (X11; Linux aarch64) Chrome/131.0", "Accept": "image/avif,image/webp,image/*"}
     if IMG_HOSTS[pu.hostname]: h["Referer"] = IMG_HOSTS[pu.hostname]
-    r = urllib.request.urlopen(urllib.request.Request(u, headers=h), timeout=20)
-    ctype = r.headers.get("Content-Type", "image/jpeg").split(";")[0]
-    if not ctype.startswith("image/"): raise ValueError(f"no es imagen ({ctype})")
-    data = r.read(IMG_MAX_MB * 1024 * 1024 + 1)
+    with _IMG_OPENER.open(urllib.request.Request(u, headers=h), timeout=20) as r:
+        ctype = r.headers.get("Content-Type", "image/jpeg").split(";")[0]
+        if not ctype.startswith("image/"): raise ValueError(f"no es imagen ({ctype})")
+        data = r.read(IMG_MAX_MB * 1024 * 1024 + 1)
     if len(data) > IMG_MAX_MB * 1024 * 1024: raise ValueError("imagen demasiado grande")
     with open(path + ".tmp", "wb") as f: f.write(data)
     os.replace(path + ".tmp", path); _put(path + ".t", ctype)
@@ -424,6 +433,8 @@ class H(BaseHTTPRequestHandler):
         if self.path == "/api/clientlog":    # errores de la página de los usuarios
             n = int(self.headers.get("Content-Length") or 0)
             ip = self.client_ip()
+            o = self.headers.get("Origin", "")
+            if o and o not in ORIGINS: return self.reply(403, {"error": "origin"})
             if n <= 0 or n > 2048: return self.reply(400, {"error": "bad size"})
             if limited("log:"+ip): return self.reply(429, {"error": "too many requests"})
             try: d = json.loads(self.rfile.read(n))
