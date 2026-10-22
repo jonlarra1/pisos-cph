@@ -424,7 +424,7 @@ class H(BaseHTTPRequestHandler):
         if self.path == "/api/filtros": return self.reply(200, filtros())
         if self.path == "/api/candidatos": return self.reply(200, candidatos())
         if self.path.startswith("/api/ruta?"):
-            if limited("ruta:" + self.client_ip(), 20, "ruta:*", 200): return self.reply(429, {"error": "demasiadas búsquedas, espera un minuto"})
+            if limited("ruta:" + self.client_ip(), 60, "ruta:*", 200): return self.reply(429, {"error": "demasiadas búsquedas, espera un minuto"})
             code, obj = ruta(urllib.parse.urlparse(self.path).query)
             self._note = f"{obj.get('ms','')} ms" + (" caché" if obj.get("cache") else "") if code == 200 else str(obj.get("error", ""))[:60]
             return self.reply(code, obj)
