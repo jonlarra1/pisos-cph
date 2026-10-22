@@ -48,9 +48,19 @@ The user is Jon. He works at Nordic Solar (Hellerup). He prefers short, simple, 
     permisos de otros usuarios (pasó con lares/cron/jobs.json, revertido). Comprobar `getfacl` antes y después.
 - Hosting: GitHub Pages (fixed link for flatmates). Commit + push to update.
 
-## Estado (2026-10-22, 00:05) y pendientes
+## Tests (obligatorio antes de cada commit)
+- `./tests/run.sh` (backend + datos, ~3 s, sin internet) antes de cada commit; `./tests/run.sh web` (Chromium, ~40 s) si se toca index.html.
+  Por función: `./tests/run.sh -k propuestos`. Cada función nueva lleva su test (tests/test_backend.py, test_datos.py, test_web.py).
+- Los tests de la web corren CON la CSP: no usar `page.wait_for_function` (usa eval); usar `self.esperar(expr)`.
+- Commits pequeños + push, estilo midudev: `type(scope): summary` en inglés, sin Co-Authored-By.
+
+## Estado (2026-10-22, 23:00) y pendientes
 - Regla: depósito y prepago siempre por separado cuando el anuncio los separa (ficha, lista y candidatos); la suma solo como «total a la entrada».
-- Hecho y publicado: mapa con 12 pisos, rutas (bici/andando, 3 opciones, 5 días × 6 horas × límites 5–30 min), perfiles Jon/Unai,
+- 22-oct noche (Jon fuera 2 h, modo autónomo): añadido 4641637 Teglholmens Østkaj 41 (Sydhavnen) con rutas (GTFS nuevo, 96 % de
+  rutas iguales a las anteriores); la web se recarga sola al publicar (ETag de GitHub Pages cada 30 s); CSP + SRI en CDN + safeUrl()
+  para enlaces de Lares; 76 tests (tests/); backend LOCAL (sin desplegar): SSE /api/eventos + ETag/304, check_site ampliado
+  (pisos sin rutas, CSP, SRI del CDN, app.js), conexiones SQLite y ficheros cerrados. La web ya usa SSE si la Pi lo ofrece (si no, sondeo).
+- Hecho y publicado: mapa con 15 pisos, rutas (bici/andando, 3 opciones, 5 días × 6 horas × límites 5–30 min), perfiles Jon/Unai,
   estados compartidos vía Pi, Lares v2 conectado (buzón pisos-bridge), menú «Búsqueda (Lares)» / «Visualización», galería de fotos,
   panel privado :9444, logs + checks. Listado izquierdo: principal = solo 🔵 gusta + 🟢 contactado; «🟠 Propuestos» = nuevos del
   mapa + candidatos de Lares juntos (una sola categoría); «🔴 Descartados» = temporales (48 h, con «recuperar») + definitivos.
@@ -64,7 +74,11 @@ The user is Jon. He works at Nordic Solar (Hellerup). He prefers short, simple, 
      el 2026-10-21; hace falta clave SSH temporal). Hasta entonces los candidatos de Lares no traen el desglose.
   7. Motor de rutas en vivo: /api/ruta hecho y probado en local (commit 0a1c981). Falta: desplegar en la Pi (mem_limit 512m,
      clave SSH), web (botón «Ahora», hora libre, 7 días, llegar/salir, rutas en TP para destinos añadidos), pruebas desde fuera.
-  9. Desplegar en la Pi a la vez: Lares (dep/pre, historial.json), panel «Pisos» (contadores + gráfico), fix 502 de fotos.
+  9. Desplegar en la Pi a la vez: Lares (dep/pre, historial.json), panel «Pisos» (contadores + gráfico), fix 502 de fotos,
+     backend nuevo (SSE /api/eventos + ETag, check_site ampliado, vigilar_candidatos). Pasos: copiar backend/ a /home/docker/pisos-backend,
+     `docker compose up -d --build`, comprobar /api/health, abrir la web y ver `TREAL.on===true` (si Funnel corta el SSE, la web sigue por sondeo).
+     Después (fase 2): mover el <script> a app.js y quitar 'unsafe-inline' de script-src (check_site ya lo soporta).
+  11. Chrome «acceso a red local»: en aparatos con MagicDNS el nombre de la Pi resuelve a 100.72.170.60 y Chrome pide permiso (headless lo deniega).
   10. Nordic Solar = Strandvejen 104B; Jon dice que se entra por el «3B»: preguntar de qué calle es y ajustar el destino.
   4. Lista del 14-oct: añadidos al mapa 5680590 (Frederiksberg, plano 4 dorm.) y 1912011 (Søborg, texto 3 dorm.) el 2026-10-22.
      1917762 = mismo piso que 5680524 (enlace añadido a su ficha). Sin confirmar dormitorios (Lejebolig no da fotos sin JS):
