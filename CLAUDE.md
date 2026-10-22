@@ -85,7 +85,8 @@ The user is Jon. He works at Nordic Solar (Hellerup). He prefers short, simple, 
   4. Lista del 14-oct: añadidos al mapa 5680590 (Frederiksberg, plano 4 dorm.) y 1912011 (Søborg, texto 3 dorm.) el 2026-10-22.
      1917762 = mismo piso que 5680524 (enlace añadido a su ficha). Sin confirmar dormitorios (Lejebolig no da fotos sin JS):
      1914015, 1914094, 1917800. Sin fecha: 5680600, 5390028, 5202436. Datos: scratchpad recup/estado.json.
-  8. Hueco de Lares v2: solo lee 2 páginas de Lejebolig y 3 de Boligportal (lo más reciente) → los anuncios que bajan de página
-     desaparecen sin evaluarse (33 de 34 de la lista del 14-oct). Subir páginas o recorrer por zonas, al desplegar en la Pi.
+  8. Hueco de Lares v2: HECHO EN LOCAL (sin desplegar): páginas adaptativas (mín. 2/3 como antes, sigue mientras haya anuncios
+     nunca vistos, máx. 6 Lejebolig / 8 Boligportal) y los candidatos se recuerdan 7 días aunque bajen de página (aviso «no visto
+     desde…»). tests/test_lares.py. Desplegar junto al punto 6 (mismo fichero, scripts/ de Lares en la Pi).
 - Puertos ya usados en la Pi (no tocar): Portainer 8000/9000/9443. Nuestro: 127.0.0.1:8787 (API, Funnel :8443), 127.0.0.1:8790 (panel: serve https :9444 por nombre, y serve TCP :9445 por IP http://100.72.170.60:9445 para aparatos sin MagicDNS). Comprobar siempre con `ss -ltnp | grep :PUERTO` antes de usar uno nuevo.
 - Acceso a la Pi: clave SSH temporal de 1 h (expiry-time en authorized_keys, comentario «claude-pisos-1h»); pedir una nueva a Jon.

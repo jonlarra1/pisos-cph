@@ -19,12 +19,13 @@ Abre http://localhost:8000 (no con file://).
 
 ## Tests
 ```
-./tests/run.sh               # backend + datos: ~1 s, sin internet (pásalo antes de cada commit)
+./tests/run.sh               # backend + datos + Lares: ~4 s, sin internet (pásalo antes de cada commit)
 ./tests/run.sh web           # además la web en Chromium: ~30 s (Pi y mapas simulados)
 ./tests/run.sh -k propuestos # solo los tests cuyo nombre contiene esa palabra
 ```
 - `tests/test_backend.py` — API (estados, zonas, filtros, candidatos, fotos, límites, CORS), logs y comprobaciones del monitor.
 - `tests/test_datos.py` — `data/*.json` igual que la web, rutas para cada piso, coordenadas, enlaces, CSP y SRI.
+- `tests/test_lares.py` — vigilante de Lares con portales simulados: páginas adaptativas, recuerdo de candidatos, filtros.
 - `tests/test_web.py` — cada función de la página: pines, propuestos (y datos maliciosos), estados, ficha, fotos, tiempo real.
 - La web necesita Playwright: `python3 -m venv .venv && .venv/bin/pip install playwright==1.64.1`
   (usa el Chromium de `~/.cache/ms-playwright`; si no hay, `.venv/bin/playwright install chromium-headless-shell`).
