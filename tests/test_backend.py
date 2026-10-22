@@ -1,0 +1,199 @@
+"""Tests rápidos del backend (backend/app.py), sin internet ni Docker.
+Cada clase prueba una función o un endpoint; se pueden lanzar por separado:
+    python3 -m unittest tests.test_backend.TestEstado -v
+"""
+import importlib.util, json, os, sys, tempfile, threading, time, unittest, urllib.request, urllib.error, gzip
+from http.server import ThreadingHTTPServer
+
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+TMP = tempfile.mkdtemp(prefix="pisos-test-")
+os.environ.update({"DB_PATH": os.path.join(TMP, "pisos.db"), "LOG_DIR": os.path.join(TMP, "logs"),
+                   "BRIDGE_DIR": os.path.join(TMP, "bridge"), "API_KEY": "clave-test",
+                   "ALLOWED_ORIGINS": "https://jonlarra1.github.io", "GTFS_DIR": os.path.join(TMP, "gtfs")})
+os.makedirs(os.environ["BRIDGE_DIR"], exist_ok=True)
+sys.path.insert(0, os.path.join(ROOT, "backend"))
+spec = importlib.util.spec_from_file_location("app", os.path.join(ROOT, "backend", "app.py"))
+app = importlib.util.module_from_spec(spec); spec.loader.exec_module(app)
+app.init()
+ORIGIN = "https://jonlarra1.github.io"
+
+
+class Servidor:
+    """API real en un puerto libre de 127.0.0.1, una vez para todos los tests."""
+    srv = None
+    @classmethod
+    def url(cls):
+        if cls.srv is None:
+            cls.srv = ThreadingHTTPServer(("127.0.0.1", 0), app.H)
+            threading.Thread(target=cls.srv.serve_forever, daemon=True).start()
+        return f"http://127.0.0.1:{cls.srv.server_address[1]}"
+
+
+def pedir(path, data=None, headers=None, method=None):
+    """Devuelve (código, cabeceras, json o bytes)."""
+    h = {"Origin": ORIGIN, **(headers or {})}
+    body = None
+    if data is not None:
+        body = data if isinstance(data, bytes) else json.dumps(data).encode()
+        h.setdefault("Content-Type", "application/json")
+    req = urllib.request.Request(Servidor.url() + path, data=body, headers=h, method=method)
+    try:
+        r = urllib.request.urlopen(req, timeout=10); code, hd, raw = r.status, r.headers, r.read()
+    except urllib.error.HTTPError as e:
+        code, hd, raw = e.code, e.headers, e.read(); e.close()
+    try: return code, hd, json.loads(raw)
+    except ValueError: return code, hd, raw
+
+
+def escribir(path, d, clave="clave-test", origin=ORIGIN):
+    return pedir(path, d, {"X-Pisos-Key": clave, "Origin": origin} if origin else {"X-Pisos-Key": clave})
+
+
+class Base(unittest.TestCase):
+    def setUp(self):
+        app.hits.clear(); app._rl_logged.clear()       # cada test empieza sin límites de peticiones
+
+
+class TestValidarFiltros(Base):
+    OK = {"precio_max": 23000, "dorm_min": 3, "disp_desde": "2026-12-18", "disp_hasta": "2027-01-15", "compartir": True, "contrato_largo": False}
+    def test_validos(self):
+        f = app.validar_filtros(self.OK)
+        self.assertEqual(f["vaer_min"], 4); self.assertFalse(f["contrato_largo"])
+    def test_rechaza_valores_fuera_de_rango(self):
+        for k, v in (("precio_max", 500), ("precio_max", 99999), ("dorm_min", 0), ("dorm_min", 9), ("disp_desde", "mañana"), ("disp_hasta", "2026-01-01")):
+            with self.subTest(k=k, v=v): self.assertIsNone(app.validar_filtros({**self.OK, k: v}))
+    def test_rechaza_si_falta_un_campo(self):
+        d = dict(self.OK); d.pop("compartir"); self.assertIsNone(app.validar_filtros(d))
+
+
+class TestImgUrl(Base):
+    """img_proxy: solo hosts y rutas permitidos (se comprueba antes de descargar nada)."""
+    def test_rechaza(self):
+        for u in ("http://image-lambda.boligportal.dk/x", "https://evil.com/x.jpg", "https://image-lambda.boligportal.dk:8080/x",
+                  "https://user:pw@image-lambda.boligportal.dk/x", "https://image-lambda.boligportal.dk/../../etc/passwd",
+                  "https://image-lambda.boligportal.dk/%2e%2e/x", "https://s3.eu-central-1.amazonaws.com/otro-bucket/x.jpg",
+                  "file:///etc/passwd", "https://127.0.0.1/x", ""):
+            with self.subTest(u=u), self.assertRaises(ValueError): app.img_proxy(u)
+    def test_endpoint_responde_400(self):
+        code, _, d = pedir("/api/img?u=" + urllib.request.quote("https://evil.com/a.jpg"))
+        self.assertEqual(code, 400)
+
+
+class TestLimites(Base):
+    def test_por_ip(self):
+        self.assertFalse(any(app.limited("t:1", 3) for _ in range(3)))
+        self.assertTrue(app.limited("t:1", 3))
+        self.assertFalse(app.limited("t:2", 3))          # otra IP no se ve afectada
+    def test_global(self):
+        for i in range(5): app.limited(f"g:{i}", 100, "g:*", 5)
+        self.assertTrue(app.limited("g:nueva", 100, "g:*", 5))
+
+
+class TestEstado(Base):
+    def test_get_estados(self):
+        code, hd, d = pedir("/api/estados")
+        self.assertEqual(code, 200); self.assertIsInstance(d, dict)
+        self.assertEqual(hd["Access-Control-Allow-Origin"], ORIGIN); self.assertEqual(hd["Cache-Control"], "no-store")
+    def test_post_valido_y_aparece(self):
+        code, _, d = escribir("/api/estado", {"id": "4641637", "st": "gusta", "by": "jon"})
+        self.assertEqual(code, 200); self.assertEqual(d["4641637"]["st"], "gusta")
+        self.assertEqual(pedir("/api/estados")[2]["4641637"]["by"], "jon")
+        cfg = json.load(open(os.path.join(os.environ["BRIDGE_DIR"], "config.json")))   # y Lares lo ve
+        self.assertIn("4641637", cfg["con_estado"])
+    def test_sin_clave_403(self):
+        self.assertEqual(escribir("/api/estado", {"id": "1234", "st": "gusta"}, clave="mala")[0], 403)
+    def test_origen_no_permitido_403(self):
+        self.assertEqual(escribir("/api/estado", {"id": "1234", "st": "gusta"}, origin="https://evil.com")[0], 403)
+    def test_datos_malos_400(self):
+        for d in ({"id": "abc", "st": "gusta"}, {"id": "1234", "st": "borrado"}, {"id": "1234", "st": "gusta", "by": "pepe"}, ["x"]):
+            with self.subTest(d=d): self.assertEqual(escribir("/api/estado", d)[0], 400)
+    def test_json_roto_400(self):
+        self.assertEqual(escribir("/api/estado", b"{no es json")[0], 400)
+    def test_cuerpo_grande_413(self):
+        self.assertEqual(escribir("/api/estado", {"id": "1234", "st": "gusta", "x": "a" * 2000})[0], 413)
+    def test_limite_escrituras_429(self):
+        codes = [escribir("/api/estado", {"id": "5555", "st": "nuevo"})[0] for _ in range(31)]
+        self.assertEqual(codes[-1], 429); self.assertNotIn(429, codes[:30])
+
+
+class TestZonasYFiltros(Base):
+    def test_zona(self):
+        code, _, d = escribir("/api/zona", {"zona": "Valby", "permitida": True, "by": "unai"})
+        self.assertEqual(code, 200); self.assertTrue(d["Valby"])
+    def test_zona_mala(self):
+        for d in ({"zona": "<script>", "permitida": True}, {"zona": "Valby", "permitida": "si"}):
+            with self.subTest(d=d): self.assertEqual(escribir("/api/zona", d)[0], 400)
+    def test_filtros(self):
+        code, _, d = escribir("/api/filtros", {**TestValidarFiltros.OK, "precio_max": 21000})
+        self.assertEqual(code, 200); self.assertEqual(d["precio_max"], 21000)
+        self.assertEqual(pedir("/api/filtros")[2]["precio_max"], 21000)
+
+
+class TestCandidatos(Base):
+    def escribe(self, obj):
+        with open(os.path.join(os.environ["BRIDGE_DIR"], "candidatos.json"), "w") as f:
+            f.write(obj if isinstance(obj, str) else json.dumps(obj))
+    def test_mezcla_estado(self):
+        self.escribe({"actualizado": "2026-10-22T10:00:00", "pisos": [{"id": "9999001", "precio": 15000}, "basura"]})
+        escribir("/api/estado", {"id": "9999001", "st": "descartado", "by": "jon"})
+        d = pedir("/api/candidatos")[2]
+        self.assertEqual(len(d["pisos"]), 1); self.assertEqual(d["pisos"][0]["st"], "descartado")
+    def test_fichero_roto_no_rompe(self):
+        self.escribe("{roto")
+        self.assertEqual(pedir("/api/candidatos")[2], {"actualizado": None, "pisos": []})
+
+
+class TestVarios(Base):
+    def test_health(self): self.assertEqual(pedir("/api/health")[2], {"ok": True})
+    def test_404(self): self.assertEqual(pedir("/api/nada")[0], 404)
+    def test_options_cors(self):
+        code, hd, _ = pedir("/api/estado", method="OPTIONS")
+        self.assertEqual(code, 204); self.assertIn("X-Pisos-Key", hd["Access-Control-Allow-Headers"])
+    def test_cors_no_para_otros_origenes(self):
+        _, hd, _ = pedir("/api/estados", headers={"Origin": "https://evil.com"})
+        self.assertIsNone(hd.get("Access-Control-Allow-Origin"))
+    def test_clientlog(self):
+        self.assertEqual(pedir("/api/clientlog", {"level": "error", "msg": "prueba", "where": "test"})[0], 200)
+        self.assertEqual(app.tail("client", 1)[-1]["msg"], "prueba")
+        self.assertEqual(pedir("/api/clientlog", b"x" * 3000)[0], 400)
+    def test_ruta_sin_motor_503_y_params_400(self):
+        app.MOTOR["m"] = None
+        self.assertEqual(pedir("/api/ruta?olat=55.7&olon=12.5&dlat=55.7&dlon=12.5&fecha=2026-10-26&hora=09:00")[0], 503)
+
+
+class TestLogs(Base):
+    def test_log_y_tail(self):
+        app.log("events", level="info", src="test", msg="hola")
+        self.assertEqual(app.tail("events", 1)[-1]["msg"], "hola")
+    def test_housekeeping_comprime_y_resume(self):
+        d = os.path.join(os.environ["LOG_DIR"], "api"); os.makedirs(d, exist_ok=True)
+        with open(os.path.join(d, "2026-01-01.jsonl"), "w") as f:
+            f.write(json.dumps({"t": 1, "path": "/api/estados", "code": 200, "ms": 4}) + "\n" + json.dumps({"t": 2, "path": "/api/img", "code": 502, "ms": 9}) + "\n")
+        app.housekeeping()
+        self.assertTrue(os.path.exists(os.path.join(d, "2026-01-01.jsonl.gz")))
+        s = json.loads(gzip.open(os.path.join(os.environ["LOG_DIR"], "summary", "2026-01-01.jsonl.gz"), "rt").read())
+        self.assertEqual((s["peticiones"], s["errores_5xx"]), (2, 1))
+    def test_cambio_de_comprobacion_genera_evento(self):
+        app.chk("prueba_x", lambda: (True, "bien")); app.chk("prueba_x", lambda: (False, "mal"))
+        ev = [e for e in app.tail("events", 20) if e.get("src") == "prueba_x"]
+        self.assertTrue(ev and ev[-1]["msg"].startswith("CAÍDO"))
+        app.chk("prueba_x", lambda: 1 / 0)                   # una comprobación que revienta cuenta como fallo
+        self.assertFalse(app.CHECKS["prueba_x"]["ok"])
+
+
+class TestComprobaciones(Base):
+    def test_bridge(self):
+        ok, det = app.check_bridge(); self.assertIn("config.json", det)
+    def test_api_errores(self):
+        app.log("api", m="GET", path="/api/estados", code=500, ms=1)
+        ok, det = app.check_api_errors(); self.assertFalse(ok); self.assertIn("errores 5xx", det)
+    def test_lares_sin_pasadas(self):
+        p = os.path.join(os.environ["BRIDGE_DIR"], "lares_runs.jsonl")
+        if os.path.exists(p): os.remove(p)
+        self.assertFalse(app.check_lares_runs()[0])
+        with open(p, "w") as f: f.write(json.dumps({"t": time.time(), "leidos": {}, "candidatos": 2}) + "\n")
+        self.assertTrue(app.check_lares_runs()[0])
+
+
+if __name__ == "__main__":
+    unittest.main()
