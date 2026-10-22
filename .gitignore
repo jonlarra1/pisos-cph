@@ -3,3 +3,4 @@ __pycache__/
 gtfs/
 *.zip
 .DS_Store
+.venv/
