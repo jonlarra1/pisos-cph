@@ -139,6 +139,16 @@ class TestEstados(Web):
         self.js("id=>applyRemote({[id]:{st:'contactado',stF:'2026-10-22',by:'unai',ts:Math.floor(Date.now()/1000)}})", pid)
         self.assertEqual(self.js("id=>PISOS.find(p=>p.id===id).st", pid), "contactado")
         self.assertIn(self.js("ESTADOS.contactado.c"), self.js("id=>markers[id].getElement().innerHTML", pid))
+    def test_aviso_si_lo_cambia_otra_persona(self):
+        self.esperar("remoteReady")
+        self.js("YO='jon'"); pid = self.js("PISOS.find(p=>p.st!=='gusta').id")
+        self.js("id=>applyRemote({[id]:{st:'gusta',stF:'2026-10-22',by:'unai',ts:1}})", pid)
+        self.assertIn("Unai marcó", self.page.inner_text("#toasts")); self.assertIn("«Nos gusta»", self.page.inner_text("#toasts"))
+    def test_sin_aviso_si_lo_cambias_tu(self):
+        self.esperar("remoteReady")
+        self.js("YO='jon'"); pid = self.js("PISOS.find(p=>p.st!=='gusta').id")
+        self.js("id=>applyRemote({[id]:{st:'gusta',stF:'2026-10-22',by:'jon',ts:1}})", pid)
+        self.assertFalse(self.js("!!document.querySelector('#toasts div')"))
     def test_estado_desconocido_se_ignora(self):
         pid = self.js("PISOS[0].id"); antes = self.js("PISOS[0].st")
         self.js("id=>applyRemote({[id]:{st:'hackeado',stF:'x',by:'',ts:1}})", pid)
