@@ -1771,7 +1771,8 @@ function candItem(c){const st=ESTADOS[c.st]?c.st:"nuevo", cid=esc(c.id);
    <span class="b">${c.plano?`<a href="${safeUrl(c.plano)}" target="_blank" rel="noopener">Plano ↗</a>`:""}
     ${st!=="gusta"?`<button data-cst="${cid}|gusta">🔵 Me gusta</button>`:""}${st!=="descartado"?`<button data-cst="${cid}|descartado">🔴 Descartar</button>`:""}${st!=="nuevo"?`<button data-cst="${cid}|nuevo">🟠 Volver a sin decidir</button>`:""}</span></div>`;}
 function renderCands(){const el=document.getElementById("lares"); if(!el)return;
-  const sin=CANDS.filter(c=>(c.st||"nuevo")==="nuevo"), gus=CANDS.filter(c=>c.st==="gusta"||c.st==="contactado");
+  CANDS.forEach(c=>{if(!ESTADOS[c.st])c.st="nuevo";});   /* estado desconocido o vacío = sin decidir */
+  const sin=CANDS.filter(c=>c.st==="nuevo"), gus=CANDS.filter(c=>c.st==="gusta"||c.st==="contactado");
   const map0=ranked.filter(p=>p.st==="nuevo"&&visible(p));
   const was=el.querySelector("details")?.open;
   /* una sola categoría: los 🟠 del mapa y los que trae Lares, juntos y por precio */
