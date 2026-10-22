@@ -1443,6 +1443,9 @@ function rpLink(p,k){const [y,m,d]=tripDate().split("-"), dd=`${d}.${m}.${y.slic
   const casa=id([p.lat,p.lon],p.calle.replace(/@/g,"")), dst=id(dLL(k),dName(k).replace(/@/g,""));
   return "https://www.rejseplanen.dk/bin/query.exe/mn?SID="+encodeURIComponent(M.ida?casa:dst)+"&ZID="+encodeURIComponent(M.ida?dst:casa)+
     `&date=${dd}&time=${tripTime}&timesel=${M.ida?"arrive":"depart"}&start=1`;}
+/* «salir a las X»: minutos de espera hasta que de verdad sale (de noche puede haber horas sin tren) */
+const espera=r=>{if(MOM().ida||!r||!r.sale)return 0; let d=toMin(r.sale)-toMin(tripTime); if(d<-720)d+=1440; return d;};
+const esperaTxt=r=>{const d=espera(r); if(d<=10)return ""; return `⚠️ espera hasta las ${r.sale} (${d>=60?`${Math.floor(d/60)} h ${d%60} min`:`${d} min`})`;};
 const diaTxt=()=>MOMENTO==="madrugada"?`noche del ${DAYF[tripDay]}`:DAYF[tripDay];
 const routeR=L.svg({padding:.5}), routeLayer=L.layerGroup().addTo(map);
 /* Dibuja las rutas de todas las filas; la elegida resaltada, las otras más suaves. */
@@ -1487,7 +1490,7 @@ function routesHtml(p){
       return `<div class="rt-i${row.key===routeDest?" on":""}" data-route="${p.id}|${row.key}" role="button" tabindex="0">${head}<b>${lv&&lv!=="pending"?lv.min+" min":lv==="pending"?"…":"—"}</b>
         <span class="ch">${lv==="pending"?"Calculando…":lv?`${bike?"🚲 Solo en bici":"🚶 Solo andando"} · ${km(lv.d)}`:"Sin ruta"} · sin transporte para esta hora · <a href="${esc(rpLink(p,row.k))}" target="_blank" rel="noopener">Transporte en Rejseplanen ↗</a></span></div>`;}
     const r=RT(p.id,row.key);
-    const head=`<span class="rt-n">${rowName(row)}${r?` <small style="color:var(--muted)">sal ${r.sale}${MOM().ida?"":` · llegas ${r.llega}`}</small>${MOM().ida&&r.llega>tripTime?` <small class="late" title="Con tu velocidad llegarías a las ${r.llega}">⚠️ ${r.llega}</small>`:""}`:""}</span>`;
+    const head=`<span class="rt-n">${rowName(row)}${r?` <small style="color:var(--muted)">sal ${r.sale}${MOM().ida?"":` · llegas ${r.llega}`}</small>${esperaTxt(r)?` <small class="late">${esperaTxt(r)}</small>`:""}${MOM().ida&&r.llega>tripTime?` <small class="late" title="Con tu velocidad llegarías a las ${r.llega}">⚠️ ${r.llega}</small>`:""}`:""}</span>`;
     if(!r)return `<div class="rt-i" style="cursor:default">${head}<b>—</b><span class="ch">Sin ruta con su configuración</span></div>`;
     return `<div class="rt-i${row.key===routeDest?" on":""}" data-route="${p.id}|${row.key}" role="button" tabindex="0">${head}<b>${r.min} min</b><span class="ch">${chips(r)}${r.trans>0?` · ${r.trans} transb.`:" · directo"}</span>${altBtns(p.id,row.key)}</div>`;}).join("")}</div>`;}
 const tabsHtml=p=>allRows().map(row=>{let m; if(usaMotor(row)&&!RTS(p.id,row.key).length){const lv=liveFor(p,row); m=lv&&lv!=="pending"?lv.min+"′":"…";}else{const r=RT(p.id,row.key); m=r?r.min+"′":"—";}
@@ -1503,7 +1506,7 @@ function stepsHtml(p,key){const row=rowOf(key)||allRows()[0]; key=row.key; const
   const who=`<p style="margin:8px 0 0;font-size:12px;color:var(--muted)">${pf.n}: ${bike?"🚲 bici + S-tog/tren":"🚶 andando + bus, metro, tren"} · ${bike?pf.vb:pf.vw} km/h · máx. ${limTxt(pf,pf.lim)} por tramo (cámbialo en Configuración)</p>`;
   const ref=dir?`<p style="margin:8px 0 0;font-size:11.5px;color:var(--muted)">Solo ${bike?`en bici (${pf.vb} km/h)`:`andando (${pf.vw} km/h)`}, sin transporte: ${dir.min} min · ${km(dir.d)}</p>`:"";
   if(!r)return who+`<p style="font-size:12.5px">Sin ruta para «${MOM().t.toLowerCase()} ${tripTime}». Cambia la hora o sube el máximo de ${pf.n} en Configuración.</p>`+ref;
-  return who+`<p style="margin:8px 0 0;font-size:12.5px"><b>${r.min} min</b> puerta a puerta · sal a las ${r.sale}, llegas a las ${r.llega}${r.trans>0?` · ${r.trans} transbordo${r.trans>1?"s":""}`:""}</p>
+  return who+(esperaTxt(r)?`<p class="late" style="margin:8px 0 0;font-size:12.5px">${esperaTxt(r)}: a esa hora no hay transporte antes con su configuración.</p>`:"")+`<p style="margin:8px 0 0;font-size:12.5px"><b>${r.min} min</b> puerta a puerta · sal a las ${r.sale}, llegas a las ${r.llega}${r.trans>0?` · ${r.trans} transbordo${r.trans>1?"s":""}`:""}</p>
   <ol class="steps">${r.legs.map(l=>l.m==="bike"
     ?`<li><span class="t">🚲 ${l.min}′</span><span>En bici${l.d?` ${km(l.d)}`:""} hasta <b>${esc(l.to)}</b></span></li>`
     :l.m==="walk"
