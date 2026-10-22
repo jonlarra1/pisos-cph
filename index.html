@@ -1324,10 +1324,24 @@ function liveRoute(mode,a,b){const key=`${mode}|${a[0].toFixed(5)},${a[1].toFixe
   return "pending";}
 const liveFor=(p,row)=>{const pf=PERF[row.who], lv=liveRoute(pf.mode,[p.lat,p.lon],row.extra.ll);
   return lv&&lv!=="pending"?{...lv,min:Math.max(1,Math.round(lv.d/spd(pf,pf.mode)/60))}:lv;};
+/* destinos añadidos: transporte público con el motor de la Pi (/api/ruta, horarios GTFS de Rejseplanen),
+   para el día, la hora y el perfil elegidos. Si la Pi no responde, queda la ruta solo en bici / andando. */
+const TP={};
+function tripDate(){const now=new Date(), want=["dom","lun","mar","mié","jue","vie","sáb"].indexOf(tripDay), dt=new Date(now);
+  dt.setDate(now.getDate()+((want-now.getDay()+7)%7)); return `${dt.getFullYear()}-${String(dt.getMonth()+1).padStart(2,"0")}-${String(dt.getDate()).padStart(2,"0")}`;}
+function tpFor(p,row){const pf=PERF[row.who], fecha=tripDate(), key=[p.id,row.key,fecha,tripTime,pf.mode,pf.lim,pf.vw,pf.vb].join("|");
+  if(key in TP)return TP[key]; TP[key]="pending";
+  const q=new URLSearchParams({olat:p.lat,olon:p.lon,dlat:row.extra.ll[0],dlon:row.extra.ll[1],dname:String(row.extra.n||"Destino").slice(0,60),
+    fecha,hora:tripTime,modo:"llegar",perfil:pf.mode,lim:pf.lim,vw:pf.vw,vb:pf.vb});
+  fetch(API+"/api/ruta?"+q,{cache:"no-cache"}).then(r=>r.ok?r.json():Promise.reject(r.status))
+   .then(d=>{TP[key]=Array.isArray(d.opciones)&&d.opciones.length?d.opciones:null; onLive();})
+   .catch(()=>{TP[key]=null; onLive();});
+  return "pending";}
 let liveT=null;
 function onLive(){clearTimeout(liveT); liveT=setTimeout(()=>{if(!card.hidden)showCard(card.dataset.id);
   const id=sheet.classList.contains("open")?sheet.dataset.id:selId; if(id)drawRoute(id,routeDest,false);
   const st=document.getElementById("rt-steps"); if(st&&sheet.classList.contains("open")){const p=PISOS.find(x=>x.id===sheet.dataset.id); if(p)st.innerHTML=stepsHtml(p,routeDest);
+    const rb=document.querySelector("#sheet .rt"); if(rb&&p)rb.outerHTML=routesHtml(p);   /* lista «Cómo llegar» con lo que acaba de llegar */
     const tb=document.querySelector("#sheet .rt-tabs"); if(tb&&p)tb.innerHTML=tabsHtml(p);}},80);}
 {const wd=["dom","lun","mar","mié","jue","vie","sáb"][new Date().getDay()]; if(RUTAS.days.includes(wd))tripDay=wd;}
 try{const t=localStorage.getItem("tripTime");if(RUTAS.times.includes(t))tripTime=t;
@@ -1351,7 +1365,9 @@ function adj(r,pf){const key=r; let c=ADJ.get(key); const sig=pf.vw+"/"+pf.vb; i
   ADJ.set(key,{sig,r:out}); return out;}
 /* Opciones de ruta por destino (hasta 3: la más rápida y alternativas por otras líneas). ALT = opción elegida. */
 const ALT={};
-const RTS=(id,key)=>{const row=rowOf(key); if(!row||row.extra)return []; const pf=PERF[row.who];
+const RTS=(id,key)=>{const row=rowOf(key); if(!row)return [];
+  if(row.extra){const P=PISOS.find(x=>x.id===id), t=P&&tpFor(P,row); return Array.isArray(t)?t.slice().sort((a,b)=>a.min-b.min):[];}
+  const pf=PERF[row.who];
   const i=((((RUTAS.ix[pf.mode]||{})[tripDay]||{})[tripTime]||{})[pf.lim]||{})[id]; let j=i&&i[row.k]; if(j==null)return []; if(!Array.isArray(j))j=[j];
   return j.map(x=>RUTAS.routes[x]).filter(Boolean).map(r=>adj(r,pf)).sort((a,b)=>a.min-b.min||(a.sale<b.sale?1:-1));};  // la más rápida primero
 const RT=(id,key)=>{const o=RTS(id,key); if(!o.length)return null; return o[Math.min(ALT[id+"|"+key]||0,o.length-1)];};
@@ -1375,11 +1391,11 @@ function drawRoute(id,key,fit){
   const rows=allRows(), order=rows.map(r=>r.key).filter(x=>x!==key).concat([key]), P=PISOS.find(x=>x.id===id);
   order.forEach(rk=>{const row=rows.find(x=>x.key===rk); if(!row)return; const on=rk===key;
     let r=RT(id,rk);
-    if(row.extra&&P){const lv=liveFor(P,row); if(lv&&lv!=="pending"){r={legs:[{m:PERF[row.who].mode==="bike"?"bike":"walk",min:lv.min,d:lv.d,live:lv.path}]};}}
+    if(row.extra&&P&&!r){const lv=liveFor(P,row); if(lv&&lv!=="pending"){r={legs:[{m:PERF[row.who].mode==="bike"?"bike":"walk",min:lv.min,d:lv.d,live:lv.path}]};}}
     if(!r)return;
-    const sig=r.legs.map(l=>l.p).join(","); if(!on&&seen.has(sig))return; seen.add(sig);
+    const sig=row.extra?rk:r.legs.map(l=>l.p).join(","); if(!on&&seen.has(sig))return; seen.add(sig);
     const op=on?1:.4, w=on?1:.7, dname=dName(row.k), ant=on?"route-ant ":"";
-    r.legs.forEach(l=>{const path=l.live||LP(l); if(on)focusPts.push(...path);
+    r.legs.forEach(l=>{const path=l.live||l.path||LP(l); if(on)focusPts.push(...path);
       if(isMove(l)){const bike=l.m==="bike";
         L.polyline(path,{renderer:routeR,color:css("--panel"),weight:(bike?8:7)*w,opacity:.85*op,interactive:false}).addTo(routeLayer);
         L.polyline(path,{renderer:routeR,color:bike?BIKE_C:css("--fg"),weight:(bike?4.5:3.5)*w,opacity:.95*op,dashArray:bike?"6 6":"1 7",lineCap:"round",className:ant+(bike?"bike":"walk"),interactive:on})
@@ -1397,21 +1413,23 @@ function drawRoute(id,key,fit){
 }
 function routesHtml(p){
   return `<div class="rt"><div class="rt-h">Llegar antes de las ${tripTime} · ${DAYF[tripDay]}</div>${allRows().map(row=>{
-    if(row.extra){const lv=liveFor(p,row), bike=PERF[row.who].mode==="bike";
+    if(row.extra&&!RTS(p.id,row.key).length){const tp=tpFor(p,row), lv=liveFor(p,row), bike=PERF[row.who].mode==="bike";
       const head=`<span class="rt-n">${rowName(row)}</span>`;
+      if(tp==="pending")return `<div class="rt-i" data-route="${p.id}|${row.key}" role="button" tabindex="0">${head}<b>…</b><span class="ch">🚆 Calculando transporte (horarios de Rejseplanen)…</span></div>`;
       return `<div class="rt-i${row.key===routeDest?" on":""}" data-route="${p.id}|${row.key}" role="button" tabindex="0">${head}<b>${lv&&lv!=="pending"?lv.min+" min":lv==="pending"?"…":"—"}</b>
-        <span class="ch">${lv==="pending"?"Calculando…":lv?`${bike?"🚲 Solo en bici":"🚶 Solo andando"} · ${km(lv.d)}`:"Sin ruta"} · <a href="${esc(rpLink(p,row.k))}" target="_blank" rel="noopener">Transporte en Rejseplanen ↗</a></span></div>`;}
+        <span class="ch">${lv==="pending"?"Calculando…":lv?`${bike?"🚲 Solo en bici":"🚶 Solo andando"} · ${km(lv.d)}`:"Sin ruta"} · sin transporte para esta hora · <a href="${esc(rpLink(p,row.k))}" target="_blank" rel="noopener">Transporte en Rejseplanen ↗</a></span></div>`;}
     const r=RT(p.id,row.key);
     const head=`<span class="rt-n">${rowName(row)}${r?` <small style="color:var(--muted)">sal ${r.sale}</small>${r.llega>tripTime?` <small class="late" title="Con tu velocidad llegarías a las ${r.llega}">⚠️ ${r.llega}</small>`:""}`:""}</span>`;
     if(!r)return `<div class="rt-i" style="cursor:default">${head}<b>—</b><span class="ch">Sin ruta con su configuración</span></div>`;
     return `<div class="rt-i${row.key===routeDest?" on":""}" data-route="${p.id}|${row.key}" role="button" tabindex="0">${head}<b>${r.min} min</b><span class="ch">${chips(r)}${r.trans>0?` · ${r.trans} transb.`:" · directo"}</span>${altBtns(p.id,row.key)}</div>`;}).join("")}</div>`;}
-const tabsHtml=p=>allRows().map(row=>{let m; if(row.extra){const lv=liveFor(p,row); m=lv&&lv!=="pending"?lv.min+"′":"…";}else{const r=RT(p.id,row.key); m=r?r.min+"′":"—";}
+const tabsHtml=p=>allRows().map(row=>{let m; if(row.extra&&!RTS(p.id,row.key).length){const lv=liveFor(p,row); m=lv&&lv!=="pending"?lv.min+"′":"…";}else{const r=RT(p.id,row.key); m=r?r.min+"′":"—";}
   return `<button data-route="${p.id}|${row.key}" class="${row.key===routeDest?"on":""}">${esc(dName(row.k))} · ${PERF[row.who].n} · ${m}</button>`;}).join("");
 function stepsHtml(p,key){const row=rowOf(key)||allRows()[0]; key=row.key; const pf=PERF[row.who], r=RT(p.id,key), bike=pf.mode==="bike";
-  if(row.extra){const lv=liveFor(p,row);
+  if(row.extra&&!r){const lv=liveFor(p,row), tp=tpFor(p,row);
+    if(tp==="pending")return `<p style="margin:8px 0 0;font-size:12.5px"><b>${esc(row.extra.n)}</b> · 🚆 calculando transporte con los horarios de Rejseplanen…</p>`;
     return `<p style="margin:8px 0 0;font-size:12.5px"><b>${esc(row.extra.n)}</b> <small style="color:var(--muted)">${esc(row.extra.addr||"")}</small></p>
     <p style="margin:6px 0 0;font-size:12.5px">${lv==="pending"?"Calculando ruta…":lv?`${bike?`🚲 Solo en bici (${pf.vb} km/h)`:`🚶 Solo andando (${pf.vw} km/h)`}: <b>${lv.min} min</b> · ${km(lv.d)} (dibujado en el mapa)`:"No se pudo calcular la ruta por calle."}</p>
-    <p style="margin:6px 0 0;font-size:11.5px;color:var(--muted)">Para este destino no hay rutas de transporte público precalculadas: ábrelo en Rejseplanen. Si quieres que salga como los otros tres, díselo a Jon/Claude y se añade fijo.</p>
+    <p style="margin:6px 0 0;font-size:11.5px;color:var(--muted)">No hay ruta en transporte para llegar a esa hora con tu configuración (o la Raspberry Pi no responde). Prueba otra hora o mira Rejseplanen.</p>
     <a class="btn sec" style="margin-top:10px;width:100%;box-sizing:border-box" href="${esc(rpLink(p,row.k))}" target="_blank" rel="noopener">Ver en Rejseplanen ↗</a>`;}
   let dir=DIRECTO[pf.mode]?.[p.id]?.[row.k]; if(dir)dir={...dir,min:Math.max(1,Math.round(dir.d/spd(pf,pf.mode)/60))};
   const who=`<p style="margin:8px 0 0;font-size:12px;color:var(--muted)">${pf.n}: ${bike?"🚲 bici + S-tog/tren":"🚶 andando + bus, metro, tren"} · ${bike?pf.vb:pf.vw} km/h · máx. ${limTxt(pf,pf.lim)} por tramo (cámbialo en Configuración)</p>`;
@@ -1481,7 +1499,22 @@ document.addEventListener("click",e=>{
 document.addEventListener("keydown",e=>{if((e.key==="Enter"||e.key===" ")&&e.target.matches&&e.target.matches(".rt-i[data-route]")){e.preventDefault();e.target.click();}});
 function pinIcon(p,sel){const sz=sel?36:30;
   return L.divIcon({className:"",iconSize:[sz,sz],iconAnchor:[sz/2,sz/2],popupAnchor:[0,-sz/2],
-    html:`<div class="pin${sel?" sel":""}${p.st==="descartado"&&leftH(p)>0?" has-cd":""}" title="${p.st==="descartado"&&leftH(p)>0?`Descartado · desaparece del mapa en ${Math.ceil(leftH(p))} h`:""}" style="width:${sz}px;height:${sz}px;background:${col(p)};font-size:${String(MODES[mode].lbl(p)).length>2?10.5:12}px">${MODES[mode].lbl(p)}${p.st==="descartado"&&leftH(p)>0?`<span class="cd">${Math.ceil(leftH(p))}h</span>`:""}</div>`});}
+    html:`<div class="pin${sel?" sel":""}${p.st==="descartado"&&leftH(p)>0?" has-cd":""}" title="${p.st==="descartado"&&leftH(p)>0?`Descartado · desaparece del mapa en ${Math.ceil(leftH(p))} h`:p.by&&p.st!=="nuevo"?`${ESTADOS[p.st].t} · por ${esc(PERF[p.by]?.n||p.by)}`:""}" style="width:${sz}px;height:${sz}px;background:${col(p)};font-size:${String(MODES[mode].lbl(p)).length>2?10.5:12}px">${MODES[mode].lbl(p)}${p.st==="descartado"&&leftH(p)>0?`<span class="cd">${Math.ceil(leftH(p))}h</span>`:""}</div>`});}
+/* quién marcó el estado: «🔵 Jon» (vacío si no se sabe o si está sin decidir) */
+const ST_ICO={gusta:"🔵",contactado:"🟢",descartado:"🔴",nuevo:"🟠"};
+const quien=x=>x&&x.by&&x.st&&x.st!=="nuevo"?`${ST_ICO[x.st]||""} ${esc(PERF[x.by]?.n||x.by)}`:"";
+/* antes de cambiar un estado hay que saber quién eres (si no, queda «por nadie») */
+function quienSoy(){return new Promise(res=>{if(YO)return res(YO);
+  const o=document.createElement("div"); o.id="quiensoy"; o.setAttribute("role","dialog"); o.setAttribute("aria-label","¿Quién eres?");
+  o.style.cssText="position:fixed;inset:0;z-index:4000;background:rgba(0,0,0,.45);display:flex;align-items:center;justify-content:center;padding:16px";
+  o.innerHTML=`<div style="background:var(--panel,#fff);color:var(--fg,#111);border-radius:14px;padding:18px 20px;max-width:340px;width:100%;box-shadow:0 8px 30px rgba(0,0,0,.3)">
+    <b style="font-size:16px">¿Quién eres?</b><p style="margin:6px 0 14px;font-size:13px;color:var(--muted,#666)">Así el otro ve quién ha marcado cada piso. Solo se pregunta una vez en este navegador.</p>
+    <div style="display:flex;gap:8px">${Object.entries(PERF).map(([w,pf])=>`<button class="btn pri" style="flex:1" data-soy="${w}">${esc(pf.n)}</button>`).join("")}</div>
+    <button class="lnk" style="margin-top:10px" data-soy="">Cancelar</button></div>`;
+  o.addEventListener("click",e=>{const b=e.target.closest("[data-soy]"); if(!b&&e.target!==o)return; o.remove();
+    const w=b?b.dataset.soy:""; if(!w)return res("");
+    YO=w; try{localStorage.setItem("yo",YO);}catch(_){} const s=document.getElementById("yo"); if(s)s.value=YO; res(YO);});
+  document.body.appendChild(o); o.querySelector("[data-soy]").focus();});}
 const stPill=p=>`<div class="stw"><div class="stp" style="--sc:${ESTADOS[p.st].c}"><i></i>${ESTADOS[p.st].t}<small>desde ${esc(p.stF)}${p.by?` · por ${esc(PERF[p.by]?.n||p.by)}`:""}${p.st==="descartado"&&leftH(p)>0?` · ⏳ sale del mapa en ${Math.ceil(leftH(p))} h`:""}</small></div>
   <div class="stb" role="group" aria-label="Cambiar estado">${Object.entries(ESTADOS).map(([k,e])=>`<button data-setst="${p.id}|${k}" aria-pressed="${p.st===k}" style="--sc:${e.c}" title="${e.t}"><i></i>${e.t.split(" ·")[0].replace(" con el casero","")}</button>`).join("")}</div></div>`;
 /* avisos breves cuando OTRA persona cambia un estado (no al cargar la página ni por tus propios cambios) */
@@ -1522,7 +1555,7 @@ async function pullEstados(){try{const c=new AbortController(); setTimeout(()=>c
     const r=await fetch(API+"/api/estados",{signal:c.signal,cache:"no-cache"}); if(!r.ok)throw 0; applyRemote(await r.json()); apiStatus(true);}catch(e){apiStatus(false);}}
 async function pushEstado(id,st){try{const r=await fetch(API+"/api/estado",{method:"POST",headers:{"Content-Type":"application/json","X-Pisos-Key":API_KEY},body:JSON.stringify({id,st,by:YO})});
     if(!r.ok)throw 0; applyRemote(await r.json()); apiStatus(true); return true;}catch(e){apiStatus(false); return false;}}
-function setEstado(id,st){const p=PISOS.find(x=>x.id===id); if(!p||!ESTADOS[st])return; p.by=YO; pushEstado(id,st);
+async function setEstado(id,st){const p=PISOS.find(x=>x.id===id); if(!p||!ESTADOS[st])return; if(!YO&&!(await quienSoy()))return; p.by=YO; pushEstado(id,st);
   const d=new Date(), f=`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
   p.st=st; p.stF=f; p.ts=Math.floor(Date.now()/1000); ESTL[id]={st,stF:f,ts:p.ts}; try{localStorage.setItem("estados",JSON.stringify(ESTL));}catch(e){}
   markers[id].setIcon(pinIcon(p,id===selId)); applyFilter(false); renderOut();
@@ -1625,7 +1658,7 @@ function renderList(){
    <button class="item${p.id===selId?" sel":""}" data-id="${p.id}">
      <span class="badge" style="background:${col(p)}">${MODES[mode].lbl(p)}</span>
      <span style="min-width:0"><div class="it-t">${p.estado==="warn"?"⚠️ ":""}${esc(p.calle)}</div>
-       <div class="it-s">${p.m2} m² · ${esc(p.dorm)} dorm · dep ${p.dep==null?"—":Math.round(p.dep/1000)+"k"} · pre ${p.pre==null?"—":Math.round(p.pre/1000)+"k"}</div></span>
+       <div class="it-s">${p.m2} m² · ${esc(p.dorm)} dorm · dep ${p.dep==null?"—":Math.round(p.dep/1000)+"k"} · pre ${p.pre==null?"—":Math.round(p.pre/1000)+"k"}${quien(p)?` · <span class="it-by">${quien(p)}</span>`:""}</div></span>
      <span class="it-p">${fmt(p.mensual)}<small>kr/mes</small></span>
    </button>`;
   const groups=BORD.filter(b=>BAR[b].some(inMain));
@@ -1794,6 +1827,7 @@ pullEstados(); setInterval(()=>{if(!document.hidden&&(!TREAL.on||Date.now()-TREA
 const kr0=n=>n==null?"?":fmt(n);
 function candItem(c){const st=ESTADOS[c.st]?c.st:"nuevo", cid=esc(c.id);
   return `<div class="cand"><a class="t" href="${safeUrl(c.link)}" target="_blank" rel="noopener">${esc(c.zona||"")} · ${esc(c.titulo||c.lugar||"Anuncio")} ↗</a>
+   ${quien(c)?`<span class="m"><b>${quien(c)}</b></span>`:""}
    <span class="m">${kr0(c.precio)} kr/mes · ${esc(c.m2||"?")} m² · ${esc(c.vaer||"?")} vær. · libre ${esc(c.disp||"?")} · ${esc(c.portal||"")}</span>
    ${c.dep!=null||c.pre!=null?`<span class="m">Depósito ${kr0(c.dep)} kr · Prepago ${kr0(c.pre)} kr</span>`:""}
    ${Array.isArray(c.avisos)&&c.avisos.length?`<span class="w">⚠ ${c.avisos.map(esc).join(" · ")}</span>`:""}
@@ -1817,6 +1851,7 @@ let candSig="";
 async function pullCandidatos(){try{const r=await fetch(API+"/api/candidatos",{cache:"no-cache"}); if(!r.ok)throw 0; const d=await r.json(); const sig=JSON.stringify(d.pisos||[]); if(sig!==candSig){candSig=sig; CANDS=d.pisos||[]; renderCands();}
   const el=document.getElementById("lares-s"); if(el&&d.actualizado){const h=(Date.now()-Date.parse(d.actualizado))/36e5; el.textContent=`Última pasada de Lares: hace ${h<1?Math.round(h*60)+" min":h.toFixed(1)+" h"}.`;}}catch(e){}}
 document.addEventListener("click",async e=>{const b=e.target.closest("[data-cst]"); if(!b)return; if(PISOS.some(x=>x.id===b.dataset.cst.split("|")[0]))return; e.stopPropagation(); b.disabled=true;
+  if(!YO&&!(await quienSoy())){b.disabled=false; return;}
   const [id,st]=b.dataset.cst.split("|"); if(await pushEstado(id,st)){const c=CANDS.find(x=>String(x.id)===id); if(c){c.st=st;} renderCands(); map.closePopup(); pullCandidatos();}
   else{b.disabled=false; alert("No se pudo guardar: la Raspberry Pi no responde.");}});
 /* ---------- zonas que vigila Lares ---------- */
