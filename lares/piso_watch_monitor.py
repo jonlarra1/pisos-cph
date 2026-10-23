@@ -12,7 +12,7 @@ Corre en el cron de Lares cada 3 h, sin LLM. Pasos:
       rechazados.json  -> últimos rechazados con el motivo exacto
  5. Imprime solo los candidatos NUEVOS (salida vacía = el agente no se despierta).
 """
-import json, os, re, sqlite3, tempfile, urllib.request
+import json, os, re, sqlite3, tempfile, urllib.error, urllib.parse, urllib.request
 from datetime import date, datetime, timezone
 from html import unescape
 from pathlib import Path
@@ -30,6 +30,9 @@ PAGINAS = {   # portal: (url de la página i, mínimo, máximo)
     "lejebolig": (lambda i: "https://en.lejebolig.dk/lejeboliger/koebenhavn" + (f"?page={i+1}" if i else ""), 2, 6),
     "boligportal": (lambda i: f"https://www.boligportal.dk/lejligheder/k%C3%B8benhavn/?max_monthly_rent=23000&offset={18*i}", 3, 8),
 }
+MAX_ACTIVO = 8                       # anuncios comprobados por pasada para ver si siguen publicados
+RETIRADO_DIAS = 14                   # cuánto se guarda un retirado en retirados.json (el backend lo aplica una vez)
+CUARENTENA_DIAS = 3                  # un propuesto retirado sigue en candidatos.json estos días (la web lo enseña 48 h)
 RECUERDO_DIAS = 7                    # un candidato que ya no sale en las páginas leídas se sigue proponiendo estos días
 MAX_DETAIL = 8                       # fichas abiertas por pasada (ritmo suave)
 DEFAULT_FILTROS = {"precio_max": 23000, "vaer_min": 4, "disp_desde": "2026-12-18", "disp_hasta": "2027-01-15"}
@@ -66,6 +69,51 @@ def fetch(url, timeout=20):
     req = urllib.request.Request(url, headers={"User-Agent": UA, "Accept-Language": "da,en;q=0.8"})
     with urllib.request.urlopen(req, timeout=timeout) as r:
         return r.read().decode("utf-8", "replace")
+
+
+def url_ok(u):
+    """Enlaces con «ø» sin codificar (algunos de descartados.json): urllib no los abre tal cual."""
+    return urllib.parse.quote(u, safe=":/?=&%#")
+
+
+def _estado_bp(o, i):
+    """Estado («ACTIVE_APPROVED»…) del anuncio i dentro del JSON de la ficha de Boligportal."""
+    if isinstance(o, dict):
+        if o.get("id") == i and "state" in o: return o["state"]
+        for v in o.values():
+            r = _estado_bp(v, i)
+            if r: return r
+    elif isinstance(o, list):
+        for v in o:
+            r = _estado_bp(v, i)
+            if r: return r
+    return None
+
+
+def estado_anuncio(link):
+    """('activo' | 'retirado' | 'desconocido', motivo). Solo señales claras cuentan como retirado:
+    Boligportal redirige con ?ad_rented_out_redirect=… («udlejet») o el anuncio trae un estado que no es ACTIVE_*;
+    Lejebolig responde 404/410 («no longer available»). Error de red o respuesta rara = desconocido: nunca se retira por un fallo."""
+    lid = num_id(link)
+    req = urllib.request.Request(url_ok(link), headers={"User-Agent": UA, "Accept-Language": "da,en;q=0.8"})
+    try:
+        with urllib.request.urlopen(req, timeout=20) as r:
+            code, fin, html = r.status, r.geturl(), r.read().decode("utf-8", "replace")
+    except urllib.error.HTTPError as e:
+        code, fin, html = e.code, e.geturl() or "", ""; e.close()
+    except Exception as e:
+        return "desconocido", type(e).__name__
+    if code in (404, 410): return "retirado", "el portal ya no lo publica"
+    if code != 200: return "desconocido", f"HTTP {code}"
+    if "ad_rented_out_redirect" in fin: return "retirado", "marcado como alquilado («udlejet»)"
+    if "boligportal" in link:
+        m = re.search(r'<script id="store" type="application/json">(.*?)</script>', html, re.S)
+        try: st = _estado_bp(json.loads(m.group(1)), int(lid)) if (m and lid) else None
+        except ValueError: st = None
+        if st: return ("activo", st) if st.startswith("ACTIVE") else ("retirado", f"estado {st} en el portal")
+        return "desconocido", "sin estado en la ficha"
+    if lid and lid in fin: return "activo", ""
+    return "desconocido", "redirección inesperada"
 
 
 def write_json(path, obj):
@@ -232,10 +280,12 @@ def main():
     # Lo decidido en la web (gusta/contactado/descartado) se sigue evaluando y escribiendo: el backend
     # lo oculta. Así, si alguien lo vuelve a poner en «nuevo», reaparece al momento.
     decididos = {str(k) for k, v in (cfg.get("con_estado") or {}).items() if (v or {}).get("st") != "nuevo"}
-    known = set()
+    known, mapa = set(), []
     for u in MAP_URLS:                         # pisos ya en el mapa o en la lista fija de descartados
         try:
-            for x in json.loads(fetch(u)):
+            datos = json.loads(fetch(u))
+            if u.endswith("/pisos.json"): mapa = [x for x in datos if isinstance(x, dict) and x.get("link")]
+            for x in datos:
                 i = num_id(x.get("link", ""))
                 if i: known.add(i)
                 for extra in re.findall(r"https?://\S+", x.get("notas", "") or ""):
@@ -307,6 +357,35 @@ def main():
             continue
         it["avisos"] = [a for a in (it.get("avisos") or []) if not a.startswith("no visto desde")] + [f"no visto desde {last[:10]} (ya no sale en las primeras páginas)"]
         cands.append(it)
+    # ¿siguen publicados? pisos del mapa + propuestos que ya no salen en las páginas leídas (los que salen, sí lo están)
+    con.execute("CREATE TABLE IF NOT EXISTS v2_activo (id TEXT PRIMARY KEY, link TEXT, estado TEXT, motivo TEXT, desde TEXT, ultimo TEXT)")
+    revisar = {num_id(p["link"]): p["link"] for p in mapa if num_id(p["link"])}
+    revisar.update({c["id"]: c["link"] for c in cands if c["id"] not in listings})
+    prev = {r[0]: (r[1], r[2]) for r in con.execute("SELECT id, estado, ultimo FROM v2_activo")}
+    orden = sorted((i for i in revisar if (prev.get(i) or ("", ""))[0] != "retirado"), key=lambda i: (prev.get(i) or ("", ""))[1])[:MAX_ACTIVO]
+    nuevos_ret = 0
+    for i in orden:
+        est, mot = estado_anuncio(revisar[i]); time.sleep(2)
+        if est == "desconocido":
+            con.execute("INSERT INTO v2_activo (id, link, estado, motivo, desde, ultimo) VALUES (?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET ultimo=excluded.ultimo",
+                        (i, revisar[i], "desconocido", mot, now, now))
+            continue
+        nuevos_ret += est == "retirado"
+        con.execute("INSERT INTO v2_activo (id, link, estado, motivo, desde, ultimo) VALUES (?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET "
+                    "estado=excluded.estado, motivo=excluded.motivo, ultimo=excluded.ultimo, "
+                    "desde=CASE WHEN v2_activo.estado=excluded.estado THEN v2_activo.desde ELSE excluded.desde END",
+                    (i, revisar[i], est, mot, now, now))
+    hace = lambda d: (datetime.now(timezone.utc) - datetime.fromisoformat(d)).total_seconds() / 86400
+    ret = {r[0]: {"link": r[1], "motivo": r[2], "desde": r[3]} for r in con.execute("SELECT id, link, motivo, desde FROM v2_activo WHERE estado='retirado'")
+           if hace(r[3]) <= RETIRADO_DIAS}
+    for c in list(cands):                                  # propuestos retirados: cuarentena (la web los enseña 48 h en Descartados)
+        r = ret.get(c["id"])
+        if not r: continue
+        if hace(r["desde"]) > CUARENTENA_DIAS: cands.remove(c); continue
+        c["retirado"] = r["desde"][:10]
+        c["avisos"] = [a for a in (c.get("avisos") or []) if not a.startswith(("no visto desde", "🚫"))] + [f"🚫 anuncio retirado del portal el {r['desde'][:10]}: {r['motivo']}"]
+    write_json(BRIDGE / "retirados.json", {"actualizado": now, "pisos": {k: {**v, "desde": v["desde"][:19]} for k, v in ret.items()}})
+    STATS.update(comprobados=len(orden), retirados_nuevos=nuevos_ret, retirados=len(ret))
     con.commit()
     historial(con, now)
     con.close()
