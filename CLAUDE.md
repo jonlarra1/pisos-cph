@@ -89,9 +89,10 @@ The user is Jon. He works at Nordic Solar (Hellerup). He prefers short, simple, 
      scripts/piso_watch_monitor.py.v2-20261023.bak). 1.ª pasada 12:20 UTC: 190 anuncios, 6/8 páginas, 5 candidatos (antes 0),
      8 comprobados, 1 retirado (1870169, ya descartado por Jon: se respetó). Copias del backend: /home/docker/pisos-backend/backup-*.
      Seguridad SSH (23-oct): borradas de authorized_keys token20m-ssh-token_2125 y antigravity-setup (copias .bak-20261023-*).
-  13. EDC como 3.ª fuente de Lares (23-oct): HECHO EN LOCAL, SIN DESPLEGAR (ver lares/README.md). Pasada real de prueba (solo EDC,
-     todas las zonas): 6 peticiones, 276 anuncios (258 copias de Boligportal), 12 fichas, 8 propuestos de EDC (3 en Sydhavnen),
-     263 esperando ficha (se vacía en ~3 días). Desplegar: copiar a scripts/ de Lares con .bak (clave SSH).
+  13. EDC como 3.ª fuente de Lares: INSTALADO en la Pi el 23-oct 18:29 (copia previa: scripts/piso_watch_monitor.py.v3-20261023-preEDC.bak;
+     ver lares/README.md). 1.ª pasada 16:31 UTC: 68 s, sin errores, 16 EDC + 289 Boligportal leídos, 12 fichas EDC, 14 candidatos
+     (7 de EDC, 3 en Sydhavnen), 143 de EDC esperando ficha (se vacían en unas pasadas). Clave SSH temporal borrada
+     (authorized_keys.bak-20261023-edc).
      Idea de Jon: tener el chat de Boligportal con cada casero dentro de la plataforma (Boligportal no tiene API y prohíbe iframes:
      X-Frame-Options SAMEORIGIN). Pendiente de decidir: extensión de Chrome / leer los avisos por email (Gmail) / navegador en la Pi.
   11. Chrome «acceso a red local»: en aparatos con MagicDNS el nombre de la Pi resuelve a 100.72.170.60 y Chrome pide permiso (headless lo deniega).
