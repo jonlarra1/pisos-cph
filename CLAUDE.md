@@ -85,9 +85,15 @@ The user is Jon. He works at Nordic Solar (Hellerup). He prefers short, simple, 
      Instalar: `backend/deploy.sh USUARIO@100.72.170.60` (solo mira) y luego `--aplicar` (tests, copia de seguridad, compose up --build,
      smoke_test contra el Funnel y vuelta atrás automática si falla). `--con-compose` sube también compose.yml (mem_limit 512m: preguntar a Jon).
      Después (fase 2): mover el <script> a app.js y quitar 'unsafe-inline' de script-src (check_site ya lo soporta).
-  12. PENDIENTE DE INSTALAR EN LA PI (clave SSH): backend con retirados (`backend/deploy.sh … --aplicar`) y Lares nuevo
-     (lares/piso_watch_monitor.py -> ~/docker/hermes/profiles/lares/scripts/, con copia .bak antes): páginas adaptativas,
-     recuerdo 7 días, dep/pre y anuncios retirados. Instalado ya en la Pi el 23-oct: backend con SSE, ETag, motor de rutas, 512 MB.
+  12. INSTALADO en la Pi el 23-oct (13:50–14:00): backend con retirados (motivo, retirado_aplicado) y Lares nuevo (copia previa:
+     scripts/piso_watch_monitor.py.v2-20261023.bak). 1.ª pasada 12:20 UTC: 190 anuncios, 6/8 páginas, 5 candidatos (antes 0),
+     8 comprobados, 1 retirado (1870169, ya descartado por Jon: se respetó). Copias del backend: /home/docker/pisos-backend/backup-*.
+     Seguridad SSH (23-oct): borradas de authorized_keys token20m-ssh-token_2125 y antigravity-setup (copias .bak-20261023-*).
+  13. EDC como 3.ª fuente de Lares (23-oct): HECHO EN LOCAL, SIN DESPLEGAR (ver lares/README.md). Pasada real de prueba (solo EDC,
+     todas las zonas): 6 peticiones, 276 anuncios (258 copias de Boligportal), 12 fichas, 8 propuestos de EDC (3 en Sydhavnen),
+     263 esperando ficha (se vacía en ~3 días). Desplegar: copiar a scripts/ de Lares con .bak (clave SSH).
+     Idea de Jon: tener el chat de Boligportal con cada casero dentro de la plataforma (Boligportal no tiene API y prohíbe iframes:
+     X-Frame-Options SAMEORIGIN). Pendiente de decidir: extensión de Chrome / leer los avisos por email (Gmail) / navegador en la Pi.
   11. Chrome «acceso a red local»: en aparatos con MagicDNS el nombre de la Pi resuelve a 100.72.170.60 y Chrome pide permiso (headless lo deniega).
   10. Nordic Solar = Strandvejen 104B; Jon dice que se entra por el «3B»: preguntar de qué calle es y ajustar el destino.
   4. Lista del 14-oct: añadidos al mapa 5680590 (Frederiksberg, plano 4 dorm.) y 1912011 (Søborg, texto 3 dorm.) el 2026-10-22.
