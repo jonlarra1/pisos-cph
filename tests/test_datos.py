@@ -12,7 +12,7 @@ APP = leer("app.js") if os.path.exists(os.path.join(ROOT, "app.js")) else HTML
 PISOS, OUT, RUTAS, DIRECTO = cargar("pisos.json"), cargar("descartados.json"), cargar("rutas.json"), cargar("directo.json")
 BBOX = (55.55, 55.86, 12.20, 12.72)                 # zona de Copenhague (igual que backend/routing.py)
 ESTADOS = {"gusta", "nuevo", "contactado", "descartado"}
-PORTALES = {"www.boligportal.dk", "en.lejebolig.dk", "www.lejebolig.dk", "boligportal.dk"}
+PORTALES = {"www.boligportal.dk", "en.lejebolig.dk", "www.lejebolig.dk", "boligportal.dk", "www.edc.dk"}
 FOTO_HOSTS = {"image-lambda.boligportal.dk", "s3.eu-central-1.amazonaws.com"}   # los que acepta /api/img
 
 

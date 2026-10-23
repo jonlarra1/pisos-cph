@@ -26,6 +26,17 @@ def anuncio(i, **kw):
             "contrato_meses": 0, "texto": "Delevenlig", **kw}
 
 
+def caso_edc(i, **kw):
+    """Un anuncio tal como lo da la API de EDC. i < 0 = copia de Boligportal con id -i."""
+    v = lambda x, u="": {"value": x, "unitCode": u}
+    a = {"caseNumber": str(i), "isEdcCase": True, "isRented": False, "estateTypeName": "Lejlighed", "address": "Hyrdindestien 9",
+         "zipCode": "2730", "city": "Herlev", "rent": v(16000.0), "livingArea": v(100.0), "rooms": v(4.0),
+         "urlPath": f"/leje/lejlighed/2730-herlev/hyrdindestien-9/{i}/", "geoCoordinates": {"latitude": 55.72, "longitude": 12.44}}
+    if i < 0:
+        a.update(caseNumber=f"ex{-i}", isEdcCase=False, urlPath=f"https://www.boligportal.dk/lejligheder/herlev/100m2-4-vaer-id-{-i}?EDC=true&utm_source=edc")
+    return {**a, **kw}
+
+
 class Pasada:
     """Simula los portales: páginas[portal] = lista de páginas (cada una, lista de ids)."""
     def __init__(self, m, paginas, estados=None, mapa=None):
@@ -33,7 +44,11 @@ class Pasada:
         self.estados, self.mapa, self.comprobados = estados or {}, mapa or [], []   # id -> ("retirado", motivo); pisos.json
     def fetch(self, url, timeout=20):
         if "github.io" in url: return json.dumps(self.mapa) if url.endswith("/pisos.json") else "[]"
-        self.pedidas.append(url); return url
+        self.pedidas.append(url)
+        if url.startswith(self.m.EDC_API):                      # EDC: JSON de su API, páginas de paginas["edc"]
+            pags = self.paginas.get("edc", []); n = int(url.rsplit("pageNr=", 1)[1]) - 1
+            return json.dumps({"totalPages": len(pags), "items": [caso_edc(x) for x in (pags[n] if n < len(pags) else [])]})
+        return url
     def parser(self, portal):
         def p(url):
             i = self.m.PAGINAS[portal][0]
@@ -56,7 +71,7 @@ class Pasada:
 
 class TestPaginas(unittest.TestCase):
     def setUp(self): self.m = cargar_modulo()
-    def cuenta(self, pas, portal): return sum(1 for u in pas.pedidas if ("lejebolig" in u) == (portal == "lejebolig"))
+    def cuenta(self, pas, portal): return sum(1 for u in pas.pedidas if portal in u and not u.startswith(self.m.EDC_API))
 
     def test_lee_el_minimo_aunque_no_haya_nada_nuevo(self):
         pas = Pasada(self.m, {"boligportal": [[1], [2], [3], [4]], "lejebolig": [[10], [11], [12]]}); pas()
@@ -160,6 +175,59 @@ class TestRetirados(unittest.TestCase):
         p2 = Pasada(self.m, {}, mapa=mapa); p2()
         self.assertNotIn("100", p2.comprobados)                                  # ya retirado: no se vuelve a pedir
         self.assertTrue(set(p2.comprobados).isdisjoint(set(p.comprobados) - {"100"}) or len(mapa) < 2 * self.m.MAX_ACTIVO)
+
+
+class TestEDC(unittest.TestCase):
+    FICHA = ("<html><body><h1>Hyrdindestien 9</h1><div>Ledig fra d. 1. jan. 2027</div><dl><dt>Rum/værelser</dt><dd>4/3</dd>"
+             "<dt>Lejeperiode</dt><dd>Ubegrænset</dd><dt>Depositum</dt><dd>3 måneders husleje, 48.000 kr.</dd>"
+             "<dt>Forudbetalt leje</dt><dd>1 måneds husleje, 16.000 kr.</dd><dt>Aconto Varmeudgifter</dt><dd>500 kr.</dd>"
+             "<dt>Aconto Vandudgift</dt><dd>300 kr.</dd></dl><p>Boligen er delevenlig.</p></body></html>")
+    def setUp(self): self.m = cargar_modulo()
+    def test_parse_edc_propios_copias_y_alquilados(self):
+        out = self.m.parse_edc(json.dumps({"items": [caso_edc(11810045), caso_edc(-5663068), caso_edc(11810046, isRented=True)]}))
+        self.assertEqual(set(out), {"11810045", "5663068"})
+        self.assertEqual(out["11810045"]["portal"], "EDC"); self.assertEqual(out["11810045"]["precio"], 16000)
+        self.assertEqual(out["11810045"]["vaer"], 4); self.assertTrue(out["11810045"]["link"].startswith("https://www.edc.dk/leje/"))
+        self.assertEqual(out["5663068"]["portal"], "Boligportal"); self.assertNotIn("utm_", out["5663068"]["link"])
+    def test_ficha_edc(self):
+        with mock.patch.object(self.m, "fetch", lambda u, timeout=20: self.FICHA):
+            d = self.m.detalle({"portal": "EDC", "link": "https://www.edc.dk/leje/x/11810045/"})
+        self.assertEqual((d["dep"], d["pre"], d["aconto"], d["contrato_meses"], d["vaer"], d["dorm"], d["disp"]),
+                         (48000, 16000, 800, 0, 4, 3, "2027-01-01"))
+    def test_num_id_edc(self):
+        self.assertEqual(self.m.num_id("https://www.edc.dk/leje/lejlighed/2450-koebenhavn-sv/a-c-meyers-vaenge-134-1-tv/11810045/"), "11810045")
+    def test_urls_solo_zonas_activas_y_cortas(self):
+        F = {"vaer_min": 4, "precio_max": 23000}
+        u = self.m.edc_urls({"Herlev": True, "Valby": False}, F)
+        self.assertEqual(len(u), 1); self.assertTrue(u[0].endswith("postnr=2730")); self.assertIn("rum=4", u[0]); self.assertIn("leje=0-23000", u[0])
+        todas = self.m.edc_urls({z: True for z in self.m.ZONA_POSTNR}, F)
+        self.assertTrue(all(len(x) <= self.m.EDC_MAX_URL for x in todas))
+        cod = {c for x in todas for c in x.split("postnr=")[1].split(",")}
+        self.assertEqual(cod, {str(c) for z in self.m.ZONA_POSTNR.values() for c in z})
+        self.assertEqual(self.m.edc_urls({}, F), [])
+    def test_dormitorios_de_la_ficha(self):
+        F = TestFiltros.F
+        ok, mot, _ = self.m.evaluar(anuncio(1, dorm=2), F, TestFiltros.Z); self.assertFalse(ok); self.assertIn("ficha: 2 dormitorios", mot)
+        self.assertTrue(self.m.evaluar(anuncio(1, dorm=3), F, TestFiltros.Z)[0])
+    def test_pasada_con_edc(self):
+        pas = Pasada(self.m, {"boligportal": [[7]], "edc": [[11810045, -7, -8]]}); c = pas()
+        por_id = {p["id"]: p for p in c["pisos"]}
+        self.assertEqual(por_id["11810045"]["portal"], "EDC")
+        self.assertEqual(por_id["7"]["link"], "https://www.boligportal.dk/x-id-7")       # la versión de Boligportal manda
+        self.assertIn("8", por_id)                                                       # copia que Boligportal no trajo
+        self.assertFalse([e for e in c["errores"] if e.startswith("edc")])
+    def test_edc_sin_ficha_no_se_propone_y_espera(self):
+        self.m.MAX_DETAIL_EDC = 1
+        c = Pasada(self.m, {"edc": [[11810001, 11810002, -9]]})()
+        self.assertEqual([p["id"] for p in c["pisos"]], ["11810001"])                  # 1 ficha por pasada: los otros esperan
+        self.assertEqual(self.m.STATS["edc_pendientes"], 2)
+        c = Pasada(self.m, {"edc": [[11810001, 11810002, -9]]})()
+        self.assertEqual(sorted(p["id"] for p in c["pisos"]), ["11810001", "11810002"])  # el propio de EDC antes que la copia
+    def test_edc_para_al_llegar_a_lo_conocido(self):
+        self.m.EDC_PAGINAS = (1, 3)
+        Pasada(self.m, {"edc": [[11810001]] * 3})()
+        pas = Pasada(self.m, {"edc": [[11810001]] * 3}); pas()
+        self.assertEqual(sum(1 for u in pas.pedidas if u.startswith(self.m.EDC_API)), 1)
 
 
 class TestFiltros(unittest.TestCase):

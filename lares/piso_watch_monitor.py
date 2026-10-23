@@ -30,7 +30,24 @@ PAGINAS = {   # portal: (url de la página i, mínimo, máximo)
     "lejebolig": (lambda i: "https://en.lejebolig.dk/lejeboliger/koebenhavn" + (f"?page={i+1}" if i else ""), 2, 6),
     "boligportal": (lambda i: f"https://www.boligportal.dk/lejligheder/k%C3%B8benhavn/?max_monthly_rent=23000&offset={18*i}", 3, 8),
 }
-MAX_ACTIVO = 8                       # anuncios comprobados por pasada para ver si siguen publicados
+# EDC (edc.dk): API JSON de su buscador. Se pide por códigos postales de las zonas activas (más nuevo primero).
+# Trae anuncios propios de EDC y copias de Boligportal (esas se guardan con su id de Boligportal, sin duplicar).
+EDC_API = "https://www.edc.dk/api/v1/cases/quick-search"
+EDC_PAGINAS = (1, 3)                 # por grupo de códigos postales: mínimo y máximo de páginas de 100
+MAX_DETAIL_EDC = 12                  # fichas de EDC por pasada: lo de EDC no trae fecha en el listado, así que
+                                     # no se propone hasta abrir su ficha (lo que no cabe espera a la siguiente pasada)
+EDC_MAX_URL = 1400                   # con URLs muy largas EDC responde 404: se parten los códigos en grupos
+_r = lambda a, b: list(range(a, b + 1))
+ZONA_POSTNR = {   # zona del mapa -> códigos postales (los de K, V y Frederiksberg C son rangos)
+    "Indre By": _r(1050, 1499), "Holmen": _r(1432, 1439), "Vesterbro": _r(1500, 1799), "Frederiksberg": _r(1800, 2000),
+    "Østerbro": [2100, 2150], "Nørrebro": [2200], "Amager": [2300], "Islands Brygge": [2300], "Ørestad": [2300],
+    "Nordvest": [2400], "Bispebjerg": [2400], "Sydhavnen": [2450], "Valby": [2500], "Glostrup": [2600],
+    "Rødovre": [2610], "Hvidovre": [2650], "Brønshøj": [2700], "Husum": [2700], "Vanløse": [2720], "Herlev": [2730],
+    "Skovlunde": [2740], "Ballerup": [2750], "Måløv": [2760], "Lyngby": [2800], "Gentofte": [2820], "Virum": [2830],
+    "Søborg": [2860], "Buddinge": [2860], "Gladsaxe": [2860], "Bagsværd": [2880], "Hellerup": [2900],
+    "Charlottenlund": [2920], "Klampenborg": [2930],
+}
+MAX_ACTIVO = 8                      # anuncios comprobados por pasada para ver si siguen publicados
 RETIRADO_DIAS = 14                   # cuánto se guarda un retirado en retirados.json (el backend lo aplica una vez)
 CUARENTENA_DIAS = 3                  # un propuesto retirado sigue en candidatos.json estos días (la web lo enseña 48 h)
 RECUERDO_DIAS = 7                    # un candidato que ya no sale en las páginas leídas se sigue proponiendo estos días
@@ -125,7 +142,7 @@ def write_json(path, obj):
 
 
 def num_id(url_or_id):
-    m = re.search(r"lejebolig/(\d+)|id-(\d+)|rental-apartments/(\d+)|^(?:lb|bp)?(\d+)$", str(url_or_id))
+    m = re.search(r"lejebolig/(\d+)|id-(\d+)|rental-apartments/(\d+)|edc\.dk/\S*/(\d{6,})/?(?:[?#]|$)|^(?:lb|bp|edc)?(\d+)$", str(url_or_id))
     return next((g for g in m.groups() if g), None) if m else None
 
 
@@ -183,8 +200,73 @@ def parse_boligportal(html):
     return out
 
 
+def edc_urls(zonas, F):
+    """URLs base de EDC (sin pageNr) para las zonas activas, partidas para que ninguna pase de EDC_MAX_URL."""
+    codigos = sorted({c for z, on in zonas.items() if on for c in ZONA_POSTNR.get(z, [])})
+    base = (f"{EDC_API}?c-gruppe=Rent&c-type=0&ejd-typer=31&rum={int(F['vaer_min'])}"
+            f"&leje=0-{int(F['precio_max'])}&pageSize=100&sort=26&postnr=")
+    urls, grupo = [], []
+    for c in codigos:
+        if grupo and len(base) + len(",".join(map(str, grupo + [c]))) > EDC_MAX_URL:
+            urls.append(base + ",".join(map(str, grupo))); grupo = []
+        grupo.append(c)
+    if grupo: urls.append(base + ",".join(map(str, grupo)))
+    return urls
+
+
+def parse_edc(text):
+    """JSON de la API de EDC -> anuncios. Las copias de Boligportal («ex<id>») salen como Boligportal con su id."""
+    out = {}
+    val = lambda o: int(o["value"]) if isinstance(o, dict) and isinstance(o.get("value"), (int, float)) and o["value"] else None
+    for a in (json.loads(text).get("items") or []):
+        if a.get("isRented") or a.get("isSold"): continue
+        cn, url = str(a.get("caseNumber") or ""), a.get("urlPath") or ""
+        geo = a.get("geoCoordinates") or {}
+        it = {"titulo": f"{a.get('estateTypeName') or 'Lejlighed'}, {a.get('address') or ''}".strip(", "),
+              "lugar": f"{a.get('address') or ''} {a.get('zipCode') or ''} {a.get('city') or ''}".strip(),
+              "precio": val(a.get("rent")) or 0, "m2": val(a.get("livingArea")), "vaer": val(a.get("rooms")),
+              "lat": geo.get("latitude"), "lon": geo.get("longitude")}
+        if a.get("isEdcCase") and cn.isdigit() and url.startswith("/leje/"):
+            out[cn] = {"portal": "EDC", "id": cn, "link": "https://www.edc.dk" + url, "_edc": True, **it}
+        elif "boligportal.dk" in url:
+            lid = num_id(url.split("?")[0])
+            if lid: out[lid] = {"portal": "Boligportal", "id": lid, "link": url.split("?")[0], "_edc": True, **it}
+    return out
+
+
+MESES = {"jan": 1, "feb": 2, "mar": 3, "apr": 4, "maj": 5, "jun": 6, "jul": 7, "aug": 8, "sep": 9, "okt": 10, "nov": 11, "dec": 12}
+
+
+def detalle_edc(item):
+    """Ficha de EDC: «Ledig fra d. 1. nov. 2026», «Depositum 3 måneders husleje, 45.600 kr.», «Forudbetalt leje …, 15.200 kr.»,
+    «Aconto Varmeudgifter 500 kr.», «Lejeperiode Ubegrænset», «Rum/værelser 3/2» (rum / soveværelser)."""
+    h = fetch(item["link"], timeout=15)
+    t = unescape(re.sub(r"<script.*?</script>|<style.*?</style>", " ", h, flags=re.S))
+    t = re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", t))
+    d = {"texto": t[:6000]}
+    kr = lambda m: int(re.sub(r"\D", "", m.group(1))) if m else None
+    d["dep"] = kr(re.search(r"Depositum (?:[^,]{0,40}, )?([\d.]+) kr", t))
+    d["pre"] = kr(re.search(r"Forudbetalt leje (?:[^,]{0,40}, )?([\d.]+) kr", t))
+    ac = [int(x.replace(".", "")) for x in re.findall(r"Aconto [A-Za-zæøåÆØÅ ]{2,30}? ([\d.]+) kr", t)]
+    d["aconto"] = sum(ac) if ac else None
+    mp = re.search(r"Lejeperiode (\S+)", t)
+    if mp:
+        v = mp.group(1).lower()
+        d["contrato_meses"] = 0 if v.startswith("ubegr") else (int(re.sub(r"\D", "", v)) if re.search(r"\d", v) else None)
+    mr = re.search(r"Rum/værelser (\d+)/(\d+)", t)
+    if mr: d["vaer"], d["dorm"] = int(mr.group(1)), int(mr.group(2))
+    md = re.search(r"(?:Ledig fra|Tilgængelig fra)(?: d\.)? (\d{1,2})\. ?([a-zæøå]{3})[a-zæøå]*\.? (\d{4})", t, re.I)
+    if md and md.group(2).lower() in MESES:
+        d["disp"] = f"{md.group(3)}-{MESES[md.group(2).lower()]:02d}-{int(md.group(1)):02d}"
+    elif re.search(r"(?:Ledig fra|Tilgængelig fra)(?: d\.)? (Snarest|Straks|Hurtigst muligt)", t, re.I):
+        d["disp"] = "ya"
+    return d
+
+
 def detalle(item):
     """Abre la ficha para sacar contrato y texto (y fecha si la hay)."""
+    if item.get("portal") == "EDC":
+        return detalle_edc(item)
     h = fetch(item["link"], timeout=15)
     t = unescape(re.sub(r"<script.*?</script>|<style.*?</style>", " ", h, flags=re.S))
     t = re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", t))
@@ -252,6 +334,8 @@ def evaluar(item, F, zonas):
             avisos.append("compartir sin confirmar")
     pl = item.get("plano_dorm")              # lo escribe Lares (IA) en planos.json tras mirar el plano
     dmin = int(F.get("dorm_min", 3))
+    if isinstance(item.get("dorm"), int) and item["dorm"] < dmin:      # EDC da «Rum/værelser 4/2» en la ficha
+        return False, f"ficha: {item['dorm']} dormitorios", avisos
     if isinstance(pl, int):
         if pl < dmin:
             return False, f"plano: {pl} dormitorios", avisos
@@ -313,28 +397,49 @@ def main():
             time.sleep(2)
             if not page: break                                   # se acabaron los anuncios
             if i + 1 >= minimo and not (set(page) - vistos_antes): break   # todo lo de esta página ya lo conocíamos
+    minimo, maximo = EDC_PAGINAS                          # EDC: mismas reglas, por cada grupo de códigos postales
+    for base in edc_urls(zonas, F):
+        for i in range(maximo):
+            try:
+                txt = fetch(f"{base}&pageNr={i+1}"); page = parse_edc(txt)
+                ultima = int(json.loads(txt).get("totalPages") or 1) <= i + 1
+            except Exception as e:
+                errors.append(f"edc: {type(e).__name__}"); break
+            for lid, it in page.items(): listings.setdefault(lid, it)   # si Boligportal ya lo trajo, vale su versión
+            paginas["edc"] = paginas.get("edc", 0) + 1
+            time.sleep(2)
+            if ultima or not page: break                          # no hay más páginas
+            if i + 1 >= minimo and not (set(page) - vistos_antes): break
     cache = {r[0]: json.loads(r[1]) for r in con.execute("SELECT id, data FROM v2_detalle")}
 
-    budget = MAX_DETAIL
+    budget, budget_edc, pendientes = MAX_DETAIL, MAX_DETAIL_EDC, 0
+    orden_ids = sorted(listings, key=lambda k: (bool(listings[k].get("_edc")), listings[k]["portal"] != "EDC"))  # EDC propios antes que copias
     cands, rech, nuevos = [], [], []
-    for lid, it in listings.items():
+    for lid in orden_ids:
+        it = listings[lid]
         if lid in known:
             continue                                      # ya está en el mapa / descartados fijos
         it.update({k: v for k, v in cache.get(lid, {}).items() if it.get(k) in (None, "")})
         if isinstance((planos.get(lid) or {}).get("dorm"), int):
             it["plano_dorm"] = planos[lid]["dorm"]
         ok, motivo, avisos = evaluar(it, F, zonas)
-        if ok and lid not in cache and budget > 0:        # pasa lo barato: abrir ficha para lo caro
+        de_edc = it.get("_edc") and lid not in cache
+        if ok and de_edc and budget_edc <= 0:
+            pendientes += 1; continue                     # sin ficha no se propone: a la siguiente pasada
+        if ok and lid not in cache and (budget_edc if de_edc else budget) > 0:   # pasa lo barato: abrir ficha para lo caro
             try:
-                d = detalle(it); budget -= 1
+                d = detalle(it)
+                if de_edc: budget_edc -= 1
+                else: budget -= 1
                 con.execute("INSERT OR REPLACE INTO v2_detalle VALUES (?,?,?)", (lid, json.dumps(d, ensure_ascii=False), now))
                 it.update({k: v for k, v in d.items() if v is not None and (k == "texto" or it.get(k) in (None, ""))})
                 ok, motivo, avisos = evaluar(it, F, zonas)
             except Exception:
+                if de_edc: pendientes += 1; continue          # de EDC sin ficha no se propone
                 avisos.append("ficha no disponible")
         row = con.execute("SELECT first_seen, avisado FROM v2_eval WHERE id=?", (lid,)).fetchone()
         first = row[0] if row else now
-        out = {k: it.get(k) for k in ("id", "portal", "link", "titulo", "lugar", "zona", "precio", "aconto", "dep", "pre", "m2", "vaer", "disp", "contrato_meses", "lat", "lon", "plano", "plano_dorm")}
+        out = {k: it.get(k) for k in ("id", "portal", "link", "titulo", "lugar", "zona", "precio", "aconto", "dep", "pre", "m2", "vaer", "disp", "contrato_meses", "lat", "lon", "plano", "plano_dorm", "dorm")}
         out.update({"avisos": avisos, "visto": first[:10]})
         con.execute("INSERT INTO v2_eval (id, portal, link, ok, motivo, item, first_seen, last_seen) VALUES (?,?,?,?,?,?,?,?) "
                     "ON CONFLICT(id) DO UPDATE SET ok=excluded.ok, motivo=excluded.motivo, item=excluded.item, last_seen=excluded.last_seen",
@@ -397,7 +502,8 @@ def main():
     leidos = {}
     for it in listings.values(): leidos[it["portal"]] = leidos.get(it["portal"], 0) + 1
     STATS.update(leidos=leidos, paginas=paginas, candidatos=len(cands), nuevos=len(nuevos), rechazados=len(rech), errores=errors,
-                 fichas_abiertas=MAX_DETAIL-budget, mapa_conocidos=len(known))
+                 fichas_abiertas=MAX_DETAIL-budget, fichas_edc=MAX_DETAIL_EDC-budget_edc, edc_pendientes=pendientes,
+                 mapa_conocidos=len(known))
     for n in nuevos:
         print(f"NUEVO | {n['zona']} | {n['precio']} kr/mes | {n['m2'] or '?'} m², {n['vaer'] or '?'} vær. | "
               f"{(n['titulo'] or '')[:45]} | {n['link']}" + (f" | ⚠ {', '.join(n['avisos'][:2])}" if n["avisos"] else ""))
