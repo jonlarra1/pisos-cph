@@ -227,6 +227,32 @@ class TestVisualizacion(Web):
         self.assertEqual(self.etiquetas(), [])
 
 
+class TestRetirados(Web):
+    """Anuncio retirado del portal: Lares lo descarta; aviso, motivo y cuarentena de 48 h."""
+    def test_piso_del_mapa_retirado(self):
+        self.esperar("remoteReady"); pid = self.js("PISOS.find(p=>p.st==='gusta').id")
+        self.js("id=>applyRemote({[id]:{st:'descartado',stF:'2026-10-23',by:'lares',ts:Math.floor(Date.now()/1000),motivo:'Anuncio retirado del portal (2026-10-23): marcado como alquilado'}})", pid)
+        self.assertIn("Han retirado el anuncio", self.page.inner_text("#toasts"))
+        self.js("document.querySelector('#out details').open=true")
+        out = self.page.inner_text("#out"); self.assertIn("Anuncio retirado del portal", out); self.assertIn("recuperar", out)
+        self.assertIn("Lares", self.js("id=>{showPiso(id); return document.getElementById('sheet').innerText}", pid))
+    def test_propuesto_retirado_en_cuarentena(self):
+        self.esperar("CANDS.length===1")
+        FAKE_C = dict(FAKE["/api/candidatos"]["pisos"][0], st="descartado", by="lares", ts=int(time.time()), motivo="Anuncio retirado del portal (2026-10-23): el portal ya no lo publica")
+        self.js("c=>{candSig=''; CANDS=[{...c, st:'nuevo'}];}", FAKE_C)               # estado anterior: sin decidir
+        self.page.route(PI + "/api/candidatos", lambda r: r.fulfill(status=200, headers=self.cors(), json={"actualizado": "x", "pisos": [FAKE_C]}))
+        self.js("pullCandidatos()"); self.esperar("CANDS[0]&&CANDS[0].st==='descartado'")
+        self.assertIn("Han retirado el anuncio propuesto", self.page.inner_text("#toasts"))
+        self.js("document.querySelector('#out details').open=true")
+        out = self.page.inner_text("#out"); self.assertIn("Piso de prueba", out); self.assertIn("el portal ya no lo publica", out)
+        self.assertEqual(self.js("candLayer.getLayers().length"), 0)                 # ya no sale como punto naranja
+    def test_propuesto_caducado_desaparece(self):
+        self.esperar("CANDS.length===1")
+        viejo = dict(FAKE["/api/candidatos"]["pisos"][0], st="descartado", by="lares", ts=int(time.time()) - 49 * 3600)
+        self.js("c=>{CANDS=[c]; renderOut();}", viejo)
+        self.assertNotIn("Piso de prueba", self.page.inner_text("#out"))
+
+
 class TestDestinoAnadido(Web):
     INIT = "localStorage.setItem('destinos', JSON.stringify([{id:'xcris',n:'Cris',addr:'Nørrebrogade',ll:[55.6935,12.548],who:'unai'}]));"
     def abrir(self):

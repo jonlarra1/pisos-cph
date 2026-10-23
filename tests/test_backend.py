@@ -256,6 +256,47 @@ class TestLogs(Base):
         self.assertFalse(app.CHECKS["prueba_x"]["ok"])
 
 
+class TestRetirados(Base):
+    """retirados.json (Lares) -> descartado por Lares con motivo, una sola vez."""
+    def escribir_retirados(self, pisos):
+        with open(os.path.join(os.environ["BRIDGE_DIR"], "retirados.json"), "w") as f:
+            json.dump({"actualizado": "x", "pisos": pisos}, f)
+    def test_descarta_con_motivo_y_avisa(self):
+        n0 = app._ultimo["n"]
+        self.escribir_retirados({"7700001": {"link": "https://www.boligportal.dk/x-id-7700001", "motivo": "marcado como alquilado («udlejet»)", "desde": "2026-10-23T10:00:00"}})
+        self.assertEqual(app.aplicar_retirados(), 1)
+        e = app.all_estados()["7700001"]
+        self.assertEqual((e["st"], e["by"]), ("descartado", "lares")); self.assertIn("udlejet", e["motivo"])
+        self.assertGreater(app._ultimo["n"], n0)                                   # aviso en tiempo real
+        self.assertIn("motivo", pedir("/api/estados")[2]["7700001"])
+    def test_no_se_repite_si_lo_recuperais(self):
+        self.escribir_retirados({"7700002": {"motivo": "x", "desde": "2026-10-23"}}); app.aplicar_retirados()
+        escribir("/api/estado", {"id": "7700002", "st": "gusta", "by": "jon"})
+        self.assertNotIn("motivo", app.all_estados()["7700002"])                     # al cambiarlo a mano se borra el motivo
+        self.assertEqual(app.aplicar_retirados(), 0); self.assertEqual(app.all_estados()["7700002"]["st"], "gusta")
+    def test_respeta_un_descarte_vuestro(self):
+        escribir("/api/estado", {"id": "7700003", "st": "descartado", "by": "unai"})
+        self.escribir_retirados({"7700003": {"motivo": "x", "desde": "2026-10-23"}}); app.aplicar_retirados()
+        self.assertEqual(app.all_estados()["7700003"]["by"], "unai")
+    def test_fichero_roto_o_ids_raros(self):
+        with open(os.path.join(os.environ["BRIDGE_DIR"], "retirados.json"), "w") as f: f.write("{roto")
+        self.assertEqual(app.aplicar_retirados(), 0)
+        self.escribir_retirados({"abc": {"motivo": "x"}, "7700004": "no es un dict"}); self.assertEqual(app.aplicar_retirados(), 0)
+    def test_no_se_puede_escribir_como_lares(self):
+        self.assertEqual(escribir("/api/estado", {"id": "7700005", "st": "descartado", "by": "lares"})[0], 400)
+    def test_migracion_de_base_antigua(self):
+        import sqlite3
+        viejo = os.path.join(TMP, "viejo.db")
+        with sqlite3.connect(viejo) as c:
+            c.execute("CREATE TABLE estado (id TEXT PRIMARY KEY, st TEXT NOT NULL, stF TEXT NOT NULL, by TEXT, ts INTEGER NOT NULL)")
+            c.execute("INSERT INTO estado VALUES ('5629725','gusta','2026-10-21','jon',1)")
+        db0 = app.DB; app.DB = viejo
+        try:
+            app.init(); self.assertEqual(app.all_estados()["5629725"]["st"], "gusta")
+        finally:
+            app.DB = db0
+
+
 class TestCheckSite(Base):
     """check_site con una web falsa en local; los scripts del «CDN» también se simulan."""
     LIB = b"console.log('leaflet')"
