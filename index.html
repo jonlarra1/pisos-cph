@@ -1576,10 +1576,11 @@ document.addEventListener("click",e=>{
 document.addEventListener("keydown",e=>{if((e.key==="Enter"||e.key===" ")&&e.target.matches&&e.target.matches(".rt-i[data-route]")){e.preventDefault();e.target.click();}});
 function pinIcon(p,sel){const sz=sel?36:30;
   return L.divIcon({className:"",iconSize:[sz,sz],iconAnchor:[sz/2,sz/2],popupAnchor:[0,-sz/2],
-    html:`<div class="pin${sel?" sel":""}${p.st==="descartado"&&leftH(p)>0?" has-cd":""}" title="${p.st==="descartado"&&leftH(p)>0?`Descartado · desaparece del mapa en ${Math.ceil(leftH(p))} h`:p.by&&p.st!=="nuevo"?`${ESTADOS[p.st].t} · por ${esc(PERF[p.by]?.n||p.by)}`:""}" style="width:${sz}px;height:${sz}px;background:${col(p)};font-size:${String(MODES[mode].lbl(p)).length>2?10.5:12}px">${MODES[mode].lbl(p)}${p.st==="descartado"&&leftH(p)>0?`<span class="cd">${Math.ceil(leftH(p))}h</span>`:""}</div>`});}
+    html:`<div class="pin${sel?" sel":""}${p.st==="descartado"&&leftH(p)>0?" has-cd":""}" title="${p.st==="descartado"&&leftH(p)>0?`Descartado${p.motivo?` (${esc(p.motivo)})`:""} · desaparece del mapa en ${Math.ceil(leftH(p))} h`:p.by&&p.st!=="nuevo"?`${ESTADOS[p.st].t} · por ${esc(nombre(p.by))}`:""}" style="width:${sz}px;height:${sz}px;background:${col(p)};font-size:${String(MODES[mode].lbl(p)).length>2?10.5:12}px">${MODES[mode].lbl(p)}${p.st==="descartado"&&leftH(p)>0?`<span class="cd">${Math.ceil(leftH(p))}h</span>`:""}</div>`});}
 /* quién marcó el estado: «🔵 Jon» (vacío si no se sabe o si está sin decidir) */
 const ST_ICO={gusta:"🔵",contactado:"🟢",descartado:"🔴",nuevo:"🟠"};
-const quien=x=>x&&x.by&&x.st&&x.st!=="nuevo"?`${ST_ICO[x.st]||""} ${esc(PERF[x.by]?.n||x.by)}`:"";
+const nombre=by=>PERF[by]?.n||(by==="lares"?"Lares":by);
+const quien=x=>x&&x.by&&x.st&&x.st!=="nuevo"?`${ST_ICO[x.st]||""} ${esc(nombre(x.by))}`:"";
 /* antes de cambiar un estado hay que saber quién eres (si no, queda «por nadie») */
 function quienSoy(){return new Promise(res=>{if(YO)return res(YO);
   const o=document.createElement("div"); o.id="quiensoy"; o.setAttribute("role","dialog"); o.setAttribute("aria-label","¿Quién eres?");
@@ -1592,7 +1593,7 @@ function quienSoy(){return new Promise(res=>{if(YO)return res(YO);
     const w=b?b.dataset.soy:""; if(!w)return res("");
     YO=w; try{localStorage.setItem("yo",YO);}catch(_){} const s=document.getElementById("yo"); if(s)s.value=YO; res(YO);});
   document.body.appendChild(o); o.querySelector("[data-soy]").focus();});}
-const stPill=p=>`<div class="stw"><div class="stp" style="--sc:${ESTADOS[p.st].c}"><i></i>${ESTADOS[p.st].t}<small>desde ${esc(p.stF)}${p.by?` · por ${esc(PERF[p.by]?.n||p.by)}`:""}${p.st==="descartado"&&leftH(p)>0?` · ⏳ sale del mapa en ${Math.ceil(leftH(p))} h`:""}</small></div>
+const stPill=p=>`<div class="stw"><div class="stp" style="--sc:${ESTADOS[p.st].c}"><i></i>${ESTADOS[p.st].t}<small>desde ${esc(p.stF)}${p.by?` · por ${esc(nombre(p.by))}`:""}${p.motivo?` · ${esc(p.motivo)}`:""}${p.st==="descartado"&&leftH(p)>0?` · ⏳ sale del mapa en ${Math.ceil(leftH(p))} h`:""}</small></div>
   <div class="stb" role="group" aria-label="Cambiar estado">${Object.entries(ESTADOS).map(([k,e])=>`<button data-setst="${p.id}|${k}" aria-pressed="${p.st===k}" style="--sc:${e.c}" title="${e.t}"><i></i>${e.t.split(" ·")[0].replace(" con el casero","")}</button>`).join("")}</div></div>`;
 /* avisos breves cuando OTRA persona cambia un estado (no al cargar la página ni por tus propios cambios) */
 let remoteReady=false;
@@ -1605,9 +1606,11 @@ function toast(txt){let box=document.getElementById("toasts");
   t.style.cssText="background:var(--panel,#fff);color:var(--fg,#111);border:1px solid var(--line,#ccc);border-radius:10px;padding:8px 12px;box-shadow:0 4px 16px rgba(0,0,0,.2);font-size:14px";
   box.appendChild(t); setTimeout(()=>t.remove(),6000);}
 function applyRemote(rem){let ch=false; const avisos=[]; for(const id in rem){const p=PISOS.find(x=>x.id===id), o=rem[id]; if(!p||!ESTADOS[o.st])continue;
-    if(p.st!==o.st||p.stF!==o.stF||p.by!==o.by||p.ts!==o.ts){
-      if(remoteReady&&p.st!==o.st&&o.by&&o.by!==YO)avisos.push(`${PERF[o.by]?.n||o.by} marcó ${String(p.calle||p.id).split(" · ")[0]} como «${ESTADOS[o.st].t.split(" ·")[0]}»`);
-      p.st=o.st;p.stF=o.stF;p.by=o.by;p.ts=o.ts;ch=true;}}
+    if(p.st!==o.st||p.stF!==o.stF||p.by!==o.by||p.ts!==o.ts||(p.motivo||"")!==(o.motivo||"")){
+      const calle=String(p.calle||p.id).split(" · ")[0];
+      if(remoteReady&&p.st!==o.st&&o.by==="lares")avisos.push(`⚠️ Han retirado el anuncio de ${calle}: pasa a descartados (se borra del mapa en ${DESCARTE_H} h)`);
+      else if(remoteReady&&p.st!==o.st&&o.by&&o.by!==YO)avisos.push(`${nombre(o.by)} marcó ${calle} como «${ESTADOS[o.st].t.split(" ·")[0]}»`);
+      p.st=o.st;p.stF=o.stF;p.by=o.by;p.ts=o.ts;p.motivo=o.motivo||"";ch=true;}}
   remoteReady=true; avisos.slice(0,3).forEach(toast);
   if(ch){PISOS.forEach(p=>markers[p.id].setIcon(pinIcon(p,p.id===selId))); applyFilter(false); renderOut(); if(!card.hidden)showCard(card.dataset.id);
     if(sheet.classList.contains("open")){const p=PISOS.find(x=>x.id===sheet.dataset.id),h=sheet.querySelector(".stw"); if(p&&h)h.outerHTML=stPill(p);}}}
@@ -1754,10 +1757,16 @@ function renderOut(){const el=document.getElementById("out");
   const keys=Object.keys(G).sort((a,b)=>a.localeCompare(b,"da"));
   const wasOpen=el.querySelector("details")?.open;
   const temp=PISOS.filter(p=>p.st==="descartado"&&!expired(p)).sort((a,b)=>leftH(a)-leftH(b));
-  const tempHtml=temp.length?`<div class="out-h">⏳ Temporales: siguen 48 h en el mapa <small>${temp.length}</small></div>`+temp.map(p=>`<div class="out-i tmp">
+  /* propuestos de Lares descartados (por vosotros o porque retiraron el anuncio): cuarentena de 48 h y luego desaparecen */
+  const tempC=(typeof CANDS!=="undefined"?CANDS:[]).filter(c=>c.st==="descartado"&&c.ts&&!expired(c)&&!PISOS.some(p=>p.id===String(c.id))).sort((a,b)=>leftH(a)-leftH(b));
+  const nT=temp.length+tempC.length;
+  const motivoTxt=p=>p.motivo?`🚫 ${esc(p.motivo)}`:`Descartado ${p.by?`por ${esc(nombre(p.by))} `:""}`;
+  const tempHtml=nT?`<div class="out-h">⏳ Temporales: se borran en 48 h <small>${nT}</small></div>`+temp.map(p=>`<div class="out-i tmp">
     <button class="lnk" data-id="${p.id}" style="text-align:left;font-weight:600;color:var(--fg)">${esc(p.barrio)} · ${esc(p.calle)}</button>
-    <span>Descartado ${p.by?`por ${esc(PERF[p.by]?.n||p.by)} `:""}· sale del mapa en ${Math.ceil(leftH(p))} h · <button class="lnk" data-setst="${p.id}|nuevo">recuperar</button></span></div>`).join(""):"";
-  el.innerHTML=`<details${wasOpen||temp.length?" open":""}><summary>🔴 Descartados (${ALL.length+temp.length})</summary><div class="out-s">${tempHtml}${temp.length?`<div class="out-h" style="margin-top:6px">Definitivos <small>${ALL.length}</small></div>`:""}${keys.map(k=>`<div class="out-g"><div class="out-h">${esc(k)} <small>${G[k].length}</small></div>
+    <span>${motivoTxt(p)} · sale del mapa en ${Math.ceil(leftH(p))} h · <button class="lnk" data-setst="${p.id}|nuevo">recuperar</button></span></div>`).join("")
+    +tempC.map(c=>`<div class="out-i tmp"><a href="${safeUrl(c.link)}" target="_blank" rel="noopener" style="font-weight:600">🟠 ${esc(c.zona||"")} · ${esc(c.titulo||c.lugar||"Propuesto")} ↗</a>
+    <span>${motivoTxt(c)} · se borra en ${Math.ceil(leftH(c))} h · <button class="lnk" data-cst="${esc(c.id)}|nuevo">recuperar</button></span></div>`).join(""):"";
+  el.innerHTML=`<details${wasOpen||nT?" open":""}><summary>🔴 Descartados (${ALL.length+nT})</summary><div class="out-s">${tempHtml}${nT?`<div class="out-h" style="margin-top:6px">Definitivos <small>${ALL.length}</small></div>`:""}${keys.map(k=>`<div class="out-g"><div class="out-h">${esc(k)} <small>${G[k].length}</small></div>
     ${G[k].map(o=>`<div class="out-i"><a href="${esc(o.link)}" target="_blank" rel="noopener">${esc(o.t.split(" · ").slice(1).join(" · ")||o.t)} ↗</a><span>${esc(o.r)}</span></div>`).join("")}</div>`).join("")}</div></details>`;}
 document.getElementById("list").addEventListener("click",e=>{const b=e.target.closest(".item");if(b)select(b.dataset.id,true);});
 document.getElementById("lares").addEventListener("click",e=>{const b=e.target.closest(".item[data-id]");if(b)select(b.dataset.id,true);});
@@ -1928,8 +1937,12 @@ function renderCands(){const el=document.getElementById("lares"); if(!el)return;
   CANDS.filter(c=>c.st!=="descartado"&&c.lat&&c.lon).forEach(c=>{const lb=Math.round(((c.precio||0)+(c.aconto||0))/1000)+"k";
     L.marker([c.lat,c.lon],{zIndexOffset:950,icon:L.divIcon({className:"",iconSize:[30,30],iconAnchor:[15,15],
     html:`<div class="pin" style="width:30px;height:30px;background:${(ESTADOS[c.st]||ESTADOS.nuevo).c};font-size:12px">${lb}</div>`})}).bindTooltip(`Propuesto · ${esc(c.zona||"")} · ${kr0(c.precio)} kr`,{direction:"top"}).bindPopup(candItem(c),{maxWidth:280}).addTo(candLayer);});}
-let candSig="";
-async function pullCandidatos(){try{const r=await fetch(API+"/api/candidatos",{cache:"no-cache"}); if(!r.ok)throw 0; const d=await r.json(); const sig=JSON.stringify(d.pisos||[]); if(sig!==candSig){candSig=sig; CANDS=d.pisos||[]; renderCands();}
+let candSig="", candSig0=false;
+async function pullCandidatos(){try{const r=await fetch(API+"/api/candidatos",{cache:"no-cache"}); if(!r.ok)throw 0; const d=await r.json(); const sig=JSON.stringify(d.pisos||[]); if(sig!==candSig){candSig=sig;
+    const antes=new Map(CANDS.map(c=>[String(c.id),c.st])), nuevos=d.pisos||[];
+    if(candSig0)nuevos.filter(c=>c.st==="descartado"&&c.by==="lares"&&antes.has(String(c.id))&&antes.get(String(c.id))!=="descartado")
+      .slice(0,3).forEach(c=>toast(`⚠️ Han retirado el anuncio propuesto de ${c.zona||""} (${c.titulo||c.lugar||c.id}): pasa a descartados 48 h`));
+    candSig0=true; CANDS=nuevos; renderCands(); renderOut();}
   const el=document.getElementById("lares-s"); if(el&&d.actualizado){const h=(Date.now()-Date.parse(d.actualizado))/36e5; el.textContent=`Última pasada de Lares: hace ${h<1?Math.round(h*60)+" min":h.toFixed(1)+" h"}.`;}}catch(e){}}
 document.addEventListener("click",async e=>{const b=e.target.closest("[data-cst]"); if(!b)return; if(PISOS.some(x=>x.id===b.dataset.cst.split("|")[0]))return; e.stopPropagation(); b.disabled=true;
   if(!YO&&!(await quienSoy())){b.disabled=false; return;}
