@@ -169,6 +169,9 @@ def db():
 def init():
     with db() as c:
         c.execute("CREATE TABLE IF NOT EXISTS estado (id TEXT PRIMARY KEY, st TEXT NOT NULL, stF TEXT NOT NULL, by TEXT, ts INTEGER NOT NULL)")
+        if "motivo" not in {r[1] for r in c.execute("PRAGMA table_info(estado)")}:     # migración: por qué (p. ej. anuncio retirado)
+            c.execute("ALTER TABLE estado ADD COLUMN motivo TEXT")
+        c.execute("CREATE TABLE IF NOT EXISTS retirado_aplicado (id TEXT PRIMARY KEY, desde TEXT, ts INTEGER)")
         c.execute("CREATE TABLE IF NOT EXISTS historial (n INTEGER PRIMARY KEY AUTOINCREMENT, id TEXT, st TEXT, stF TEXT, by TEXT, ts INTEGER)")
         c.execute("CREATE TABLE IF NOT EXISTS zonas (zona TEXT PRIMARY KEY, permitida INTEGER NOT NULL, by TEXT, ts INTEGER)")
         c.execute("CREATE TABLE IF NOT EXISTS ajustes (k TEXT PRIMARY KEY, v TEXT NOT NULL, by TEXT, ts INTEGER)")
@@ -178,7 +181,8 @@ def init():
 
 def all_estados():
     with db() as c:
-        return {r[0]: {"st": r[1], "stF": r[2], "by": r[3] or "", "ts": r[4]} for r in c.execute("SELECT id, st, stF, by, ts FROM estado")}
+        return {r[0]: {"st": r[1], "stF": r[2], "by": r[3] or "", "ts": r[4], **({"motivo": r[5]} if r[5] else {})}
+                for r in c.execute("SELECT id, st, stF, by, ts, motivo FROM estado")}
 
 def filtros():
     """Filtros de búsqueda de Lares (editables desde la web). Por defecto FILTROS."""
@@ -229,7 +233,7 @@ def candidatos():
     for p in pisos[:300]:
         if not isinstance(p, dict): continue
         e = est.get(str(p.get("id")), {})
-        out.append({**p, "st": e.get("st", "nuevo"), "stF": e.get("stF"), "by": e.get("by", ""), "ts": e.get("ts")})
+        out.append({**p, "st": e.get("st", "nuevo"), "stF": e.get("stF"), "by": e.get("by", ""), "ts": e.get("ts"), **({"motivo": e["motivo"]} if e.get("motivo") else {})})
     return {"actualizado": c.get("actualizado") if isinstance(c, dict) else None, "pisos": out}
 
 class _RedirSoloPortales(urllib.request.HTTPRedirectHandler):
@@ -313,19 +317,51 @@ def avisar(tipo, data):
         _ultimo.update(n=_ultimo["n"] + 1, tipo=tipo, data=json.dumps(data, ensure_ascii=False, separators=(",", ":")))
         _cambio.notify_all()
 
+def aplicar_retirados():
+    """retirados.json (lo escribe Lares): cada anuncio retirado del portal pasa UNA vez a «descartado» por Lares,
+    con el motivo (la web lo enseña 48 h en rojo y luego en Descartados). Si alguien lo recupera, no se vuelve a descartar."""
+    try:
+        with open(os.path.join(BRIDGE, "retirados.json"), encoding="utf-8") as f: d = json.load(f)
+        pisos = d.get("pisos") or {}
+    except Exception:
+        return 0
+    n, ts = 0, int(time.time())
+    with lock, db() as c:
+        hechos = {r[0] for r in c.execute("SELECT id FROM retirado_aplicado")}
+        for pid, r in pisos.items():
+            pid = str(pid)
+            if pid in hechos or not ID_RE.match(pid) or not isinstance(r, dict): continue
+            desde = str(r.get("desde", ""))[:10]
+            motivo = f"Anuncio retirado del portal ({desde}): {str(r.get('motivo', ''))[:120]}"
+            c.execute("INSERT INTO retirado_aplicado (id, desde, ts) VALUES (?,?,?)", (pid, desde, ts))
+            cur = c.execute("SELECT st FROM estado WHERE id=?", (pid,)).fetchone()
+            if cur and cur[0] == "descartado": continue                   # ya lo habíais descartado vosotros
+            c.execute("INSERT INTO estado (id, st, stF, by, ts, motivo) VALUES (?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET "
+                      "st=excluded.st, stF=excluded.stF, by=excluded.by, ts=excluded.ts, motivo=excluded.motivo",
+                      (pid, "descartado", time.strftime("%Y-%m-%d"), "lares", ts, motivo))
+            c.execute("INSERT INTO historial (id, st, stF, by, ts) VALUES (?,?,?,?,?)", (pid, "descartado", time.strftime("%Y-%m-%d"), "lares", ts))
+            log("events", level="warn", src="lares", msg=f"{pid}: {motivo} -> descartado (48 h en el mapa)")
+            n += 1
+    if n:
+        write_config(); avisar("estados", all_estados()); avisar("candidatos", {"retirados": n})
+    return n
+
 def vigilar_candidatos(cada=10):
-    """Avisa cuando Lares reescribe candidatos.json (y lo deja en el log de eventos)."""
-    p = os.path.join(BRIDGE, "candidatos.json"); antes = os.path.getmtime(p) if os.path.exists(p) else 0
+    """Avisa cuando Lares reescribe candidatos.json, y aplica retirados.json (anuncios que ya no están en el portal)."""
+    mt = lambda n: os.path.getmtime(os.path.join(BRIDGE, n)) if os.path.exists(os.path.join(BRIDGE, n)) else 0
+    antes, antes_r = mt("candidatos.json"), -1
     while True:
-        time.sleep(cada)
         try:
-            m = os.path.getmtime(p) if os.path.exists(p) else 0
+            if mt("retirados.json") != antes_r:
+                antes_r = mt("retirados.json"); aplicar_retirados()
+            m = mt("candidatos.json")
             if m != antes:
                 antes = m; c = candidatos()
                 avisar("candidatos", {"actualizado": c.get("actualizado")})
                 log("events", level="info", src="lares", msg=f"candidatos actualizados: {len(c['pisos'])} pisos")
         except Exception as e:
             log("events", level="warn", src="lares", msg=f"vigilar candidatos: {type(e).__name__}: {e}"[:200])
+        time.sleep(cada)
 
 def etag(b): return '"' + hashlib.sha1(b).hexdigest()[:20] + '"'
 
@@ -474,7 +510,7 @@ class H(BaseHTTPRequestHandler):
         if not ID_RE.match(pid) or st not in ESTADOS or by not in WHO: return self.reply(400, {"error": "bad data"})
         ts = int(time.time())
         with lock, db() as c:
-            c.execute("INSERT INTO estado (id, st, stF, by, ts) VALUES (?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET st=excluded.st, stF=excluded.stF, by=excluded.by, ts=excluded.ts", (pid, st, stF, by, ts))
+            c.execute("INSERT INTO estado (id, st, stF, by, ts, motivo) VALUES (?,?,?,?,?,NULL) ON CONFLICT(id) DO UPDATE SET st=excluded.st, stF=excluded.stF, by=excluded.by, ts=excluded.ts, motivo=NULL", (pid, st, stF, by, ts))
             c.execute("INSERT INTO historial (id, st, stF, by, ts) VALUES (?,?,?,?,?)", (pid, st, stF, by, ts))
         write_config(); log("events", level="info", src="estado", msg=f"{pid} -> {st}", by=by)
         est = all_estados(); avisar("estados", est); self.reply(200, est)
