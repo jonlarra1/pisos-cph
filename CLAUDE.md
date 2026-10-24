@@ -103,5 +103,14 @@ The user is Jon. He works at Nordic Solar (Hellerup). He prefers short, simple, 
   8. Hueco de Lares v2: HECHO EN LOCAL (sin desplegar): páginas adaptativas (mín. 2/3 como antes, sigue mientras haya anuncios
      nunca vistos, máx. 6 Lejebolig / 8 Boligportal) y los candidatos se recuerdan 7 días aunque bajen de página (aviso «no visto
      desde…»). tests/test_lares.py. Desplegar junto al punto 6 (mismo fichero, scripts/ de Lares en la Pi).
+- Copias de seguridad (regla de Jon, 24-oct): llevar este historial y BORRAR las que sobran (ocupan sitio y pueden ser un
+  riesgo, p. ej. un authorized_keys viejo con claves quitadas). Guardar solo la vuelta atrás del último cambio de cada pieza;
+  cuando lleve ~1 día bien, borrar las anteriores. Nunca dejar copias de authorized_keys. No tocar copias de otros agentes de Hermes.
+  Historial:
+  · 24-oct 11:35 — BORRADAS: backend backup-20261023-{002247,005325,135005}; Lares .v1-20261021, .v2-20261023, .v3-20261023-preEDC;
+    ~/.ssh/authorized_keys.bak-20261023-{antigravity,edc,token20m}; copia local de los horarios (scratchpad).
+  · QUEDAN en la Pi: /home/docker/pisos-backend/backup-20261024-130912 (antes del arreglo de rutas) y backup-20261024-132528
+    (antes de amueblado + fotos EDC); Lares scripts/piso_watch_monitor.py.v4-20261024-preAmueblado.bak. Borrar el 25-oct si todo va bien.
+  · PC: ~/.claude/settings.json.bak, .bak-narrator, .bak-20261024-voz (configuración del narrador, 1–2 KB).
 - Puertos ya usados en la Pi (no tocar): Portainer 8000/9000/9443. Nuestro: 127.0.0.1:8787 (API, Funnel :8443), 127.0.0.1:8790 (panel: serve https :9444 por nombre, y serve TCP :9445 por IP http://100.72.170.60:9445 para aparatos sin MagicDNS). Comprobar siempre con `ss -ltnp | grep :PUERTO` antes de usar uno nuevo.
 - Acceso a la Pi: clave SSH temporal de 1 h (expiry-time en authorized_keys, comentario «claude-pisos-1h»); pedir una nueva a Jon.
