@@ -230,6 +230,36 @@ class TestEDC(unittest.TestCase):
         self.assertEqual(sum(1 for u in pas.pedidas if u.startswith(self.m.EDC_API)), 1)
 
 
+class TestAmuebladoYRasgos(unittest.TestCase):
+    F = {"precio_max": 23000, "vaer_min": 4, "dorm_min": 3, "disp_desde": "2026-12-18", "disp_hasta": "2027-01-15", "compartir": True, "contrato_largo": True}
+    Z = {"Herlev": True}
+    def setUp(self): self.m = cargar_modulo()
+    def ev(self, F=None, **kw): return self.m.evaluar(anuncio(1, **kw), {**self.F, **(F or {})}, self.Z)
+    def test_texto(self):
+        for t, esperado in (("Lejligheden er fuldt møbleret", True), ("Udlejes umøbleret", False), ("Fully furnished flat", True),
+                            ("Unfurnished apartment", False), ("Lejlighed med altan", None), ("møbleret eller umøbleret efter aftale", False)):
+            with self.subTest(t=t): self.assertIs(self.m.amueblado_de(t), esperado)
+    def test_rasgos_boligportal(self):
+        r = self.m.rasgos_bp({"furnished": True, "shareable": False, "elevator": None, "balcony": True})
+        self.assertEqual((r["amueblado"], r["compartible"], r["ascensor"], r["balcon"]), (True, False, None, True))
+    def test_filtro_amueblado(self):
+        self.assertTrue(self.ev(amueblado=True)[0])                                     # «da igual» por defecto
+        ok, mot, _ = self.ev({"amueblado": "no"}, amueblado=True); self.assertFalse(ok); self.assertEqual(mot, "amueblado")
+        ok, mot, _ = self.ev({"amueblado": "si"}, amueblado=False); self.assertFalse(ok); self.assertEqual(mot, "sin amueblar")
+        ok, _, av = self.ev({"amueblado": "no"}, amueblado=None); self.assertTrue(ok); self.assertIn("amueblado sin confirmar", av)
+        self.assertTrue(self.ev({"amueblado": "si"}, amueblado=True)[0])
+    def test_compartible_del_portal(self):
+        ok, mot, _ = self.ev(compartible=False, texto=""); self.assertFalse(ok); self.assertIn("dato del portal", mot)
+        ok, _, av = self.ev(compartible=True, texto=""); self.assertTrue(ok); self.assertNotIn("compartir sin confirmar", av)
+    def test_ficha_edc_balcon_ascensor_descripcion(self):
+        html = TestEDC.FICHA.replace("<dt>Lejeperiode</dt>", "<dt>Altan/terrasse</dt><dd>Ja</dd><dt>Elevator</dt><dd>Nej</dd><dt>Lejeperiode</dt>") \
+            .replace("<p>Boligen er delevenlig.</p>", "<a>Hent boligpræsentation</a><p>Bo ved vandet. Boligen er delevenlig og umøbleret.</p><a>Læs hele sagsbeskrivelsen</a>")
+        with mock.patch.object(self.m, "fetch", lambda u, timeout=20: html):
+            d = self.m.detalle({"portal": "EDC", "link": "https://www.edc.dk/leje/x/11810045/"})
+        self.assertEqual((d["balcon"], d["ascensor"], d["amueblado"]), (True, False, False))
+        self.assertTrue(d["descripcion"].startswith("Bo ved vandet"))
+
+
 class TestFiltros(unittest.TestCase):
     F = {"precio_max": 23000, "vaer_min": 4, "dorm_min": 3, "disp_desde": "2026-12-18", "disp_hasta": "2027-01-15", "compartir": True, "contrato_largo": True}
     Z = {"Herlev": True, "Valby": False}

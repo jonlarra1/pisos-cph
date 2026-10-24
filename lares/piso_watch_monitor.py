@@ -196,6 +196,8 @@ def parse_boligportal(html):
                     "disp": (a.get("available_from") or "")[:10] or None, "contrato_meses": num(a.get("rental_period")),
                     "lat": loc.get("lat"), "lon": loc.get("lng") or loc.get("lon"),
                     "plano": next((i.get("url") for i in (a.get("images") or []) if isinstance(i, dict) and i.get("is_floor_plan")), None),
+                    "fotos": [i["url"] for i in (a.get("images") or []) if isinstance(i, dict) and i.get("url")][:15],
+                    **rasgos_bp(a.get("features") or {}),
                     "texto": (a.get("description") or "")[:4000]}
     return out
 
@@ -226,6 +228,8 @@ def parse_edc(text):
               "lugar": f"{a.get('address') or ''} {a.get('zipCode') or ''} {a.get('city') or ''}".strip(),
               "precio": val(a.get("rent")) or 0, "m2": val(a.get("livingArea")), "vaer": val(a.get("rooms")),
               "lat": geo.get("latitude"), "lon": geo.get("longitude")}
+        imgs = [i for i in (a.get("images") or []) if isinstance(i, dict) and str(i.get("src", "")).startswith("https://billeder.edc.dk/")]
+        if imgs: it["fotos"] = [max(imgs, key=lambda i: i.get("width") or 0)["src"]]
         if a.get("isEdcCase") and cn.isdigit() and url.startswith("/leje/"):
             out[cn] = {"portal": "EDC", "id": cn, "link": "https://www.edc.dk" + url, "_edc": True, **it}
         elif "boligportal.dk" in url:
@@ -253,6 +257,11 @@ def detalle_edc(item):
     if mp:
         v = mp.group(1).lower()
         d["contrato_meses"] = 0 if v.startswith("ubegr") else (int(re.sub(r"\D", "", v)) if re.search(r"\d", v) else None)
+    sj = lambda k: (lambda m: (m.group(1) == "Ja") if m else None)(re.search(k + r" (Ja|Nej)\b", t))
+    d["balcon"], d["ascensor"] = sj(r"Altan/terrasse"), sj(r"Elevator")
+    d["amueblado"] = amueblado_de(t)
+    md_ = re.search(r".*Hent boligpræsentation (.*?)(?: Læs hele sagsbeskrivelsen|$)", t)   # el último botón: va justo antes del texto
+    if md_: d["descripcion"] = md_.group(1).strip()[:1500]
     mr = re.search(r"Rum/værelser (\d+)/(\d+)", t)
     if mr: d["vaer"], d["dorm"] = int(mr.group(1)), int(mr.group(2))
     md = re.search(r"(?:Ledig fra|Tilgængelig fra)(?: d\.)? (\d{1,2})\. ?([a-zæøå]{3})[a-zæøå]*\.? (\d{4})", t, re.I)
@@ -261,6 +270,24 @@ def detalle_edc(item):
     elif re.search(r"(?:Ledig fra|Tilgængelig fra)(?: d\.)? (Snarest|Straks|Hurtigst muligt)", t, re.I):
         d["disp"] = "ya"
     return d
+
+
+def rasgos_bp(f):
+    """features de Boligportal -> campos nuestros (None = el anuncio no lo dice)."""
+    b = lambda k: f.get(k) if isinstance(f.get(k), bool) else None
+    return {"amueblado": b("furnished"), "compartible": b("shareable"), "ascensor": b("elevator"), "balcon": b("balcony"),
+            "mascotas": b("pet_friendly"), "lavadora": b("washing_machine"), "parking": b("parking")}
+
+
+FURN_NO = re.compile(r"umøbleret|ikke møbleret|unfurnished|not furnished", re.I)
+FURN_SI = re.compile(r"(?<!u)møbleret|(?<!un)furnished", re.I)
+
+
+def amueblado_de(texto):
+    """Del texto del anuncio: True / False / None (no lo dice). «umøbleret» manda sobre «møbleret»."""
+    if FURN_NO.search(texto or ""): return False
+    if FURN_SI.search(texto or ""): return True
+    return None
 
 
 def detalle(item):
@@ -281,6 +308,7 @@ def detalle(item):
     if mp:
         v = (mp.group(1) or mp.group(2)).lower()
         d["contrato_meses"] = 0 if v in ("unlimited", "ubegrænset") else (int(re.sub(r"\D", "", v)) if re.search(r"\d", v) else None)
+    d["amueblado"] = amueblado_de(t)
     md = re.search(r'"available_from"\s*:\s*"(\d{4}-\d{2}-\d{2})', h) or \
         re.search(r"(?:Available from|Ledig fra|Overtagelse)\s*:?\s*(\d{1,2})[./-](\d{1,2})[./-](\d{4})", t)
     if md:
@@ -328,10 +356,18 @@ def evaluar(item, F, zonas):
     if F.get("contrato_largo", True) and ((cm and 0 < cm <= 12) or SHORT.search(txt)):
         return False, f"contrato corto ({cm or '≤12'} meses)", avisos
     if F.get("compartir", True):
+        if item.get("compartible") is False:
+            return False, "no permite compartir (dato del portal)", avisos
         if NO_SHARE.search(txt):
             return False, "no permite compartir (texto del anuncio)", avisos
-        if not YES_SHARE.search(txt):
+        if item.get("compartible") is not True and not YES_SHARE.search(txt):
             avisos.append("compartir sin confirmar")
+    am, quiere = item.get("amueblado"), F.get("amueblado", "igual")
+    if quiere in ("si", "no"):
+        if am is not None and am != (quiere == "si"):
+            return False, "amueblado" if am else "sin amueblar", avisos
+        if am is None:
+            avisos.append("amueblado sin confirmar")
     pl = item.get("plano_dorm")              # lo escribe Lares (IA) en planos.json tras mirar el plano
     dmin = int(F.get("dorm_min", 3))
     if isinstance(item.get("dorm"), int) and item["dorm"] < dmin:      # EDC da «Rum/værelser 4/2» en la ficha
@@ -439,7 +475,8 @@ def main():
                 avisos.append("ficha no disponible")
         row = con.execute("SELECT first_seen, avisado FROM v2_eval WHERE id=?", (lid,)).fetchone()
         first = row[0] if row else now
-        out = {k: it.get(k) for k in ("id", "portal", "link", "titulo", "lugar", "zona", "precio", "aconto", "dep", "pre", "m2", "vaer", "disp", "contrato_meses", "lat", "lon", "plano", "plano_dorm", "dorm")}
+        out = {k: it.get(k) for k in ("id", "portal", "link", "titulo", "lugar", "zona", "precio", "aconto", "dep", "pre", "m2", "vaer", "disp", "contrato_meses", "lat", "lon", "plano", "plano_dorm", "dorm",
+                                       "fotos", "amueblado", "compartible", "ascensor", "balcon", "mascotas", "lavadora", "parking", "descripcion")}
         out.update({"avisos": avisos, "visto": first[:10]})
         con.execute("INSERT INTO v2_eval (id, portal, link, ok, motivo, item, first_seen, last_seen) VALUES (?,?,?,?,?,?,?,?) "
                     "ON CONFLICT(id) DO UPDATE SET ok=excluded.ok, motivo=excluded.motivo, item=excluded.item, last_seen=excluded.last_seen",
