@@ -1456,6 +1456,20 @@ const esperaTxt=r=>{const d=espera(r); if(d<=10)return ""; return `⚠️ espera
 const diaTxt=()=>MOMENTO==="madrugada"?`noche del ${DAYF[tripDay]}`:DAYF[tripDay];
 const routeR=L.svg({padding:.5}), routeLayer=L.layerGroup().addTo(map);
 /* Dibuja las rutas de todas las filas; la elegida resaltada, las otras más suaves. */
+/* Tramos en metro / S-tog / Letbane del motor de la Pi: solo traen las paradas (rectas entre ellas). Se dibujan sobre
+   la vía real (RAIL.g) entre la parada de subida y la de bajada. Si alguna parada intermedia queda a >400 m del trozo
+   (línea con ramales, otro nombre…), se deja como estaba. M3 es un anillo: se prueba también el otro sentido. */
+const RAILSNAP=new Map();
+function railPath(l){const g=RAIL.g[l.line]; if(!g||!l.path||l.path.length<2)return null;
+  const k=l.line+"|"+l.path.map(x=>x.join(",")).join(";"); if(RAILSNAP.has(k))return RAILSNAP.get(k);
+  /* hav() da km */ const near=pt=>{let bi=0,bd=Infinity; g.forEach((q,i)=>{const d=hav(pt,q); if(d<bd){bd=d;bi=i;}}); return bi;};
+  const a=l.path[0], b=l.path[l.path.length-1], ia=near(a), ib=near(b);
+  const tramo=(i,j,dir)=>{const out=[]; for(let x=i;;x=(x+dir+g.length)%g.length){out.push(g[x]); if(x===j||out.length>g.length)break;} return out;};
+  const opciones=[ia<=ib?tramo(ia,ib,1):tramo(ia,ib,-1)];
+  if(hav(g[0],g[g.length-1])<.3)opciones.push(ia<=ib?tramo(ia,ib,-1):tramo(ia,ib,1));          /* anillo */
+  const peor=pts=>Math.max(0,...l.path.slice(1,-1).map(st=>Math.min(...pts.map(q=>hav(st,q)))));
+  let best=null; opciones.forEach(o=>{const e=peor(o); if(o.length>=2&&e<.4&&(!best||e<best.e||(e===best.e&&o.length<best.o.length)))best={o,e};});
+  const r=best?[a,...best.o,b]:null; RAILSNAP.set(k,r); return r;}
 function drawRoute(id,key,fit){
   routeLayer.clearLayers(); let focusPts=[]; const seen=new Set();
   const rows=allRows(), order=rows.map(r=>r.key).filter(x=>x!==key).concat([key]), P=pisoBy(id);
@@ -1468,6 +1482,7 @@ function drawRoute(id,key,fit){
     r.legs.forEach(l=>{let path=l.live||l.path||LP(l);
       /* el motor de la Pi da los tramos en bici / andando en línea recta (no tiene calles): en la ruta elegida
          se piden por calle a OSRM (FOSSGIS, con caché); si no responde, queda la recta */
+      if(!isMove(l)&&l.path&&!l.p){const rp=railPath(l); if(rp)path=rp;}
       if(on&&isMove(l)&&!l.live&&l.path&&l.path.length===2){const lv=liveRoute(l.m==="bike"?"bike":"foot",l.path[0],l.path[1]); if(lv&&lv!=="pending"&&lv.path.length>1)path=lv.path;}
       if(on)focusPts.push(...path);
       if(isMove(l)){const bike=l.m==="bike";
