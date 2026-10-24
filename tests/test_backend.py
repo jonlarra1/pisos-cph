@@ -419,6 +419,11 @@ class TestRutaDirecta(unittest.TestCase):
         self.assertEqual(o[0]["solo"], "walk"); self.assertEqual(len(o), 2); self.assertLess(o[1]["min"], o[0]["min"])
         o = self.motor([bus]).ruta(*self.CASA, self.CERCA, "Cris", "2026-10-26", "08:00", "salir", {**pf, "lim_min": 5})
         self.assertFalse(o[0].get("solo"))                              # no cabe en 5 min: manda el bus
+    def test_fuera_del_limite_no_tapa_el_transporte(self):
+        # ≈ 3 min en bici; con máximo 2 min no se ofrece aunque el tren tarde más
+        tren = (8*3600+11*60, 1, "A", "08:09")
+        o = self.motor([tren]).ruta(*self.CASA, self.CERCA, "Cris", "2026-10-26", "08:00", "salir", {**self.PF, "lim_min": 2})
+        self.assertTrue(o); self.assertTrue(all(not x.get("solo") for x in o))
     def test_lejos_manda_el_transporte(self):
         tren = (8*3600+26*60, 1, "A", "08:24")
         o = self.motor([tren]).ruta(*self.CASA, self.LEJOS, "NS", "2026-10-26", "08:00", "salir", {**self.PF, "lim_min": 10})

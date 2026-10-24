@@ -221,14 +221,13 @@ class Motor:
                 if all(json.dumps(o["legs"]) != json.dumps(p["legs"]) for p in opts): opts.append(o)
             main = max(rides, key=lambda l: (int(l["arr"][:2])*60+int(l["arr"][3:])) - (int(l["dep"][:2])*60+int(l["dep"][3:])))
             ban.add(main["line"])
-        # sin transporte: ir directo en bici / andando. Se ofrece si cabe en el máximo por tramo o si tarda como mucho
-        # 5 min más que la mejor con transporte (antes una ruta de 5 min en bici salía como «bici + tren + bici»).
-        # Si cabe en el máximo por tramo es la ruta principal (lo que uno elige como «se puede ir andando / en bici»),
-        # aunque un bus sea un poco más rápido: esas quedan como alternativas. Sobran las de transporte más lentas.
+        # sin transporte: ir directo en bici / andando. Solo si cabe en el máximo por tramo que eligió cada uno (es lo que
+        # considera «se puede ir en bici / andando») o si no hay ninguna opción con transporte. Si cabe es la principal,
+        # aunque un bus sea un poco más rápido (quedan como alternativas), y sobran las de transporte más lentas.
         d = self.directo(la, lo, dest, dname, pf)
         mejor = min((o["min"] for o in opts), default=None)
         cabe = d["min"] <= pf["lim_min"]
-        if mejor is None or cabe or d["min"] <= mejor + 5:
+        if mejor is None or cabe:
             sale = T - d["min"]*60 if modo == "llegar" else T
             opts = [o for o in opts if o["min"] < d["min"]]
             opts.append({**d, "sale": hm(sale), "llega": hm(sale + d["min"]*60), "principal": cabe})
