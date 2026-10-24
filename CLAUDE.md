@@ -95,6 +95,16 @@ The user is Jon. He works at Nordic Solar (Hellerup). He prefers short, simple, 
      (authorized_keys.bak-20261023-edc).
      Idea de Jon: tener el chat de Boligportal con cada casero dentro de la plataforma (Boligportal no tiene API y prohíbe iframes:
      X-Frame-Options SAMEORIGIN). Pendiente de decidir: extensión de Chrome / leer los avisos por email (Gmail) / navegador en la Pi.
+  14. 24-oct (instalado en la Pi y publicado): motor de rutas con opción directa en bici/andando (es la principal si cabe en
+     el máximo por tramo; sobran las de transporte más lentas); tramos rectos del motor dibujados por calle con OSRM (solo la ruta
+     elegida); ficha completa para los propuestos de Lares con coordenadas (botón «📋 Ver ficha y rutas», rutas con el motor,
+     fotos por el proxy, estado desde la ficha); Lares saca amueblado, «se puede compartir», ascensor, balcón, mascotas, lavadora,
+     parking (Boligportal: features; EDC: Altan/Elevator + descripción; amueblado también del texto) y relee fichas viejas de la
+     caché; filtro «Amueblado» (da igual / sin amueblar / amueblado) en Búsqueda; proxy de fotos acepta billeder.edc.dk/edcmedia/;
+     favicon.svg + apple-touch-icon.png.
+     Pendiente: propuestos SIN coordenadas (casi todos los de Lejebolig) no tienen ficha (geocodificar con Nominatim, 1 pet./s);
+     Chrome en la Pi (noVNC, solo tailnet) para los chats de Boligportal y fotos de Lejebolig con sesión — aprobado por Jon, sin
+     empezar. Ojo: el kernel de la Pi ignora mem_limit de Docker («does not support memory limit»): revisar antes de meter Chromium.
   11. Chrome «acceso a red local»: en aparatos con MagicDNS el nombre de la Pi resuelve a 100.72.170.60 y Chrome pide permiso (headless lo deniega).
   10. Nordic Solar = Strandvejen 104B; Jon dice que se entra por el «3B»: preguntar de qué calle es y ajustar el destino.
   4. Lista del 14-oct: añadidos al mapa 5680590 (Frederiksberg, plano 4 dorm.) y 1912011 (Søborg, texto 3 dorm.) el 2026-10-22.
