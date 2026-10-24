@@ -924,7 +924,9 @@ html,body{overflow-x:hidden}
   .lines-body b{grid-column:1/-1}
   .rail{border-right:0;border-top:1px solid var(--line)}
   .list{overflow:visible}
-  .rcol{top:8px;right:8px;max-height:calc(100% - 16px);overflow:auto}
+  .rcol{top:8px;right:8px;max-height:calc(100% - 16px);overflow:auto;overscroll-behavior:contain}
+  /* con un menú abierto la columna recibe el dedo: si no (pointer-events:none), Chrome no la deja desplazar y se mueve la página entera */
+  .rcol:has(details[open]){pointer-events:auto;touch-action:pan-y}
   .lines-card{padding:8px 10px}
   .sheet .sh-body{overflow:visible}
 }
