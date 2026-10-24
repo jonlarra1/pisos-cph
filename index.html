@@ -1,5 +1,7 @@
 <!doctype html><html><head><meta charset=utf8><meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' https://cdnjs.cloudflare.com https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data: blob: https://tile.openstreetmap.org https://raspberrypi.tail9f1069.ts.net:8443 https://cdnjs.cloudflare.com; connect-src 'self' https://raspberrypi.tail9f1069.ts.net:8443 https://routing.openstreetmap.de https://nominatim.openstreetmap.org; object-src 'none'; base-uri 'none'; form-action 'none'; frame-src 'none'; worker-src 'none'; manifest-src 'self'"><meta name="referrer" content="strict-origin-when-cross-origin"><meta name=viewport content="width=device-width,initial-scale=1,viewport-fit=cover"><style>:root{color-scheme:light;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}html{scroll-padding-top:env(safe-area-inset-top,0px)}body{margin:0;padding:0;font:14px -apple-system,BlinkMacSystemFont,sans-serif;background:#faf9f5;color:#141413}img{max-width:100%}[hidden]:not([hidden=until-found i]){display:none!important}</style></head><body>
 <title>Pisos Copenhague</title>
+<link rel="icon" type="image/svg+xml" href="favicon.svg">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Familjen+Grotesk:wght@500;600;700&family=Figtree:wght@400;500;600&family=JetBrains+Mono:wght@500&display=swap">
@@ -1463,7 +1465,11 @@ function drawRoute(id,key,fit){
     if(!r)return;
     const sig=usaMotor(row,P)?rk:r.legs.map(l=>l.p).join(","); if(!on&&seen.has(sig))return; seen.add(sig);
     const op=on?1:.4, w=on?1:.7, dname=dName(row.k), ant=on?"route-ant ":"";
-    r.legs.forEach(l=>{const path=l.live||l.path||LP(l); if(on)focusPts.push(...path);
+    r.legs.forEach(l=>{let path=l.live||l.path||LP(l);
+      /* el motor de la Pi da los tramos en bici / andando en línea recta (no tiene calles): en la ruta elegida
+         se piden por calle a OSRM (FOSSGIS, con caché); si no responde, queda la recta */
+      if(on&&isMove(l)&&!l.live&&l.path&&l.path.length===2){const lv=liveRoute(l.m==="bike"?"bike":"foot",l.path[0],l.path[1]); if(lv&&lv!=="pending"&&lv.path.length>1)path=lv.path;}
+      if(on)focusPts.push(...path);
       if(isMove(l)){const bike=l.m==="bike";
         L.polyline(path,{renderer:routeR,color:css("--panel"),weight:(bike?8:7)*w,opacity:.85*op,interactive:false}).addTo(routeLayer);
         L.polyline(path,{renderer:routeR,color:bike?BIKE_C:css("--fg"),weight:(bike?4.5:3.5)*w,opacity:.95*op,dashArray:bike?"6 6":"1 7",lineCap:"round",className:ant+(bike?"bike":"walk"),interactive:on})
@@ -1481,7 +1487,7 @@ function drawRoute(id,key,fit){
 }
 /* barra de progreso de las rutas en transporte de los destinos añadidos (cuenta rutas, no tiempo:
    la primera de un día nuevo tarda ~1,5 s en la Pi y las siguientes 0,03–0,3 s) */
-function tpBar(p){const ex=allRows().filter(usaMotor); if(!ex.length)return "";
+function tpBar(p){const ex=allRows().filter(r=>usaMotor(r,p)); if(!ex.length)return "";
   const st=ex.map(r=>tpFor(p,r)), done=st.filter(x=>x!=="pending").length; if(done===ex.length)return "";
   const pc=Math.round(done/ex.length*100);
   return `<div class="tp-bar" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${pc}" style="margin:6px 0 8px;font-size:12px;color:var(--muted)">

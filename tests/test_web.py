@@ -63,7 +63,7 @@ class Web(unittest.TestCase):
         self.page.route(PI + "/**", self.pi)
         self.page.route("https://tile.openstreetmap.org/**", lambda r: r.fulfill(status=200, content_type="image/png", body=PNG))
         self.page.route("https://routing.openstreetmap.de/**", lambda r: r.fulfill(status=200, json={"code": "Ok", "routes": [
-            {"distance": 4000, "duration": 900, "geometry": {"coordinates": [[12.585, 55.679], [12.553, 55.649]]}}]}))   # bici/andando por calle
+            {"distance": 4000, "duration": 900, "geometry": {"coordinates": [[12.585, 55.679], [12.57, 55.665], [12.553, 55.649]]}}]}))   # bici/andando por calle
         self.page.route("https://fonts.googleapis.com/**", lambda r: r.fulfill(status=200, content_type="text/css", body=""))
         self.page.goto(self.url)
         self.esperar("window.map && document.querySelectorAll('.pin').length>0", 15000)
@@ -291,6 +291,13 @@ class TestDestinoAnadido(Web):
         self.page.wait_for_timeout(300)
         txt = self.page.inner_text("#sheet"); self.assertIn("M4", txt); self.assertIn("23 min", txt)
         self.js(f"drawRoute('{pid}','xcris-unai',false)")                 # dibujar con los trazados de la respuesta
+    def test_tramos_rectos_del_motor_se_dibujan_por_calle(self):
+        pid = self.abrir(); self.esperar(f"RTS('{pid}','xcris-unai').length===1")
+        self.js(f"drawRoute('{pid}','xcris-unai',false)")
+        self.esperar("Object.values(LIVE).some(v=>v&&v.path)")                       # OSRM (simulado) ha contestado
+        self.js(f"drawRoute('{pid}','xcris-unai',false)")
+        tramos = self.js("routeLayer.getLayers().filter(l=>l.options&&/walk|bike/.test(l.options.className||'')).map(l=>l.getLatLngs().length)")
+        self.assertTrue(tramos); self.assertTrue(all(n > 2 for n in tramos), tramos)    # ningún tramo en línea recta (2 puntos)
     def test_barra_de_progreso(self):
         self.ruta_retenida = []; pid = self.abrir()
         self.esperar("document.querySelector('#sheet .tp-bar')")
