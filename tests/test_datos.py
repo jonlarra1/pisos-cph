@@ -132,5 +132,13 @@ class TestSeguridadHtml(unittest.TestCase):
         self.assertIn('const API="https://raspberrypi.tail9f1069.ts.net:8443"', APP)
 
 
+class TestIcono(unittest.TestCase):
+    def test_favicon_enlazado_y_presente(self):
+        html = open(os.path.join(ROOT, "index.html"), encoding="utf-8").read()
+        for f in ("favicon.svg", "apple-touch-icon.png"):
+            with self.subTest(f=f):
+                self.assertIn(f'href="{f}"', html); self.assertGreater(os.path.getsize(os.path.join(ROOT, f)), 100)
+
+
 if __name__ == "__main__":
     unittest.main()
