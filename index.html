@@ -1458,20 +1458,31 @@ const esperaTxt=r=>{const d=espera(r); if(d<=10)return ""; return `⚠️ espera
 const diaTxt=()=>MOMENTO==="madrugada"?`noche del ${DAYF[tripDay]}`:DAYF[tripDay];
 const routeR=L.svg({padding:.5}), routeLayer=L.layerGroup().addTo(map);
 /* Dibuja las rutas de todas las filas; la elegida resaltada, las otras más suaves. */
-/* Tramos en metro / S-tog / Letbane del motor de la Pi: solo traen las paradas (rectas entre ellas). Se dibujan sobre
-   la vía real (RAIL.g) entre la parada de subida y la de bajada. Si alguna parada intermedia queda a >400 m del trozo
-   (línea con ramales, otro nombre…), se deja como estaba. M3 es un anillo: se prueba también el otro sentido. */
-const RAILSNAP=new Map();
-function railPath(l){const g=RAIL.g[l.line]; if(!g||!l.path||l.path.length<2)return null;
+/* Tramos en metro / S-tog / Letbane / tren del motor de la Pi: solo traen las paradas (rectas entre ellas). Se dibujan
+   sobre la vía real (RAIL.g) PARADA A PARADA: para cada par seguido se busca el trozo de vía que las une, primero en su
+   línea y si no en cualquier otra que pase por ahí (los RE usan la vía del S-tog donde la comparten). Un trozo solo vale
+   si las dos paradas están a <300 m de la vía y no da un rodeo (≤1,8× la recta + 400 m); si no, ese par queda recto.
+   Vale para cualquier casa o destino (nada fijo). hav() da km. */
+const RAILSNAP=new Map(), RAILM=new Set(["S-tog","Metro","Letbane","Tren"]);
+/* algunas líneas tienen puntos a >1 km: se rellenan cada ~100 m para que las estaciones queden cerca de un punto */
+const RAILD={};
+const railD=k=>RAILD[k]||(RAILD[k]=(g=>{const o=[g[0]]; for(let i=1;i<g.length;i++){const a=g[i-1], b=g[i], n=Math.ceil(hav(a,b)/.1);
+  for(let j=1;j<=n;j++)o.push([a[0]+(b[0]-a[0])*j/n,a[1]+(b[1]-a[1])*j/n]);} return o;})(RAIL.g[k]));
+function railSeg(a,b,keys){const recta=hav(a,b); let best=null;
+  for(const k of keys){if(!RAIL.g[k])continue; const g=railD(k);
+    const near=pt=>{let bi=0,bd=Infinity; for(let i=0;i<g.length;i++){const d=hav(pt,g[i]); if(d<bd){bd=d;bi=i;}} return [bi,bd];};
+    const [ia,da]=near(a), [ib,db]=near(b); if(da>.3||db>.3)continue;
+    const tramos=[ia<=ib?g.slice(ia,ib+1):g.slice(ib,ia+1).reverse()];
+    if(hav(g[0],g[g.length-1])<.3)tramos.push(ia<=ib?[...g.slice(0,ia+1).reverse(),...g.slice(ib).reverse()]:[...g.slice(ia),...g.slice(0,ib+1)]);  /* anillo (M3): el otro sentido */
+    for(const t of tramos){let len=hav(a,t[0])+hav(t[t.length-1],b); for(let i=1;i<t.length;i++)len+=hav(t[i-1],t[i]);
+      if(len>recta*1.8+.4)continue; const sc=len*(k===keys[0]?1:1.05);
+      if(!best||sc<best.sc)best={sc,t};}}
+  return best?best.t:null;}
+function railPath(l){if(!l.path||l.path.length<2||!(RAILM.has(l.m)||RAIL.g[l.line]))return null;
   const k=l.line+"|"+l.path.map(x=>x.join(",")).join(";"); if(RAILSNAP.has(k))return RAILSNAP.get(k);
-  /* hav() da km */ const near=pt=>{let bi=0,bd=Infinity; g.forEach((q,i)=>{const d=hav(pt,q); if(d<bd){bd=d;bi=i;}}); return bi;};
-  const a=l.path[0], b=l.path[l.path.length-1], ia=near(a), ib=near(b);
-  const tramo=(i,j,dir)=>{const out=[]; for(let x=i;;x=(x+dir+g.length)%g.length){out.push(g[x]); if(x===j||out.length>g.length)break;} return out;};
-  const opciones=[ia<=ib?tramo(ia,ib,1):tramo(ia,ib,-1)];
-  if(hav(g[0],g[g.length-1])<.3)opciones.push(ia<=ib?tramo(ia,ib,-1):tramo(ia,ib,1));          /* anillo */
-  const peor=pts=>Math.max(0,...l.path.slice(1,-1).map(st=>Math.min(...pts.map(q=>hav(st,q)))));
-  let best=null; opciones.forEach(o=>{const e=peor(o); if(o.length>=2&&e<.4&&(!best||e<best.e||(e===best.e&&o.length<best.o.length)))best={o,e};});
-  const r=best?[a,...best.o,b]:null; RAILSNAP.set(k,r); return r;}
+  const keys=[l.line,...Object.keys(RAIL.g).filter(x=>x!==l.line)]; let out=[l.path[0]], ok=0;
+  for(let i=1;i<l.path.length;i++){const a=l.path[i-1], b=l.path[i], t=railSeg(a,b,keys); if(t){out.push(...t); ok++;} out.push(b);}
+  const r=ok?out:null; RAILSNAP.set(k,r); return r;}
 function drawRoute(id,key,fit){
   routeLayer.clearLayers(); let focusPts=[]; const seen=new Set();
   const rows=allRows(), order=rows.map(r=>r.key).filter(x=>x!==key).concat([key]), P=pisoBy(id);
