@@ -136,7 +136,7 @@ class TestPropuestos(Web):
         self.esperar("CANDS.length===1", 5000)
         self.js("""Object.assign(CANDS[0],{fotos:['https://image-lambda.boligportal.dk/abc'],amueblado:false,compartible:true,ascensor:true,
                    dep:48000,pre:16000,descripcion:'Bo ved vandet'}); renderCands();""")
-        self.page.click("#lares [data-cand='7000001']")
+        self.page.click("#lares .item[data-id='7000001']")
         self.esperar("document.getElementById('sheet').classList.contains('open')&&sheet.dataset.id==='7000001'")
         self.esperar("rutas_ok=Object.values(TP).some(v=>Array.isArray(v))")
         self.page.wait_for_timeout(300)
@@ -147,10 +147,16 @@ class TestPropuestos(Web):
         self.js("YO='jon'"); self.page.click("#sheet [data-cst='7000001|gusta']")    # el estado se cambia desde la ficha
         self.esperar("CANDS[0].st==='gusta'")
         self.assertIn(("/api/estado", "7000001"), [(p, d.get("id")) for p, d in self.posts])
-    def test_ficha_del_propuesto_sin_ubicacion_no_se_abre(self):
+    def test_propuesto_sin_ubicacion_se_ubica_por_la_calle(self):
         self.esperar("CANDS.length===1", 5000)
-        self.js("CANDS[0].lat=null; CANDS[0].lon=null; renderCands();")
-        self.assertEqual(self.js("document.querySelectorAll('#lares [data-cand]').length"), 0)
+        q = []
+        self.page.route("https://nominatim.openstreetmap.org/**", lambda r: (q.append(r.request.url), r.fulfill(status=200, headers=self.cors(), json=[{"lat": "55.7712", "lon": "12.5040"}]))[1])
+        self.js("Object.assign(CANDS[0],{lat:null,lon:null,portal:'Lejebolig',titulo:'Lejlighed på Karen Schaks Vej i Kongens Lyngby',lugar:'Apartment in Kongens Lyngby'}); GEO={}; renderCands();")
+        self.assertEqual(self.js("document.querySelectorAll('#lares .item[data-id=\"7000001\"]').length"), 1)   # sale en la lista igual
+        self.page.click("#lares .item[data-id='7000001']")
+        self.esperar("CANDS[0]._geo&&document.querySelector('#sheet').innerText.includes('Karen Schaks Vej')", 8000)
+        self.assertIn("Karen+Schaks+Vej", q[0]); self.assertIn("aproximada", self.page.inner_text("#sheet"))
+        self.esperar("Object.values(TP).some(v=>Array.isArray(v))")                  # y ya hay rutas (orientativas)
     def test_ficha_con_datos_maliciosos(self):
         self.esperar("CANDS.length===1", 5000)
         self.js("""CANDS=[{id:'9',link:'javascript:alert(2)',zona:'<b>z</b>',titulo:'<img src=x onerror=alert(4)>',m2:'<svg onload=alert(5)>',
@@ -161,15 +167,18 @@ class TestPropuestos(Web):
         self.assertEqual(n, 0)
     def test_datos_maliciosos_no_se_ejecutan(self):
         self.js("""CANDS=[{id:'1"><img src=x onerror=alert(1)>',link:'javascript:alert(2)',plano:'javascript:alert(3)',zona:'<b>z</b>',
-                 titulo:'<img src=x onerror=alert(4)>',m2:'<svg onload=alert(5)>',vaer:'<i>4</i>',precio:1,st:'??',avisos:['<script>alert(6)</script>'],lat:55.7,lon:12.5}];
+                 titulo:'<img src=x onerror=alert(4)>',m2:'<svg onload=alert(5)>',vaer:'<i>4</i>',precio:1,st:'??',avisos:['<script>alert(6)</script>'],lat:55.7,lon:12.5},
+                 {id:'2',link:'javascript:alert(2)',zona:'<b>z</b>',titulo:'<img src=x onerror=alert(4)>',m2:'<svg onload=alert(5)>',vaer:'<i>4</i>',
+                  precio:'<b>1</b>',portal:'<i>p</i>',disp:'<b>d</b>',st:'??',avisos:['<script>alert(6)</script>'],lat:55.7,lon:12.5}];
                  SHOW.nuevo=true; renderCands();""")
         self.page.wait_for_timeout(300)
-        r = self.js("(()=>{const e=document.getElementById('lares');return {img:e.querySelectorAll('img,svg,script,b,i').length,href:[...e.querySelectorAll('a')].map(a=>a.getAttribute('href'))}})()")
-        self.assertEqual(r, {"img": 0, "href": ["#", "#"]}); self.assertEqual(self.alerts, [])
+        r = self.js("(()=>{const e=document.getElementById('lares');return {img:e.querySelectorAll('img,svg,script,b,i').length,items:[...e.querySelectorAll('.item')].filter(x=>!PISOS.some(p=>p.id===x.dataset.id)).length}})()")
+        self.assertEqual(r, {"img": 0, "items": 1}); self.assertEqual(self.alerts, [])     # el del id con HTML ni se pinta
     def test_me_gusta_envia_a_la_pi(self):
         self.esperar("CANDS.length===1", 5000)
         self.js("YO='jon'")                              # ya ha dicho quién es (si no, sale «¿Quién eres?»)
-        self.page.click("#lares [data-cst='7000001|gusta']")
+        self.page.click("#lares .item[data-id='7000001']")                         # se abre la ficha, como los del mapa
+        self.esperar("sheet.dataset.id==='7000001'"); self.page.click("#sheet [data-cst='7000001|gusta']")
         self.page.wait_for_timeout(500)
         self.assertIn(("/api/estado", {"id": "7000001", "st": "gusta", "by": self.js("YO")}), [(p, {k: d[k] for k in ("id", "st", "by")}) for p, d in self.posts])
 
