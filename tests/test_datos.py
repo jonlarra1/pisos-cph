@@ -135,9 +135,11 @@ class TestSeguridadHtml(unittest.TestCase):
 class TestIcono(unittest.TestCase):
     def test_favicon_enlazado_y_presente(self):
         html = open(os.path.join(ROOT, "index.html"), encoding="utf-8").read()
-        for f in ("favicon.svg", "apple-touch-icon.png"):
+        for f in ("favicon.svg", "favicon-64.png", "apple-touch-icon.png"):
             with self.subTest(f=f):
-                self.assertIn(f'href="{f}"', html); self.assertGreater(os.path.getsize(os.path.join(ROOT, f)), 100)
+                self.assertIn(f'href="{f}?v=', html); self.assertGreater(os.path.getsize(os.path.join(ROOT, f)), 100)
+        head = html.split("</head>", 1)[0]                                              # Chrome solo mira el <head>
+        self.assertIn('rel="icon"', head); self.assertIn("<title>", head)
 
 
 if __name__ == "__main__":
