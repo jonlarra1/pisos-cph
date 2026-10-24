@@ -256,6 +256,7 @@ class TestRetirados(Web):
 class TestDestinoAnadido(Web):
     INIT = "localStorage.setItem('destinos', JSON.stringify([{id:'xcris',n:'Cris',addr:'Nørrebrogade',ll:[55.6935,12.548],who:'unai'}]));"
     def abrir(self):
+        self.js("tripDay='lun'")                                       # laborable: las filas fijas usan las precalculadas
         pid = self.js("PISOS[0].id"); self.js("id=>{select(id,false); showPiso(id);}", pid); return pid
     def test_transporte_de_la_pi(self):
         pid = self.abrir()
