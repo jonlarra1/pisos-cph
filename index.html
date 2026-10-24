@@ -1746,10 +1746,11 @@ function renderList(){
   document.getElementById("legend").innerHTML=mode==="barrio"?`<span>Cada color = un barrio. Mira los grupos de la lista.</span>`:MODES[mode].legend().map(([t,l])=>`<span><i class="dot" style="background:${t.startsWith("#")?t:`var(--${t})`}"></i>${l}</span>`).join("")+
     `<span><i class="dot" style="background:var(--fg);border-radius:3px;width:16px"></i>Trabajo (Nordic Solar)</span>`;
   const item=itemHtml=p=>`
-   <button class="item${p.id===selId?" sel":""}" data-id="${p.id}">
+   <button class="item${p.id===selId?" sel":""}" data-id="${esc(p.id)}">
      <span class="badge" style="background:${col(p)}">${MODES[mode].lbl(p)}</span>
      <span style="min-width:0"><div class="it-t">${p.estado==="warn"?"⚠️ ":""}${esc(p.calle)}</div>
-       <div class="it-s">${p.m2} m² · ${esc(p.dorm)} dorm · dep ${p.dep==null?"—":Math.round(p.dep/1000)+"k"} · pre ${p.pre==null?"—":Math.round(p.pre/1000)+"k"}${quien(p)?` · <span class="it-by">${quien(p)}</span>`:""}</div></span>
+       <div class="it-s">${p.m2} m² · ${esc(p.dorm)} dorm · dep ${p.dep==null?"—":Math.round(p.dep/1000)+"k"} · pre ${p.pre==null?"—":Math.round(p.pre/1000)+"k"}${quien(p)?` · <span class="it-by">${quien(p)}</span>`:""}</div>
+       ${p.cand?`<div class="it-s it-c">${esc(p.portal)}${p.disp&&p.disp!=="Sin confirmar"?` · libre ${esc(p.disp)}`:""}${p.rasgos?` · ${p.rasgos}`:""}${p.estado==="warn"?` · <span title="${esc(p.aviso)}">⚠️ ${(CANDS.find(c=>String(c.id)===p.id)?.avisos||[]).length} aviso(s)</span>`:""}</div>`:""}</span>
      <span class="it-p">${fmt(p.mensual)}<small>kr/mes</small></span>
    </button>`;
   const groups=BORD.filter(b=>BAR[b].some(inMain));
@@ -1780,7 +1781,8 @@ function renderOut(){const el=document.getElementById("out");
   el.innerHTML=`<details${wasOpen||nT?" open":""}><summary>🔴 Descartados (${ALL.length+nT})</summary><div class="out-s">${tempHtml}${nT?`<div class="out-h" style="margin-top:6px">Definitivos <small>${ALL.length}</small></div>`:""}${keys.map(k=>`<div class="out-g"><div class="out-h">${esc(k)} <small>${G[k].length}</small></div>
     ${G[k].map(o=>`<div class="out-i"><a href="${esc(o.link)}" target="_blank" rel="noopener">${esc(o.t.split(" · ").slice(1).join(" · ")||o.t)} ↗</a><span>${esc(o.r)}</span></div>`).join("")}</div>`).join("")}</div></details>`;}
 document.getElementById("list").addEventListener("click",e=>{const b=e.target.closest(".item");if(b)select(b.dataset.id,true);});
-document.getElementById("lares").addEventListener("click",e=>{const b=e.target.closest(".item[data-id]");if(b)select(b.dataset.id,true);});
+document.getElementById("lares").addEventListener("click",e=>{const b=e.target.closest(".item[data-id]"); if(!b)return;
+  if(!PISOS.some(p=>p.id===b.dataset.id)&&CANDP[b.dataset.id])openCand(b.dataset.id); else select(b.dataset.id,true);});
 document.getElementById("out").addEventListener("click",e=>{const b=e.target.closest("button[data-id]");if(b)select(b.dataset.id,true);});
 function select(id,fly){
   const prev=selId; selId=id;
@@ -1832,14 +1834,16 @@ function openSheet(id){
        <div class="stat"><b>${p.pre==null?"—":fmt(p.pre)}</b><span>prepago</span></div>
        <div class="stat"><b>${Math.round(p.alq/p.m2)}</b><span>kr/m²</span></div>
      </div>
+     ${!Number.isFinite(p.lat)?`<div class="sec"><h4>Cómo llegar</h4><p style="font-size:12.5px">📍 ${esc(p.ubic)}. ${p.cand?"Buscando una ubicación aproximada para calcular las rutas…":""}</p></div>`:`
      <div class="sec"><h4>Cómo llegar · ${MOM().n} · ${diaTxt()}, ${MOM().t.toLowerCase()} ${tripTime}</h4>
+       ${p.cand&&!/^exacta/.test(p.ubic)?`<p class="late" style="margin:0 0 6px;font-size:12px">📍 Ubicación ${esc(p.ubic)}: las rutas son orientativas.</p>`:""}
        ${routesHtml(p)}
        <h4 style="margin-top:14px">Paso a paso</h4>
        <div id="rt-steps">${stepsHtml(p,routeDest)}</div>
        <p style="margin:8px 0 0;font-size:11.5px;color:var(--muted)">${MOMENTO==="manana"&&RUTAS.days.includes(tripDay)&&RUTAS.times.includes(tripTime)
          ?`Calculado con los horarios de Rejseplanen (semana del ${esc(RUTAS.week)}): la salida más tarde que llega a tiempo, con la configuración de cada uno.`
          :`Calculado al momento en la Raspberry Pi con los horarios de Rejseplanen (${MOM().ida?"la salida más tarde que llega a tiempo":"lo primero que sale a esa hora"}), con la configuración de cada uno. Horario previsto, sin retrasos.`}
-         El botón abre Rejseplanen con su propio cálculo para el próximo ${DAYF[tripDay]}.</p></div>
+         El botón abre Rejseplanen con su propio cálculo para el próximo ${DAYF[tripDay]}.</p></div>`}
      <div class="sec"><h4>Fotos${p.fotoPlano?" · plano primero":""}</h4>${galHtml(p)}</div>
      <div class="sec"><h4>Dinero</h4><dl class="kv">
        ${row("Alquiler",kr(p.alq))}${row("Aconto",p.aconto==null?"No indicado (se calcula con 1.000)":kr(p.aconto))}
@@ -1847,21 +1851,21 @@ function openSheet(id){
      <div class="sec"><h4>Piso</h4><dl class="kv">
        ${row("Dormitorios",esc(p.dorm))}${row("Fuente dormitorios",esc(p.dormEst))}${row("Disponible",esc(p.disp))}
        ${row("Compartir piso",esc(p.deleg||"No indicado"))}${row("Mascotas",esc(p.mascotas))}${row("Amueblado",esc(p.amueblado))}${row("Balcón",esc(p.balcon))}${row("Ascensor",p.ascensor&&esc(p.ascensor))}</dl></div>
-     <div class="sec"><h4>Transporte</h4><dl class="kv">
+     ${p.est?`<div class="sec"><h4>Transporte</h4><dl class="kv">
        ${row("S-tog más cercano",`${esc(p.est.n)} (${[...linesAt[p.est.n]].sort().join(", ")})`)}
        ${row("Distancia a la estación",p.est.d.toFixed(1)+" km en línea recta")}
        ${row("Letbane más cercano",`${esc(p.letb.n)} · ${p.letb.d.toFixed(1)} km`)}
        ${row("Precisión de la ubicación",esc(p.ubic||"aprox."))}
        ${row("Metro más cercano",`${esc(p.met.n)} (${[...mLinesAt[p.met.n]].sort().join(", ")}) · ${p.met.d.toFixed(1)} km`)}
        ${row("Distancia al trabajo",p.distWork.toFixed(1)+" km en línea recta")}
-       ${row("Tu nota",esc(p.trans))}</dl></div>
+       ${row("Tu nota",esc(p.trans))}</dl></div>`:""}
 
      ${p.estado==="warn"?`<div class="note warn-n">⚠️ ${esc(p.aviso)}</div>`:""}
      ${p.restr?`<div class="note"><b>Requisitos:</b> ${esc(p.restr)}</div>`:""}
      ${p.notas?`<div class="note">${esc(p.notas)}</div>`:""}
      ${/VERIFICAR/.test(p.dormEst)?`<div class="note warn">Revisa el plano: no está claro cuántos dormitorios tiene.</div>`:""}
    </div>`;
-  drawRoute(id,routeDest,false);
+  if(Number.isFinite(p.lat))drawRoute(id,routeDest,false); else routeLayer.clearLayers();
   const sc=sheet.querySelector(".sh-body")?.scrollTop||0, same=sheet.dataset.id===id&&sheet.classList.contains("open");
   sheet.dataset.id=id; sheet.classList.add("open"); sheet.setAttribute("aria-hidden","false"); document.getElementById("rail").classList.add("has-sheet");
   if(same)sheet.querySelector(".sh-body").scrollTop=sc; else sheet.querySelector(".sh-body").scrollTop=0;
@@ -1944,30 +1948,47 @@ const numOr=(v,o=null)=>v!=null&&v!==""&&Number.isFinite(+v)?+v:o;   /* datos de
 function candPiso(c){const id=String(c.id), d=numOr(c.dorm??c.plano_dorm);
   const p={id,cand:true,zona:c.zona||"",barrio:c.zona||"",calle:String(c.titulo||c.lugar||"Propuesto"),m2:numOr(c.m2,"?"),vaer:numOr(c.vaer,"?"),planta:"",
     alq:numOr(c.precio,0),aconto:numOr(c.aconto),dep:numOr(c.dep),pre:numOr(c.pre),disp:c.disp||"Sin confirmar",link:c.link,portal:c.portal||"",
-    lat:+c.lat,lon:+c.lon,fotos:Array.isArray(c.fotos)?c.fotos:(c.plano?[c.plano]:[]),fotoPlano:false,
+    lat:candConUbic(c)?+c.lat:c._geo?c._geo.lat:NaN,lon:candConUbic(c)?+c.lon:c._geo?c._geo.lon:NaN,fotos:Array.isArray(c.fotos)?c.fotos:(c.plano?[c.plano]:[]),fotoPlano:false,
     dorm:d!=null?String(d):"Sin confirmar",dormEst:numOr(c.dorm)!=null?"Ficha del portal":c.plano_dorm!=null?"Plano revisado":"Estimado: værelser − 1",
     deleg:sino(c.compartible),mascotas:sino(c.mascotas),amueblado:sino(c.amueblado,"Sí","Sin amueblar"),balcon:sino(c.balcon),
-    ascensor:sino(c.ascensor),ubic:"coordenadas del anuncio",st:ESTADOS[c.st]?c.st:"nuevo",stF:c.visto||c.ts&&new Date(c.ts*1000).toISOString().slice(0,10)||"",
-    by:c.by,motivo:c.motivo,notas:c.descripcion||"",estado:(c.avisos||[]).length?"warn":"ok",aviso:"Lares: "+(c.avisos||[]).join(" · ")};
-  enrich(p); CANDP[id]=p; return p;}
-const candConUbic=c=>Number.isFinite(+c.lat)&&Number.isFinite(+c.lon)&&c.lat!=null&&c.lon!=null;
-function openCand(id){const c=CANDS.find(x=>String(x.id)===String(id)); if(!c||!candConUbic(c))return; candPiso(c); openSheet(String(c.id)); drawRoute(String(c.id),routeDest,false);
-  map.flyTo([+c.lat,+c.lon],Math.max(map.getZoom(),13),{duration:.6});}
+    ascensor:sino(c.ascensor),ubic:candConUbic(c)?"exacta (coordenadas del anuncio)":c._geo?c._geo.ubic:"sin ubicación (el portal no la publica)",st:ESTADOS[c.st]?c.st:"nuevo",stF:c.visto||c.ts&&new Date(c.ts*1000).toISOString().slice(0,10)||"",
+    by:c.by,motivo:c.motivo,rasgos:rasgosTxt(c),notas:c.descripcion||"",estado:(c.avisos||[]).length?"warn":"ok",aviso:"Lares: "+(c.avisos||[]).join(" · ")};
+  if(Number.isFinite(p.lat)&&Number.isFinite(p.lon))enrich(p); else {p.mensual=p.alq+(p.aconto??1000); p.entradaCmp=p.dep!=null&&p.pre!=null?p.dep+p.pre:null;}
+  CANDP[id]=p; return p;}
+/* Lejebolig no publica la dirección (solo con cuenta de pago): ubicación aproximada con Nominatim a partir de la calle
+   del título («på Karen Schaks Vej i Kongens Lyngby») o, si no, de la zona. 1 petición/s como pide su política; caché por navegador. */
+let GEO={}; try{GEO=JSON.parse(localStorage.getItem("geoCand")||"{}");}catch(e){}
+let geoCola=Promise.resolve();
+const nomi=q=>geoCola=geoCola.then(()=>new Promise(r=>setTimeout(r,1100))).then(()=>fetch("https://nominatim.openstreetmap.org/search?"+new URLSearchParams({format:"json",countrycodes:"dk",limit:"1",q}))
+  .then(r=>r.ok?r.json():[]).then(j=>j&&j[0]?{lat:+(+j[0].lat).toFixed(6),lon:+(+j[0].lon).toFixed(6)}:null).catch(()=>null));
+async function geoCand(c){const id=String(c.id); if(GEO[id])return GEO[id];
+  const t=String(c.titulo||""), ciudad=(String(c.lugar||"").match(/\b(?:in|i)\s+(.+)$/i)||[])[1]||c.zona||"";
+  const calle=(t.match(/\b(?:på|paa|on)\s+(.+?)\s+(?:i|in)\s+/i)||[])[1];
+  let g=calle?await nomi(`${calle}, ${ciudad}`):null, ubic=g?`aproximada (calle ${calle}; el portal no da el número)`:"";
+  if(!g&&ciudad){g=await nomi(ciudad); ubic=`aproximada (centro de ${ciudad}; el portal no da la dirección)`;}
+  if(!g)return null; GEO[id]={...g,ubic}; try{localStorage.setItem("geoCand",JSON.stringify(GEO));}catch(e){} return GEO[id];}
+const idOk=c=>/^[A-Za-z0-9_-]{1,40}$/.test(String(c&&c.id));   /* ids de fuera: solo así entran en atributos y en la ficha */
+const candConUbic=c=>c.lat!=null&&c.lon!=null&&c.lat!==""&&Number.isFinite(+c.lat)&&Number.isFinite(+c.lon);
+async function openCand(id){id=String(id); const c=CANDS.find(x=>String(x.id)===id); if(!c||!idOk(c))return;
+  if(!candConUbic(c)&&!c._geo){c._geo=GEO[id]||null; if(!c._geo){candPiso(c); openSheet(id); toast("📍 Buscando la ubicación aproximada (el portal no la publica)…"); c._geo=await geoCand(c);}}
+  const p=candPiso(c); openSheet(id);
+  if(Number.isFinite(p.lat)){drawRoute(id,routeDest,false); map.flyTo([p.lat,p.lon],Math.max(map.getZoom(),13),{duration:.6});}}
 document.addEventListener("click",e=>{const b=e.target.closest("[data-cand]"); if(!b)return; e.preventDefault(); map.closePopup(); openCand(b.dataset.cand);});
 function renderCands(){const el=document.getElementById("lares"); if(!el)return;
   CANDS.forEach(c=>{if(!ESTADOS[c.st])c.st="nuevo";});   /* estado desconocido o vacío = sin decidir */
-  const sin=CANDS.filter(c=>c.st==="nuevo"), gus=CANDS.filter(c=>c.st==="gusta"||c.st==="contactado");
+  const sin=CANDS.filter(c=>c.st==="nuevo"&&idOk(c)), gus=CANDS.filter(c=>(c.st==="gusta"||c.st==="contactado")&&idOk(c));
   const map0=ranked.filter(p=>p.st==="nuevo"&&visible(p));
   const was=el.querySelector("details")?.open;
   /* una sola categoría: los 🟠 del mapa y los que trae Lares, juntos y por precio */
-  const todos=[...map0.map(p=>({precio:p.mensual,html:`<div class="plist">${(itemHtml||(()=>""))(p)}</div>`})),...sin.map(c=>({precio:c.precio||0,html:candItem(c)}))].sort((a,b)=>a.precio-b.precio);
+  const it=p=>`<div class="plist">${(itemHtml||(()=>""))(p)}</div>`;
+  const todos=[...map0.map(p=>({precio:p.mensual,html:it(p)})),...sin.map(c=>{const p=candPiso(c); return {precio:p.mensual,html:it(p)};})].sort((a,b)=>a.precio-b.precio);
   el.innerHTML=`<details${was===false?"":" open"}><summary>🟠 Propuestos (${todos.length})</summary><div class="out-s">
     ${SHOW.nuevo?(todos.map(x=>x.html).join("")||'<p style="color:var(--muted);margin:6px 0">No hay propuestos ahora mismo.</p>'):'<p style="color:var(--muted);margin:6px 0">Ocultos en Visualización.</p>'}
-    ${gus.length?`<div class="out-h">🔵 Os gustan · pendientes de pasar al mapa <small>${gus.length}</small></div>${gus.map(candItem).join("")}`:""}</div></details>`;
+    ${gus.length?`<div class="out-h">🔵 Os gustan · pendientes de pasar al mapa <small>${gus.length}</small></div>${gus.map(c=>it(candPiso(c))).join("")}`:""}</div></details>`;
   candLayer.clearLayers();
-  CANDS.filter(c=>c.st!=="descartado"&&c.lat&&c.lon).forEach(c=>{const lb=Math.round(((c.precio||0)+(c.aconto||0))/1000)+"k";
+  CANDS.filter(c=>c.st!=="descartado"&&idOk(c)&&candConUbic(c)).forEach(c=>{const lb=Math.round(((c.precio||0)+(c.aconto||0))/1000)+"k";
     L.marker([c.lat,c.lon],{zIndexOffset:950,icon:L.divIcon({className:"",iconSize:[30,30],iconAnchor:[15,15],
-    html:`<div class="pin" style="width:30px;height:30px;background:${(ESTADOS[c.st]||ESTADOS.nuevo).c};font-size:12px">${lb}</div>`})}).bindTooltip(`Propuesto · ${esc(c.zona||"")} · ${kr0(c.precio)} kr`,{direction:"top"}).bindPopup(candItem(c),{maxWidth:280}).addTo(candLayer);});}
+    html:`<div class="pin" style="width:30px;height:30px;background:${(ESTADOS[c.st]||ESTADOS.nuevo).c};font-size:12px">${lb}</div>`})}).bindTooltip(`Propuesto · ${esc(c.zona||"")} · ${kr0(c.precio)} kr`,{direction:"top"}).on("click",()=>openCand(c.id)).addTo(candLayer);});}
 let candSig="", candSig0=false;
 async function pullCandidatos(){try{const r=await fetch(API+"/api/candidatos",{cache:"no-cache"}); if(!r.ok)throw 0; const d=await r.json(); const sig=JSON.stringify(d.pisos||[]); if(sig!==candSig){candSig=sig;
     const antes=new Map(CANDS.map(c=>[String(c.id),c.st])), nuevos=d.pisos||[];
