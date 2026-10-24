@@ -1431,7 +1431,7 @@ const RTS=(id,key)=>{const row=rowOf(key); if(!row)return [];
 const RTman=(id,key)=>{const row=ROWS.find(r=>r.key===key); if(!row)return null;
   const o=preRTS(id,row,RUTAS.days.includes(tripDay)?tripDay:RUTAS.days[0],RUTAS.times.includes(tripTime)?tripTime:"08:30"); return o[0]||null;};
 const RT=(id,key)=>{const o=RTS(id,key); if(!o.length)return null; return o[Math.min(ALT[id+"|"+key]||0,o.length-1)];};
-const mainLine=r=>{const rides=r.legs.filter(l=>!isMove(l)); if(!rides.length)return "";
+const mainLine=r=>{const rides=r.legs.filter(l=>!isMove(l)); if(!rides.length)return r.solo==="bike"?"🚲 bici":r.solo?"🚶 andando":"";
   const m=rides.reduce((a,l)=>{const d=t=>+t.slice(0,2)*60+ +t.slice(3); return (d(l.arr)-d(l.dep))>(d(a.arr)-d(a.dep))?l:a;}); return m.line;};
 const altBtns=(id,key)=>{const o=RTS(id,key); if(o.length<2)return ""; const cur=Math.min(ALT[id+"|"+key]||0,o.length-1);
   return `<span class="alts">Opciones: ${o.map((r,n)=>`<button data-alt="${id}|${key}|${n}" aria-pressed="${n===cur}" title="Opción ${n+1}: ${r.min} min por ${esc(mainLine(r))}">${r.min}′ ${esc(mainLine(r))}</button>`).join("")}</span>`;};
@@ -1492,7 +1492,7 @@ function routesHtml(p){
     const r=RT(p.id,row.key);
     const head=`<span class="rt-n">${rowName(row)}${r?` <small style="color:var(--muted)">sal ${r.sale}${MOM().ida?"":` · llegas ${r.llega}`}</small>${esperaTxt(r)?` <small class="late">${esperaTxt(r)}</small>${(()=>{const lv=liveFor(p,row); return lv&&lv!=="pending"?` <small>· ${PERF[row.who].mode==="bike"?"🚲 solo en bici":"🚶 solo andando"} ${lv.min} min</small>`:"";})()}`:""}${MOM().ida&&r.llega>tripTime?` <small class="late" title="Con tu velocidad llegarías a las ${r.llega}">⚠️ ${r.llega}</small>`:""}`:""}</span>`;
     if(!r)return `<div class="rt-i" style="cursor:default">${head}<b>—</b><span class="ch">Sin ruta con su configuración</span></div>`;
-    return `<div class="rt-i${row.key===routeDest?" on":""}" data-route="${p.id}|${row.key}" role="button" tabindex="0">${head}<b>${r.min} min</b><span class="ch">${chips(r)}${r.trans>0?` · ${r.trans} transb.`:" · directo"}</span>${altBtns(p.id,row.key)}</div>`;}).join("")}</div>`;}
+    return `<div class="rt-i${row.key===routeDest?" on":""}" data-route="${p.id}|${row.key}" role="button" tabindex="0">${head}<b>${r.min} min</b><span class="ch">${chips(r)}${r.solo?` · ${r.solo==="bike"?"solo en bici":"solo andando"}, sin transporte`:r.trans>0?` · ${r.trans} transb.`:" · directo"}</span>${altBtns(p.id,row.key)}</div>`;}).join("")}</div>`;}
 const tabsHtml=p=>allRows().map(row=>{let m; if(usaMotor(row)&&!RTS(p.id,row.key).length){const lv=liveFor(p,row); m=lv&&lv!=="pending"?lv.min+"′":"…";}else{const r=RT(p.id,row.key); m=r?r.min+"′":"—";}
   return `<button data-route="${p.id}|${row.key}" class="${row.key===routeDest?"on":""}">${esc(dName(row.k))} · ${PERF[row.who].n} · ${m}</button>`;}).join("");
 function stepsHtml(p,key){const row=rowOf(key)||allRows()[0]; key=row.key; const pf=PERF[row.who], r=RT(p.id,key), bike=pf.mode==="bike";
@@ -1507,7 +1507,7 @@ function stepsHtml(p,key){const row=rowOf(key)||allRows()[0]; key=row.key; const
   const who=`<p style="margin:8px 0 0;font-size:12px;color:var(--muted)">${pf.n}: ${bike?"🚲 bici + S-tog/tren":"🚶 andando + bus, metro, tren"} · ${bike?pf.vb:pf.vw} km/h · máx. ${limTxt(pf,pf.lim)} por tramo (cámbialo en Configuración)</p>`;
   const ref=dir?`<p style="margin:8px 0 0;font-size:11.5px;color:var(--muted)">Solo ${bike?`en bici (${pf.vb} km/h)`:`andando (${pf.vw} km/h)`}, sin transporte: ${dir.min} min · ${km(dir.d)}</p>`:"";
   if(!r)return who+`<p style="font-size:12.5px">Sin ruta para «${MOM().t.toLowerCase()} ${tripTime}». Cambia la hora o sube el máximo de ${pf.n} en Configuración.</p>`+ref;
-  return who+(esperaTxt(r)?`<p class="late" style="margin:8px 0 0;font-size:12.5px">${esperaTxt(r)}: a esa hora no hay transporte antes con su configuración.</p>`:"")+`<p style="margin:8px 0 0;font-size:12.5px"><b>${r.min} min</b> puerta a puerta · sal a las ${r.sale}, llegas a las ${r.llega}${r.trans>0?` · ${r.trans} transbordo${r.trans>1?"s":""}`:""}</p>
+  return who+(esperaTxt(r)?`<p class="late" style="margin:8px 0 0;font-size:12.5px">${esperaTxt(r)}: a esa hora no hay transporte antes con su configuración.</p>`:"")+`<p style="margin:8px 0 0;font-size:12.5px"><b>${r.min} min</b> puerta a puerta${r.solo?` ${r.solo==="bike"?"en bici":"andando"}, sin transporte (distancia estimada)`:""} · sal a las ${r.sale}, llegas a las ${r.llega}${r.trans>0?` · ${r.trans} transbordo${r.trans>1?"s":""}`:""}</p>
   <ol class="steps">${r.legs.map(l=>l.m==="bike"
     ?`<li><span class="t">🚲 ${l.min}′</span><span>En bici${l.d?` ${km(l.d)}`:""} hasta <b>${esc(l.to)}</b></span></li>`
     :l.m==="walk"

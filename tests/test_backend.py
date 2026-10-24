@@ -387,5 +387,35 @@ class TestComprobaciones(Base):
         self.assertTrue(app.check_lares_runs()[0])
 
 
+class TestRutaDirecta(unittest.TestCase):
+    """Motor de rutas: además del transporte, la opción de ir directo en bici / andando (sin GTFS: se simula el CSA)."""
+    def motor(self, opciones):
+        import routing
+        m = object.__new__(routing.Motor); m.dia = lambda ymd: {}
+        it = iter(opciones)
+        m.csa = lambda *a, **k: next(it, (1e18, None, None, None))
+        def legs(la, lo, dest, dname, r, pf):
+            return [{"m": "bike", "min": 2, "d": 600, "to": "St."},
+                    {"m": "S-tog", "line": r[2], "head": "x", "from": "a", "to": "b", "dep": "08:00", "arr": r[3], "n": 2},
+                    {"m": "bike", "min": 2, "d": 600, "to": dname}]
+        m.legs = legs
+        return m
+    PF = {"mode": "bike", "v_walk": 5/3.6, "v_bike": 20/3.6, "lim_min": 10}
+    CASA, CERCA, LEJOS = (55.649146, 12.553573), (55.6440, 12.5440), (55.7335, 12.5769)
+    def test_cerca_solo_bici_y_sin_rodeos_en_tren(self):
+        tren = (8*3600+11*60, 1, "A", "08:09")                        # bici + tren + bici: 13 min
+        o = self.motor([tren]).ruta(*self.CASA, self.CERCA, "Cris", "2026-10-26", "08:00", "salir", self.PF)
+        self.assertEqual(o[0]["solo"], "bike"); self.assertLessEqual(o[0]["min"], 4)
+        self.assertEqual(len(o), 1)                                    # la de tren (más lenta) sobra
+    def test_lejos_manda_el_transporte(self):
+        tren = (8*3600+26*60, 1, "A", "08:24")
+        o = self.motor([tren]).ruta(*self.CASA, self.LEJOS, "NS", "2026-10-26", "08:00", "salir", {**self.PF, "lim_min": 10})
+        self.assertFalse(o[0].get("solo")); self.assertTrue(all(not x.get("solo") for x in o))
+    def test_sin_transporte_queda_directo(self):
+        o = self.motor([]).ruta(*self.CASA, self.LEJOS, "NS", "2026-10-26", "08:30", "llegar", {**self.PF, "mode": "foot"})
+        self.assertEqual(len(o), 1); self.assertEqual(o[0]["solo"], "walk"); self.assertEqual(o[0]["llega"], "08:30")
+        self.assertEqual(o[0]["legs"][0]["m"], "walk")
+
+
 if __name__ == "__main__":
     unittest.main()

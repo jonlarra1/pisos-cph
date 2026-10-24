@@ -221,5 +221,22 @@ class Motor:
                 if all(json.dumps(o["legs"]) != json.dumps(p["legs"]) for p in opts): opts.append(o)
             main = max(rides, key=lambda l: (int(l["arr"][:2])*60+int(l["arr"][3:])) - (int(l["dep"][:2])*60+int(l["dep"][3:])))
             ban.add(main["line"])
+        # sin transporte: ir directo en bici / andando. Se ofrece si cabe en el máximo por tramo o si tarda como mucho
+        # 5 min más que la mejor con transporte (antes una ruta de 5 min en bici salía como «bici + tren + bici»).
+        # Si se ofrece, sobran las opciones con transporte que no son más rápidas que ir directo.
+        d = self.directo(la, lo, dest, dname, pf)
+        mejor = min((o["min"] for o in opts), default=None)
+        if mejor is None or d["min"] <= pf["lim_min"] or d["min"] <= mejor + 5:
+            sale = T - d["min"]*60 if modo == "llegar" else T
+            opts = [o for o in opts if o["min"] < d["min"]]
+            opts.append({**d, "sale": hm(sale), "llega": hm(sale + d["min"]*60)})
         opts.sort(key=lambda o: o["min"])
         return opts
+
+    def directo(self, la, lo, dest, dname, pf):
+        """Ruta sin transporte (línea recta × factor de rodeo, como los tramos de acceso)."""
+        bici = pf["mode"] != "foot"
+        dist = hav(la, lo, dest[0], dest[1]); det = DET_B if bici else DET_W; v = pf["v_bike"] if bici else pf["v_walk"]
+        mins = max(1, round(dist*det/v/60))
+        return {"min": mins, "trans": 0, "solo": "bike" if bici else "walk",
+                "legs": [{"m": "bike" if bici else "walk", "min": mins, "d": round(dist*det), "to": dname, "path": [[la, lo], list(dest)]}]}
