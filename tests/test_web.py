@@ -132,6 +132,33 @@ class TestPropuestos(Web):
         self.esperar("CANDS.length===1", 5000)
         self.assertIn("Piso de prueba", self.page.inner_text("#lares"))
         self.assertEqual(self.js("candLayer.getLayers().length"), 1)
+    def test_ficha_del_propuesto(self):
+        self.esperar("CANDS.length===1", 5000)
+        self.js("""Object.assign(CANDS[0],{fotos:['https://image-lambda.boligportal.dk/abc'],amueblado:false,compartible:true,ascensor:true,
+                   dep:48000,pre:16000,descripcion:'Bo ved vandet'}); renderCands();""")
+        self.page.click("#lares [data-cand='7000001']")
+        self.esperar("document.getElementById('sheet').classList.contains('open')&&sheet.dataset.id==='7000001'")
+        self.esperar("rutas_ok=Object.values(TP).some(v=>Array.isArray(v))")
+        self.page.wait_for_timeout(300)
+        t = self.page.inner_text("#sheet")
+        for x in ("Piso de prueba", "Sin amueblar", "Ascensor", "48.000", "16.000", "Bo ved vandet", "23 min", "M4"): self.assertIn(x, t)
+        self.assertTrue(any(q["olat"] == "55.72" for q in self.rutas_q))             # rutas desde el propuesto, con el motor
+        self.assertIn("/api/img?u=", self.js("document.querySelector('#sheet .gal img').src"))
+        self.js("YO='jon'"); self.page.click("#sheet [data-cst='7000001|gusta']")    # el estado se cambia desde la ficha
+        self.esperar("CANDS[0].st==='gusta'")
+        self.assertIn(("/api/estado", "7000001"), [(p, d.get("id")) for p, d in self.posts])
+    def test_ficha_del_propuesto_sin_ubicacion_no_se_abre(self):
+        self.esperar("CANDS.length===1", 5000)
+        self.js("CANDS[0].lat=null; CANDS[0].lon=null; renderCands();")
+        self.assertEqual(self.js("document.querySelectorAll('#lares [data-cand]').length"), 0)
+    def test_ficha_con_datos_maliciosos(self):
+        self.esperar("CANDS.length===1", 5000)
+        self.js("""CANDS=[{id:'9',link:'javascript:alert(2)',zona:'<b>z</b>',titulo:'<img src=x onerror=alert(4)>',m2:'<svg onload=alert(5)>',
+                 vaer:'<i>4</i>',precio:'<b>1</b>',dep:'<i>x</i>',st:'nuevo',avisos:['<script>alert(6)</script>'],descripcion:'<img src=y onerror=alert(7)>',
+                 fotos:['javascript:alert(8)'],lat:55.7,lon:12.5}]; renderCands(); openCand('9');""")
+        self.page.wait_for_timeout(300)
+        n = self.js("(()=>{const e=document.querySelector('#sheet .sh-head,#sheet .sh-body')?.parentElement||sheet; return e.querySelectorAll('.sh-body b img,.sh-body svg,.sh-body script,.sh-head img,.sh-head svg,.note img,.kv img').length})()")
+        self.assertEqual(n, 0)
     def test_datos_maliciosos_no_se_ejecutan(self):
         self.js("""CANDS=[{id:'1"><img src=x onerror=alert(1)>',link:'javascript:alert(2)',plano:'javascript:alert(3)',zona:'<b>z</b>',
                  titulo:'<img src=x onerror=alert(4)>',m2:'<svg onload=alert(5)>',vaer:'<i>4</i>',precio:1,st:'??',avisos:['<script>alert(6)</script>'],lat:55.7,lon:12.5}];

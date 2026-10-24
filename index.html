@@ -1056,6 +1056,7 @@ html,body{overflow-x:hidden}
             <label>Entrada hasta<input type="date" name="disp_hasta"></label>
             <label class="ck"><input type="checkbox" name="compartir"> Solo si se puede compartir piso</label>
             <label class="ck"><input type="checkbox" name="contrato_largo"> Solo contrato largo (más de 12 meses)</label>
+            <label>Amueblado<select name="amueblado"><option value="igual">Da igual</option><option value="no">Sin amueblar</option><option value="si">Amueblado</option></select></label>
             <button class="btn sec" type="submit">Guardar búsqueda</button><small id="fbusq-m"></small>
           </form>
           <div class="filt"><div class="filt-h"><span>Zonas</span></div><div class="chips" id="zonas"><small>Conectando con la Raspberry Pi…</small></div>
@@ -1195,14 +1196,18 @@ const esc=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&
 const safeUrl=u=>{try{const x=new URL(String(u||""),location.href); return x.protocol==="https:"?esc(x.href):"#";}catch(e){return "#";}};
 
 /* ---------- scoring ---------- */
-PISOS.forEach(p=>{
+function enrich(p){
   p.mensual=p.alq+(p.aconto??1000);
   p.entradaCmp=(p.dep!=null&&p.pre!=null)?p.dep+p.pre:null;
   let best=null;for(const [n,ll] of Object.entries(ST)){const d=hav([p.lat,p.lon],ll);if(!best||d<best.d)best={n,d};}
   p.est=best; p.distWork=hav([p.lat,p.lon],WORK.ll);
   let mb=null;for(const [n,ll] of Object.entries(MST)){const d=hav([p.lat,p.lon],ll);if(!mb||d<mb.d)mb={n,d};} p.met=mb;
   let lb=null;for(const [n,ll] of Object.entries(LETB)){const d=hav([p.lat,p.lon],ll);if(!lb||d<lb.d)lb={n,d};} p.letb=lb;
-});
+}
+PISOS.forEach(enrich);
+/* propuestos de Lares abiertos en ficha: «piso provisional» con los datos que trae Lares (ver candPiso) */
+const CANDP={};
+const pisoBy=id=>PISOS.find(x=>x.id===id)||CANDP[id];
 const rng=k=>{const v=PISOS.map(p=>p[k]).filter(x=>x!=null);return[Math.min(...v),Math.max(...v)]};
 const [mMin,mMax]=rng("mensual"),[eMin,eMax]=rng("entradaCmp"),[aMin,aMax]=rng("m2");
 const PRIO={"P1":1,"P2":.7,"P2-B":.6,"P3":.4,"—":.6};
@@ -1354,7 +1359,7 @@ let MOMENTO="manana"; try{const m=localStorage.getItem("momento"); if(MOMENTOS[m
 const MOM=()=>MOMENTOS[MOMENTO], DIAS7=["lun","mar","mié","jue","vie","sáb","dom"];
 /* rutas ya calculadas (solo mañana L–V); el resto, al motor de la Pi */
 const precalc=row=>!row.extra&&row.k!=="centro"&&MOMENTO==="manana"&&RUTAS.days.includes(tripDay)&&RUTAS.times.includes(tripTime);
-const usaMotor=row=>!precalc(row);
+const usaMotor=(row,p)=>!precalc(row)||!!(p&&p.cand);   /* los propuestos no tienen rutas precalculadas */
 /* Destinos añadidos por cada uno (se guardan en su navegador). Rutas: bici/andando por calle al momento + Rejseplanen. */
 let EXTRA=[]; try{EXTRA=JSON.parse(localStorage.getItem("destinos")||"[]").filter(d=>d&&d.id&&Array.isArray(d.ll));}catch(e){}
 const extraLayer=L.layerGroup().addTo(map);
@@ -1395,7 +1400,7 @@ function tpFor(p,row){const pf=PERF[row.who], M=MOM(), fecha=tripDate(), key=[p.
 let liveT=null;
 function onLive(){clearTimeout(liveT); liveT=setTimeout(()=>{if(!card.hidden)showCard(card.dataset.id);
   const id=sheet.classList.contains("open")?sheet.dataset.id:selId; if(id)drawRoute(id,routeDest,false);
-  const st=document.getElementById("rt-steps"); if(st&&sheet.classList.contains("open")){const p=PISOS.find(x=>x.id===sheet.dataset.id); if(p)st.innerHTML=stepsHtml(p,routeDest);
+  const st=document.getElementById("rt-steps"); if(st&&sheet.classList.contains("open")){const p=pisoBy(sheet.dataset.id); if(p)st.innerHTML=stepsHtml(p,routeDest);
     const rb=document.querySelector("#sheet .rt"); if(rb&&p)rb.outerHTML=routesHtml(p);   /* lista «Cómo llegar» con lo que acaba de llegar */
     const tb=document.querySelector("#sheet .rt-tabs"); if(tb&&p)tb.innerHTML=tabsHtml(p);}},80);}
 {const wd=["dom","lun","mar","mié","jue","vie","sáb"][new Date().getDay()]; if(DIAS7.includes(wd))tripDay=wd;}
@@ -1425,7 +1430,7 @@ function preRTS(id,row,day,time){const pf=PERF[row.who];
   const i=((((RUTAS.ix[pf.mode]||{})[day]||{})[time]||{})[pf.lim]||{})[id]; let j=i&&i[row.k]; if(j==null)return []; if(!Array.isArray(j))j=[j];
   return j.map(x=>RUTAS.routes[x]).filter(Boolean).map(r=>adj(r,pf)).sort((a,b)=>a.min-b.min||(a.sale<b.sale?1:-1));}  // la más rápida primero
 const RTS=(id,key)=>{const row=rowOf(key); if(!row)return [];
-  if(usaMotor(row)){const P=PISOS.find(x=>x.id===id), t=P&&tpFor(P,row); return Array.isArray(t)?t.slice().sort((a,b)=>(!!b.principal-!!a.principal)||a.min-b.min):[];}   /* directo dentro del límite: primero */
+  const P=pisoBy(id); if(usaMotor(row,P)){const t=P&&tpFor(P,row); return Array.isArray(t)?t.slice().sort((a,b)=>(!!b.principal-!!a.principal)||a.min-b.min):[];}   /* directo dentro del límite: primero */
   return preRTS(id,row,tripDay,tripTime);};
 /* siempre la mañana precalculada (para la lista de barrios: no lanza peticiones a la Pi) */
 const RTman=(id,key)=>{const row=ROWS.find(r=>r.key===key); if(!row)return null;
@@ -1451,12 +1456,12 @@ const routeR=L.svg({padding:.5}), routeLayer=L.layerGroup().addTo(map);
 /* Dibuja las rutas de todas las filas; la elegida resaltada, las otras más suaves. */
 function drawRoute(id,key,fit){
   routeLayer.clearLayers(); let focusPts=[]; const seen=new Set();
-  const rows=allRows(), order=rows.map(r=>r.key).filter(x=>x!==key).concat([key]), P=PISOS.find(x=>x.id===id);
+  const rows=allRows(), order=rows.map(r=>r.key).filter(x=>x!==key).concat([key]), P=pisoBy(id);
   order.forEach(rk=>{const row=rows.find(x=>x.key===rk); if(!row)return; const on=rk===key;
     let r=RT(id,rk);
-    if(usaMotor(row)&&P&&!r){const lv=liveFor(P,row); if(lv&&lv!=="pending"){r={legs:[{m:PERF[row.who].mode==="bike"?"bike":"walk",min:lv.min,d:lv.d,live:lv.path}]};}}
+    if(usaMotor(row,P)&&P&&!r){const lv=liveFor(P,row); if(lv&&lv!=="pending"){r={legs:[{m:PERF[row.who].mode==="bike"?"bike":"walk",min:lv.min,d:lv.d,live:lv.path}]};}}
     if(!r)return;
-    const sig=usaMotor(row)?rk:r.legs.map(l=>l.p).join(","); if(!on&&seen.has(sig))return; seen.add(sig);
+    const sig=usaMotor(row,P)?rk:r.legs.map(l=>l.p).join(","); if(!on&&seen.has(sig))return; seen.add(sig);
     const op=on?1:.4, w=on?1:.7, dname=dName(row.k), ant=on?"route-ant ":"";
     r.legs.forEach(l=>{const path=l.live||l.path||LP(l); if(on)focusPts.push(...path);
       if(isMove(l)){const bike=l.m==="bike";
@@ -1484,7 +1489,7 @@ function tpBar(p){const ex=allRows().filter(usaMotor); if(!ex.length)return "";
     <div style="height:6px;border-radius:3px;background:var(--line);margin-top:4px;overflow:hidden"><i style="display:block;height:100%;width:${Math.max(4,pc)}%;background:#2b6fd6;transition:width .3s"></i></div></div>`;}
 function routesHtml(p){
   return `<div class="rt"><div class="rt-h">${MOM().n} · ${MOM().t.toLowerCase()} ${tripTime} · ${diaTxt()}</div>${tpBar(p)}${allRows().map(row=>{
-    if(usaMotor(row)&&!RTS(p.id,row.key).length){const tp=tpFor(p,row), lv=liveFor(p,row), bike=PERF[row.who].mode==="bike";
+    if(usaMotor(row,p)&&!RTS(p.id,row.key).length){const tp=tpFor(p,row), lv=liveFor(p,row), bike=PERF[row.who].mode==="bike";
       const head=`<span class="rt-n">${rowName(row)}</span>`;
       if(tp==="pending")return `<div class="rt-i" data-route="${p.id}|${row.key}" role="button" tabindex="0">${head}<b>…</b><span class="ch">🚆 Calculando transporte (horarios de Rejseplanen)…</span></div>`;
       return `<div class="rt-i${row.key===routeDest?" on":""}" data-route="${p.id}|${row.key}" role="button" tabindex="0">${head}<b>${lv&&lv!=="pending"?lv.min+" min":lv==="pending"?"…":"—"}</b>
@@ -1493,17 +1498,17 @@ function routesHtml(p){
     const head=`<span class="rt-n">${rowName(row)}${r?` <small style="color:var(--muted)">sal ${r.sale}${MOM().ida?"":` · llegas ${r.llega}`}</small>${esperaTxt(r)?` <small class="late">${esperaTxt(r)}</small>${(()=>{const lv=liveFor(p,row); return lv&&lv!=="pending"?` <small>· ${PERF[row.who].mode==="bike"?"🚲 solo en bici":"🚶 solo andando"} ${lv.min} min</small>`:"";})()}`:""}${MOM().ida&&r.llega>tripTime?` <small class="late" title="Con tu velocidad llegarías a las ${r.llega}">⚠️ ${r.llega}</small>`:""}`:""}</span>`;
     if(!r)return `<div class="rt-i" style="cursor:default">${head}<b>—</b><span class="ch">Sin ruta con su configuración</span></div>`;
     return `<div class="rt-i${row.key===routeDest?" on":""}" data-route="${p.id}|${row.key}" role="button" tabindex="0">${head}<b>${r.min} min</b><span class="ch">${chips(r)}${r.solo?` · ${r.solo==="bike"?"solo en bici":"solo andando"}, sin transporte`:r.trans>0?` · ${r.trans} transb.`:" · directo"}</span>${altBtns(p.id,row.key)}</div>`;}).join("")}</div>`;}
-const tabsHtml=p=>allRows().map(row=>{let m; if(usaMotor(row)&&!RTS(p.id,row.key).length){const lv=liveFor(p,row); m=lv&&lv!=="pending"?lv.min+"′":"…";}else{const r=RT(p.id,row.key); m=r?r.min+"′":"—";}
+const tabsHtml=p=>allRows().map(row=>{let m; if(usaMotor(row,p)&&!RTS(p.id,row.key).length){const lv=liveFor(p,row); m=lv&&lv!=="pending"?lv.min+"′":"…";}else{const r=RT(p.id,row.key); m=r?r.min+"′":"—";}
   return `<button data-route="${p.id}|${row.key}" class="${row.key===routeDest?"on":""}">${esc(dName(row.k))} · ${PERF[row.who].n} · ${m}</button>`;}).join("");
 function stepsHtml(p,key){const row=rowOf(key)||allRows()[0]; key=row.key; const pf=PERF[row.who], r=RT(p.id,key), bike=pf.mode==="bike";
-  if(usaMotor(row)&&!r){const lv=liveFor(p,row), tp=tpFor(p,row);
+  if(usaMotor(row,p)&&!r){const lv=liveFor(p,row), tp=tpFor(p,row);
     if(tp==="pending")return `<p style="margin:8px 0 0;font-size:12.5px"><b>${esc(dName(row.k))}</b> · 🚆 calculando transporte con los horarios de Rejseplanen…</p>`;
     return `<p style="margin:8px 0 0;font-size:12.5px"><b>${esc(dName(row.k))}</b> <small style="color:var(--muted)">${esc(row.extra?.addr||"")}</small></p>
     <p style="margin:6px 0 0;font-size:12.5px">${lv==="pending"?"Calculando ruta…":lv?`${bike?`🚲 Solo en bici (${pf.vb} km/h)`:`🚶 Solo andando (${pf.vw} km/h)`}: <b>${lv.min} min</b> · ${km(lv.d)} (dibujado en el mapa)`:"No se pudo calcular la ruta por calle."}</p>
     <p style="margin:6px 0 0;font-size:11.5px;color:var(--muted)">No hay ruta en transporte para llegar a esa hora con tu configuración (o la Raspberry Pi no responde). Prueba otra hora o mira Rejseplanen.</p>
     <a class="btn sec" style="margin-top:10px;width:100%;box-sizing:border-box" href="${esc(rpLink(p,row.k))}" target="_blank" rel="noopener">Ver en Rejseplanen ↗</a>`;}
   let dir=DIRECTO[pf.mode]?.[p.id]?.[row.k]; if(dir)dir={...dir,min:Math.max(1,Math.round(dir.d/spd(pf,pf.mode)/60))};
-  if(!dir&&usaMotor(row)){const lv=liveFor(p,row); if(lv&&lv!=="pending")dir={min:lv.min,d:lv.d};}   /* centro, vuelta, destinos: por calle (OSRM) */
+  if(!dir&&usaMotor(row,p)){const lv=liveFor(p,row); if(lv&&lv!=="pending")dir={min:lv.min,d:lv.d};}   /* centro, vuelta, destinos: por calle (OSRM) */
   const who=`<p style="margin:8px 0 0;font-size:12px;color:var(--muted)">${pf.n}: ${bike?"🚲 bici + S-tog/tren":"🚶 andando + bus, metro, tren"} · ${bike?pf.vb:pf.vw} km/h · máx. ${limTxt(pf,pf.lim)} por tramo (cámbialo en Configuración)</p>`;
   const ref=dir?`<p style="margin:8px 0 0;font-size:11.5px;color:var(--muted)">Solo ${bike?`en bici (${pf.vb} km/h)`:`andando (${pf.vw} km/h)`}, sin transporte: ${dir.min} min · ${km(dir.d)}</p>`:"";
   if(!r)return who+`<p style="font-size:12.5px">Sin ruta para «${MOM().t.toLowerCase()} ${tripTime}». Cambia la hora o sube el máximo de ${pf.n} en Configuración.</p>`+ref;
@@ -1568,11 +1573,11 @@ document.addEventListener("click",e=>{
   const a=e.target.closest("[data-alt]");
   if(a){e.stopPropagation(); const [id,key,n]=a.dataset.alt.split("|"); ALT[id+"|"+key]=+n; routeDest=key; saveUI();
     if(!card.hidden)showCard(card.dataset.id); drawRoute(id,key,true);
-    const st=document.getElementById("rt-steps"); if(st&&sheet.dataset.id===id)st.innerHTML=stepsHtml(PISOS.find(x=>x.id===id),key);
-    const rb=document.querySelector("#sheet .rt"); if(rb&&sheet.dataset.id===id){rb.outerHTML=routesHtml(PISOS.find(x=>x.id===id)); drawRoute(id,key,false);} return;}
+    const st=document.getElementById("rt-steps"); if(st&&sheet.dataset.id===id)st.innerHTML=stepsHtml(pisoBy(id),key);
+    const rb=document.querySelector("#sheet .rt"); if(rb&&sheet.dataset.id===id){rb.outerHTML=routesHtml(pisoBy(id)); drawRoute(id,key,false);} return;}
   const b=e.target.closest("[data-route]");if(!b)return;
   const [id,key]=b.dataset.route.split("|"); routeDest=key; saveUI(); drawRoute(id,key,true);
-  const st=document.getElementById("rt-steps"); if(st&&sheet.dataset.id===id)st.innerHTML=stepsHtml(PISOS.find(x=>x.id===id),key);});
+  const st=document.getElementById("rt-steps"); if(st&&sheet.dataset.id===id)st.innerHTML=stepsHtml(pisoBy(id),key);});
 document.addEventListener("keydown",e=>{if((e.key==="Enter"||e.key===" ")&&e.target.matches&&e.target.matches(".rt-i[data-route]")){e.preventDefault();e.target.click();}});
 function pinIcon(p,sel){const sz=sel?36:30;
   return L.divIcon({className:"",iconSize:[sz,sz],iconAnchor:[sz/2,sz/2],popupAnchor:[0,-sz/2],
@@ -1594,7 +1599,7 @@ function quienSoy(){return new Promise(res=>{if(YO)return res(YO);
     YO=w; try{localStorage.setItem("yo",YO);}catch(_){} const s=document.getElementById("yo"); if(s)s.value=YO; res(YO);});
   document.body.appendChild(o); o.querySelector("[data-soy]").focus();});}
 const stPill=p=>`<div class="stw"><div class="stp" style="--sc:${ESTADOS[p.st].c}"><i></i>${ESTADOS[p.st].t}<small>desde ${esc(p.stF)}${p.by?` · por ${esc(nombre(p.by))}`:""}${p.motivo?` · ${esc(p.motivo)}`:""}${p.st==="descartado"&&leftH(p)>0?` · ⏳ sale del mapa en ${Math.ceil(leftH(p))} h`:""}</small></div>
-  <div class="stb" role="group" aria-label="Cambiar estado">${Object.entries(ESTADOS).map(([k,e])=>`<button data-setst="${p.id}|${k}" aria-pressed="${p.st===k}" style="--sc:${e.c}" title="${e.t}"><i></i>${e.t.split(" ·")[0].replace(" con el casero","")}</button>`).join("")}</div></div>`;
+  <div class="stb" role="group" aria-label="Cambiar estado">${Object.entries(ESTADOS).map(([k,e])=>`<button data-${p.cand?"cst":"setst"}="${p.id}|${k}" aria-pressed="${p.st===k}" style="--sc:${e.c}" title="${e.t}"><i></i>${e.t.split(" ·")[0].replace(" con el casero","")}</button>`).join("")}</div></div>`;
 /* avisos breves cuando OTRA persona cambia un estado (no al cargar la página ni por tus propios cambios) */
 let remoteReady=false;
 function toast(txt){let box=document.getElementById("toasts");
@@ -1671,7 +1676,7 @@ let cardPos=null; try{cardPos=JSON.parse(localStorage.getItem("cardPos")||"null"
 function placeCard(){if(!cardPos||innerWidth<=760){card.style.left=card.style.top="";return;}
   const wrap=card.parentElement, W=wrap.clientWidth, H=wrap.clientHeight;
   card.style.left=Math.max(4,Math.min(cardPos.x,W-card.offsetWidth-4))+"px"; card.style.top=Math.max(4,Math.min(cardPos.y,H-60))+"px";}
-function showCard(id){const p=PISOS.find(x=>x.id===id); if(!p)return; card.dataset.id=id;
+function showCard(id){const p=pisoBy(id); if(!p)return; card.dataset.id=id;
   cardB.innerHTML=popupHtml(p); card.hidden=false; placeCard();}
 function hideCard(){card.hidden=true;}
 document.getElementById("card-x").addEventListener("click",hideCard);
@@ -1796,7 +1801,7 @@ function galHtml(p){const f=p.fotos||[];
     <a class="gal-main" href="${esc(imgUrl(f[0]))}" target="_blank" rel="noopener"><img src="${esc(imgUrl(f[0]))}" alt="${p.fotoPlano?"Plano":"Foto 1"}" data-i="0">${p.fotoPlano?'<span class="gal-tag">Plano</span>':""}</a>
     <div class="gal-th">${f.map((u,i)=>`<button data-gi="${i}" class="${i===0?"on":""}" aria-label="Foto ${i+1}"><img loading="lazy" src="${esc(imgUrl(u))}" alt=""></button>`).join("")}</div>
     <a class="gal-link" href="${esc(p.link)}" target="_blank" rel="noopener">${f.length} fotos · ver el anuncio en ${esc(p.portal)} ↗</a></div>`;}
-document.addEventListener("click",e=>{const b=e.target.closest("[data-gi]"); if(!b)return; const g=b.closest("[data-gal]"), p=PISOS.find(x=>x.id===g.dataset.gal); if(!p)return;
+document.addEventListener("click",e=>{const b=e.target.closest("[data-gi]"); if(!b)return; const g=b.closest("[data-gal]"), p=pisoBy(g.dataset.gal); if(!p)return;
   const i=+b.dataset.gi, u=imgUrl(p.fotos[i]), main=g.querySelector(".gal-main"); main.href=u; main.querySelector("img").src=u;
   const tag=main.querySelector(".gal-tag"); if(tag)tag.hidden=!(p.fotoPlano&&i===0);
   g.querySelectorAll("[data-gi]").forEach(x=>x.classList.toggle("on",x===b));});
@@ -1805,7 +1810,7 @@ document.addEventListener("error",e=>{const im=e.target; if(!(im instanceof HTML
   im.closest("button")?.classList.add("bad"); if(im.closest(".gal-main")){im.closest(".gal").classList.add("off");}
   if(_imgErr++<5)clientLog("foto no carga: "+(im.src||"").slice(0,160),"galería");},true);
 function openSheet(id){
-  const p=PISOS.find(x=>x.id===id); hideCard();
+  const p=pisoBy(id); hideCard();
   const bar=(l,v,w)=>`<div class="bar"><span>${l} <small style="color:var(--muted)">${w}</small></span><i><em style="width:${Math.round(v*100)}%"></em></i><b>${Math.round(v*100)}</b></div>`;
   const row=(k,v)=>v==null||v===""?"":`<dt>${k}</dt><dd>${v}</dd>`;
   const isPortal=p.portal;
@@ -1835,7 +1840,7 @@ function openSheet(id){
        ${row("Depósito",kr(p.dep))}${row("Prepago",kr(p.pre))}${row("Total a la entrada (depósito + prepago)",p.entradaCmp!=null?kr(p.entradaCmp):kr(p.entrada)+(p.entrada!=null?" (el anuncio no lo separa)":""))}</dl></div>
      <div class="sec"><h4>Piso</h4><dl class="kv">
        ${row("Dormitorios",esc(p.dorm))}${row("Fuente dormitorios",esc(p.dormEst))}${row("Disponible",esc(p.disp))}
-       ${row("Compartir piso",esc(p.deleg||"No indicado"))}${row("Mascotas",esc(p.mascotas))}${row("Amueblado",esc(p.amueblado))}${row("Balcón",esc(p.balcon))}</dl></div>
+       ${row("Compartir piso",esc(p.deleg||"No indicado"))}${row("Mascotas",esc(p.mascotas))}${row("Amueblado",esc(p.amueblado))}${row("Balcón",esc(p.balcon))}${row("Ascensor",p.ascensor&&esc(p.ascensor))}</dl></div>
      <div class="sec"><h4>Transporte</h4><dl class="kv">
        ${row("S-tog más cercano",`${esc(p.est.n)} (${[...linesAt[p.est.n]].sort().join(", ")})`)}
        ${row("Distancia a la estación",p.est.d.toFixed(1)+" km en línea recta")}
@@ -1915,14 +1920,34 @@ pullEstados(); setInterval(()=>{if(!document.hidden&&(!TREAL.on||Date.now()-TREA
 /* ---------- propuestos por Lares (Raspberry Pi) ---------- */
 
 const kr0=n=>n==null?"?":fmt(n);
+/* datos sí/no del portal (Boligportal los da casi todos; EDC balcón y ascensor; amueblado también del texto) */
+const RASGOS=[["amueblado","🛋️ Amueblado","Sin amueblar"],["compartible","👥 Se puede compartir","No se puede compartir"],["balcon","Balcón",null],["ascensor","Ascensor",null],["mascotas","Mascotas sí",null],["lavadora","Lavadora",null],["parking","Parking",null]];
+const rasgosTxt=c=>RASGOS.map(([k,si,no])=>c[k]===true?si:c[k]===false&&no?no:"").filter(Boolean).map(esc).join(" · ");
 function candItem(c){const st=ESTADOS[c.st]?c.st:"nuevo", cid=esc(c.id);
   return `<div class="cand"><a class="t" href="${safeUrl(c.link)}" target="_blank" rel="noopener">${esc(c.zona||"")} · ${esc(c.titulo||c.lugar||"Anuncio")} ↗</a>
    ${quien(c)?`<span class="m"><b>${quien(c)}</b></span>`:""}
    <span class="m">${kr0(c.precio)} kr/mes · ${esc(c.m2||"?")} m² · ${esc(c.vaer||"?")} vær. · libre ${esc(c.disp||"?")} · ${esc(c.portal||"")}</span>
    ${c.dep!=null||c.pre!=null?`<span class="m">Depósito ${kr0(c.dep)} kr · Prepago ${kr0(c.pre)} kr</span>`:""}
+   ${rasgosTxt(c)?`<span class="m">${rasgosTxt(c)}</span>`:""}
    ${Array.isArray(c.avisos)&&c.avisos.length?`<span class="w">⚠ ${c.avisos.map(esc).join(" · ")}</span>`:""}
-   <span class="b">${c.plano?`<a href="${safeUrl(c.plano)}" target="_blank" rel="noopener">Plano ↗</a>`:""}
+   <span class="b">${candConUbic(c)?`<button data-cand="${cid}">📋 Ver ficha y rutas</button>`:""}${c.plano?`<a href="${safeUrl(c.plano)}" target="_blank" rel="noopener">Plano ↗</a>`:""}
     ${st!=="gusta"?`<button data-cst="${cid}|gusta">🔵 Me gusta</button>`:""}${st!=="descartado"?`<button data-cst="${cid}|descartado">🔴 Descartar</button>`:""}${st!=="nuevo"?`<button data-cst="${cid}|nuevo">🟠 Volver a sin decidir</button>`:""}</span></div>`;}
+/* Propuesto -> «piso provisional» para abrirlo en la misma ficha que los del mapa (rutas con el motor de la Pi). */
+const sino=(v,si="Sí",no="No")=>v===true?si:v===false?no:"No indicado";
+const numOr=(v,o=null)=>v!=null&&v!==""&&Number.isFinite(+v)?+v:o;   /* datos de anuncios de fuera: solo números */
+function candPiso(c){const id=String(c.id), d=numOr(c.dorm??c.plano_dorm);
+  const p={id,cand:true,zona:c.zona||"",barrio:c.zona||"",calle:String(c.titulo||c.lugar||"Propuesto"),m2:numOr(c.m2,"?"),vaer:numOr(c.vaer,"?"),planta:"",
+    alq:numOr(c.precio,0),aconto:numOr(c.aconto),dep:numOr(c.dep),pre:numOr(c.pre),disp:c.disp||"Sin confirmar",link:c.link,portal:c.portal||"",
+    lat:+c.lat,lon:+c.lon,fotos:Array.isArray(c.fotos)?c.fotos:(c.plano?[c.plano]:[]),fotoPlano:false,
+    dorm:d!=null?String(d):"Sin confirmar",dormEst:numOr(c.dorm)!=null?"Ficha del portal":c.plano_dorm!=null?"Plano revisado":"Estimado: værelser − 1",
+    deleg:sino(c.compartible),mascotas:sino(c.mascotas),amueblado:sino(c.amueblado,"Sí","Sin amueblar"),balcon:sino(c.balcon),
+    ascensor:sino(c.ascensor),ubic:"coordenadas del anuncio",st:ESTADOS[c.st]?c.st:"nuevo",stF:c.visto||c.ts&&new Date(c.ts*1000).toISOString().slice(0,10)||"",
+    by:c.by,motivo:c.motivo,notas:c.descripcion||"",estado:(c.avisos||[]).length?"warn":"ok",aviso:"Lares: "+(c.avisos||[]).join(" · ")};
+  enrich(p); CANDP[id]=p; return p;}
+const candConUbic=c=>Number.isFinite(+c.lat)&&Number.isFinite(+c.lon)&&c.lat!=null&&c.lon!=null;
+function openCand(id){const c=CANDS.find(x=>String(x.id)===String(id)); if(!c||!candConUbic(c))return; candPiso(c); openSheet(String(c.id)); drawRoute(String(c.id),routeDest,false);
+  map.flyTo([+c.lat,+c.lon],Math.max(map.getZoom(),13),{duration:.6});}
+document.addEventListener("click",e=>{const b=e.target.closest("[data-cand]"); if(!b)return; e.preventDefault(); map.closePopup(); openCand(b.dataset.cand);});
 function renderCands(){const el=document.getElementById("lares"); if(!el)return;
   CANDS.forEach(c=>{if(!ESTADOS[c.st])c.st="nuevo";});   /* estado desconocido o vacío = sin decidir */
   const sin=CANDS.filter(c=>c.st==="nuevo"), gus=CANDS.filter(c=>c.st==="gusta"||c.st==="contactado");
@@ -1946,7 +1971,8 @@ async function pullCandidatos(){try{const r=await fetch(API+"/api/candidatos",{c
   const el=document.getElementById("lares-s"); if(el&&d.actualizado){const h=(Date.now()-Date.parse(d.actualizado))/36e5; el.textContent=`Última pasada de Lares: hace ${h<1?Math.round(h*60)+" min":h.toFixed(1)+" h"}.`;}}catch(e){}}
 document.addEventListener("click",async e=>{const b=e.target.closest("[data-cst]"); if(!b)return; if(PISOS.some(x=>x.id===b.dataset.cst.split("|")[0]))return; e.stopPropagation(); b.disabled=true;
   if(!YO&&!(await quienSoy())){b.disabled=false; return;}
-  const [id,st]=b.dataset.cst.split("|"); if(await pushEstado(id,st)){const c=CANDS.find(x=>String(x.id)===id); if(c){c.st=st;} renderCands(); map.closePopup(); pullCandidatos();}
+  const [id,st]=b.dataset.cst.split("|"); if(await pushEstado(id,st)){const c=CANDS.find(x=>String(x.id)===id); if(c){c.st=st;} renderCands(); map.closePopup(); pullCandidatos();
+    if(c&&sheet.classList.contains("open")&&sheet.dataset.id===id){c.by=YO; c.ts=Math.floor(Date.now()/1000); openCand(id);}}
   else{b.disabled=false; alert("No se pudo guardar: la Raspberry Pi no responde.");}});
 /* ---------- zonas que vigila Lares ---------- */
 let ZONASL={};
@@ -1969,13 +1995,13 @@ renderShow(); if(!SHOW.nuevo)candLayer.remove(); updBarLbl();
 let FB=null;
 function fillBusq(){const f=document.getElementById("fbusq"); if(!FB)return;
   f.precio_max.value=FB.precio_max; f.dorm_min.value=FB.dorm_min; f.disp_desde.value=FB.disp_desde; f.disp_hasta.value=FB.disp_hasta;
-  f.compartir.checked=!!FB.compartir; f.contrato_largo.checked=!!FB.contrato_largo;
+  f.compartir.checked=!!FB.compartir; f.contrato_largo.checked=!!FB.contrato_largo; f.amueblado.value=FB.amueblado||"igual";
   document.getElementById("busq-s").textContent=`· ≤${fmt(FB.precio_max)} kr · ${FB.dorm_min}+ dorm.`;}
 async function pullBusq(){try{const r=await fetch(API+"/api/filtros",{cache:"no-cache"}); if(!r.ok)throw 0; FB=await r.json(); fillBusq();}
   catch(e){document.getElementById("fbusq-m").textContent="Sin conexión con la Raspberry Pi.";}}
 document.getElementById("fbusq").addEventListener("submit",async e=>{e.preventDefault(); const f=e.target, m=document.getElementById("fbusq-m");
-  const body={precio_max:+f.precio_max.value,dorm_min:+f.dorm_min.value,disp_desde:f.disp_desde.value,disp_hasta:f.disp_hasta.value,compartir:f.compartir.checked,contrato_largo:f.contrato_largo.checked,by:YO};
-  if(!confirm(`⚠️ ESTE CAMBIO ES DE BÚSQUEDA, NO DE VISUALIZACIÓN\nCambia lo que Lares busca para todos (no solo lo que ves en el mapa).\n\n¿Guardar la búsqueda de Lares?\n\n• Precio máx.: ${fmt(body.precio_max)} kr/mes\n• Dormitorios mín.: ${body.dorm_min}\n• Entrada: ${body.disp_desde} → ${body.disp_hasta}\n• Compartir: ${body.compartir?"obligatorio":"da igual"}\n• Contrato largo: ${body.contrato_largo?"obligatorio":"da igual"}\n\nSe aplica desde la próxima pasada de Lares.`))return;
+  const body={precio_max:+f.precio_max.value,dorm_min:+f.dorm_min.value,disp_desde:f.disp_desde.value,disp_hasta:f.disp_hasta.value,compartir:f.compartir.checked,contrato_largo:f.contrato_largo.checked,amueblado:f.amueblado.value,by:YO};
+  if(!confirm(`⚠️ ESTE CAMBIO ES DE BÚSQUEDA, NO DE VISUALIZACIÓN\nCambia lo que Lares busca para todos (no solo lo que ves en el mapa).\n\n¿Guardar la búsqueda de Lares?\n\n• Precio máx.: ${fmt(body.precio_max)} kr/mes\n• Dormitorios mín.: ${body.dorm_min}\n• Entrada: ${body.disp_desde} → ${body.disp_hasta}\n• Compartir: ${body.compartir?"obligatorio":"da igual"}\n• Contrato largo: ${body.contrato_largo?"obligatorio":"da igual"}\n• Amueblado: ${{igual:"da igual",no:"solo sin amueblar",si:"solo amueblados"}[body.amueblado]}\n\nSe aplica desde la próxima pasada de Lares.`))return;
   m.textContent="Guardando…";
   try{const r=await fetch(API+"/api/filtros",{method:"POST",headers:{"Content-Type":"application/json","X-Pisos-Key":API_KEY},body:JSON.stringify(body)});
     if(!r.ok)throw new Error(r.status===400?"datos no válidos":"HTTP "+r.status); FB=await r.json(); fillBusq(); m.textContent="✓ Guardado. Lares lo usará en su próxima pasada.";}
