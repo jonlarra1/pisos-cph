@@ -307,6 +307,13 @@ class TestDestinoAnadido(Web):
         self.js(f"drawRoute('{pid}','xcris-unai',false)")
         tramos = self.js("routeLayer.getLayers().filter(l=>l.options&&/walk|bike/.test(l.options.className||'')).map(l=>l.getLatLngs().length)")
         self.assertTrue(tramos); self.assertTrue(all(n > 2 for n in tramos), tramos)    # ningún tramo en línea recta (2 puntos)
+    def test_metro_del_motor_sigue_la_via(self):
+        pid = self.abrir(); self.esperar(f"RTS('{pid}','xcris-unai').length===1")
+        self.js(f"drawRoute('{pid}','xcris-unai',false)")
+        n = self.js("Math.max(...routeLayer.getLayers().filter(l=>l.getLatLngs&&l.options.dashArray==='10 8').map(l=>l.getLatLngs().length))")
+        self.assertGreater(n, 4)                                                        # trazado del M4, no una recta
+        self.assertIsNone(self.js("railPath({line:'M4',path:[[55.653,12.556],[55.70,12.40],[55.672,12.564]]})"))  # parada lejos: no se fuerza
+        self.assertIsNone(self.js("railPath({line:'350S',path:[[55.65,12.55],[55.66,12.56]]})"))                 # bus: sin vía
     def test_barra_de_progreso(self):
         self.ruta_retenida = []; pid = self.abrir()
         self.esperar("document.querySelector('#sheet .tp-bar')")
