@@ -407,6 +407,13 @@ class TestRutaDirecta(unittest.TestCase):
         o = self.motor([tren]).ruta(*self.CASA, self.CERCA, "Cris", "2026-10-26", "08:00", "salir", self.PF)
         self.assertEqual(o[0]["solo"], "bike"); self.assertLessEqual(o[0]["min"], 4)
         self.assertEqual(len(o), 1)                                    # la de tren (más lenta) sobra
+    def test_andable_es_la_principal_aunque_el_bus_sea_algo_mas_rapido(self):
+        bus = (8*3600+9*60, 1, "17", "08:07")                         # 9 min con bus
+        pf = {**self.PF, "mode": "foot", "lim_min": 20}                # 1,2 km andando ≈ 15 min: cabe en 20
+        o = self.motor([bus]).ruta(*self.CASA, self.CERCA, "Cris", "2026-10-26", "08:00", "salir", pf)
+        self.assertEqual(o[0]["solo"], "walk"); self.assertEqual(len(o), 2); self.assertLess(o[1]["min"], o[0]["min"])
+        o = self.motor([bus]).ruta(*self.CASA, self.CERCA, "Cris", "2026-10-26", "08:00", "salir", {**pf, "lim_min": 5})
+        self.assertFalse(o[0].get("solo"))                              # no cabe en 5 min: manda el bus
     def test_lejos_manda_el_transporte(self):
         tren = (8*3600+26*60, 1, "A", "08:24")
         o = self.motor([tren]).ruta(*self.CASA, self.LEJOS, "NS", "2026-10-26", "08:00", "salir", {**self.PF, "lim_min": 10})

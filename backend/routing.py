@@ -223,14 +223,16 @@ class Motor:
             ban.add(main["line"])
         # sin transporte: ir directo en bici / andando. Se ofrece si cabe en el máximo por tramo o si tarda como mucho
         # 5 min más que la mejor con transporte (antes una ruta de 5 min en bici salía como «bici + tren + bici»).
-        # Si se ofrece, sobran las opciones con transporte que no son más rápidas que ir directo.
+        # Si cabe en el máximo por tramo es la ruta principal (lo que uno elige como «se puede ir andando / en bici»),
+        # aunque un bus sea un poco más rápido: esas quedan como alternativas. Sobran las de transporte más lentas.
         d = self.directo(la, lo, dest, dname, pf)
         mejor = min((o["min"] for o in opts), default=None)
-        if mejor is None or d["min"] <= pf["lim_min"] or d["min"] <= mejor + 5:
+        cabe = d["min"] <= pf["lim_min"]
+        if mejor is None or cabe or d["min"] <= mejor + 5:
             sale = T - d["min"]*60 if modo == "llegar" else T
             opts = [o for o in opts if o["min"] < d["min"]]
-            opts.append({**d, "sale": hm(sale), "llega": hm(sale + d["min"]*60)})
-        opts.sort(key=lambda o: o["min"])
+            opts.append({**d, "sale": hm(sale), "llega": hm(sale + d["min"]*60), "principal": cabe})
+        opts.sort(key=lambda o: (not o.get("principal"), o["min"]))
         return opts
 
     def directo(self, la, lo, dest, dname, pf):

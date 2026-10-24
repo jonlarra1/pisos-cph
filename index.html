@@ -1425,7 +1425,7 @@ function preRTS(id,row,day,time){const pf=PERF[row.who];
   const i=((((RUTAS.ix[pf.mode]||{})[day]||{})[time]||{})[pf.lim]||{})[id]; let j=i&&i[row.k]; if(j==null)return []; if(!Array.isArray(j))j=[j];
   return j.map(x=>RUTAS.routes[x]).filter(Boolean).map(r=>adj(r,pf)).sort((a,b)=>a.min-b.min||(a.sale<b.sale?1:-1));}  // la más rápida primero
 const RTS=(id,key)=>{const row=rowOf(key); if(!row)return [];
-  if(usaMotor(row)){const P=PISOS.find(x=>x.id===id), t=P&&tpFor(P,row); return Array.isArray(t)?t.slice().sort((a,b)=>a.min-b.min):[];}
+  if(usaMotor(row)){const P=PISOS.find(x=>x.id===id), t=P&&tpFor(P,row); return Array.isArray(t)?t.slice().sort((a,b)=>(!!b.principal-!!a.principal)||a.min-b.min):[];}   /* directo dentro del límite: primero */
   return preRTS(id,row,tripDay,tripTime);};
 /* siempre la mañana precalculada (para la lista de barrios: no lanza peticiones a la Pi) */
 const RTman=(id,key)=>{const row=ROWS.find(r=>r.key===key); if(!row)return null;
