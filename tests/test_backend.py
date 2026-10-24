@@ -67,6 +67,10 @@ class TestValidarFiltros(Base):
     def test_rechaza_valores_fuera_de_rango(self):
         for k, v in (("precio_max", 500), ("precio_max", 99999), ("dorm_min", 0), ("dorm_min", 9), ("disp_desde", "mañana"), ("disp_hasta", "2026-01-01")):
             with self.subTest(k=k, v=v): self.assertIsNone(app.validar_filtros({**self.OK, k: v}))
+    def test_amueblado(self):
+        self.assertEqual(app.validar_filtros(self.OK)["amueblado"], "igual")             # opcional: webs sin el campo
+        self.assertEqual(app.validar_filtros({**self.OK, "amueblado": "no"})["amueblado"], "no")
+        self.assertIsNone(app.validar_filtros({**self.OK, "amueblado": "quizá"}))
     def test_rechaza_si_falta_un_campo(self):
         d = dict(self.OK); d.pop("compartir"); self.assertIsNone(app.validar_filtros(d))
 
@@ -77,6 +81,7 @@ class TestImgUrl(Base):
         for u in ("http://image-lambda.boligportal.dk/x", "https://evil.com/x.jpg", "https://image-lambda.boligportal.dk:8080/x",
                   "https://user:pw@image-lambda.boligportal.dk/x", "https://image-lambda.boligportal.dk/../../etc/passwd",
                   "https://image-lambda.boligportal.dk/%2e%2e/x", "https://s3.eu-central-1.amazonaws.com/otro-bucket/x.jpg",
+                  "https://billeder.edc.dk/otra-carpeta/x.jpg", "https://billeder.edc.dk/edcmedia/../x.jpg",
                   "file:///etc/passwd", "https://127.0.0.1/x", ""):
             with self.subTest(u=u), self.assertRaises(ValueError): app.img_proxy(u)
     def test_redirecciones_solo_a_portales(self):

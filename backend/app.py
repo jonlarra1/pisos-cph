@@ -12,7 +12,7 @@ ID_RE = re.compile(r"^[0-9]{4,12}$")
 BRIDGE = os.environ.get("BRIDGE_DIR", "/bridge")      # carpeta compartida con Lares (vault/Vivienda/pisos-bridge)
 # Filtros de Jon (rev. 2026-10-21). Lares los lee de config.json.
 FILTROS = {"precio_max": 23000, "dorm_min": 3, "vaer_min": 4, "disp_desde": "2026-12-18", "disp_hasta": "2027-01-15",
-           "compartir": True, "contrato_largo": True}
+           "compartir": True, "contrato_largo": True, "amueblado": "igual"}
 ZONAS_DEFAULT = {  # zona: permitida
     "Hellerup": 1, "Gentofte": 1, "Charlottenlund": 1, "Klampenborg": 1, "Lyngby": 1, "Virum": 1, "Søborg": 1, "Buddinge": 1,
     "Gladsaxe": 1, "Bagsværd": 1, "Herlev": 1, "Husum": 1, "Brønshøj": 1, "Vanløse": 1, "Rødovre": 1, "Ballerup": 1,
@@ -32,7 +32,8 @@ SITE_DATA = {}                               # PISOS / OUT de la web publicada (
 CHECKS = {}                                  # último resultado de cada comprobación
 CHECK_HIST = collections.defaultdict(lambda: collections.deque(maxlen=10))   # 10 últimas de cada una
 IMG_DIR = os.path.join(os.path.dirname(DB) or "/data", "imgcache")
-IMG_HOSTS = {"image-lambda.boligportal.dk": "https://www.boligportal.dk/", "s3.eu-central-1.amazonaws.com": None}
+IMG_HOSTS = {"image-lambda.boligportal.dk": "https://www.boligportal.dk/", "s3.eu-central-1.amazonaws.com": None,
+             "billeder.edc.dk": "https://www.edc.dk/"}
 IMG_MAX_MB, IMG_CACHE_MB = 8, 300
 IMG_STATS = {"hit": 0, "fetch": 0, "error": 0}
 os.makedirs(IMG_DIR, exist_ok=True)
@@ -204,6 +205,7 @@ def validar_filtros(d):
             v = str(d[k]); assert re.match(r"^20\d\d-\d\d-\d\d$", v); f[k] = v
         assert f["disp_desde"] <= f["disp_hasta"]
         f["compartir"] = bool(d["compartir"]); f["contrato_largo"] = bool(d["contrato_largo"])
+        f["amueblado"] = str(d.get("amueblado", "igual")); assert f["amueblado"] in ("igual", "si", "no")   # opcional (webs viejas)
     except Exception:
         return None
     return f
@@ -252,6 +254,7 @@ def img_proxy(u):
     raw = urllib.parse.unquote(pu.path)
     if ".." in raw or "\\" in raw or pu.username or pu.password or pu.port not in (None, 443): raise ValueError("ruta no permitida")
     if pu.hostname.startswith("s3.") and not raw.startswith("/lejeboligdata/images/"): raise ValueError("ruta no permitida")
+    if pu.hostname == "billeder.edc.dk" and not raw.startswith("/edcmedia/"): raise ValueError("ruta no permitida")
     key = hashlib.sha1(u.encode()).hexdigest(); path = os.path.join(IMG_DIR, key)
     if os.path.exists(path):
         IMG_STATS["hit"] += 1
@@ -277,7 +280,7 @@ def img_proxy(u):
                 try: os.remove(y)
                 except OSError: pass
         log("events", level="info", src="img", msg=f"caché de fotos limpiada ({total//1048576} MB)")
-    return data, ctype, "portal:" + ("boligportal" if "boligportal" in pu.hostname else "lejebolig")
+    return data, ctype, "portal:" + ("boligportal" if "boligportal" in pu.hostname else "edc" if "edc" in pu.hostname else "lejebolig")
 
 _rl_logged = {}
 def limited(key, cap=30, glob_key=None, glob_cap=None):
