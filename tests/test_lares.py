@@ -62,7 +62,7 @@ class Pasada:
         with mock.patch.object(self.m, "fetch", self.fetch), \
              mock.patch.object(self.m, "parse_boligportal", self.parser("boligportal")), \
              mock.patch.object(self.m, "parse_lejebolig", self.parser("lejebolig")), \
-             mock.patch.object(self.m, "detalle", lambda it: {}), mock.patch("time.sleep"), \
+             mock.patch.object(self.m, "detalle", lambda it: {"amueblado": None}), mock.patch("time.sleep"), \
              mock.patch.object(self.m, "estado_anuncio", self.estado), \
              contextlib.redirect_stdout(io.StringIO()) as self.salida:          # las líneas «NUEVO |…» que lee Lares
             self.m.STATS.clear(); self.m.main()
@@ -251,6 +251,20 @@ class TestAmuebladoYRasgos(unittest.TestCase):
     def test_compartible_del_portal(self):
         ok, mot, _ = self.ev(compartible=False, texto=""); self.assertFalse(ok); self.assertIn("dato del portal", mot)
         ok, _, av = self.ev(compartible=True, texto=""); self.assertTrue(ok); self.assertNotIn("compartir sin confirmar", av)
+    def test_fichas_viejas_de_la_cache_se_releen(self):
+        con = sqlite3.connect(self.m.DB)
+        con.execute("CREATE TABLE IF NOT EXISTS v2_detalle (id TEXT PRIMARY KEY, data TEXT, ts TEXT)")
+        con.execute("INSERT INTO v2_detalle VALUES ('1', ?, 'x')", (json.dumps({"texto": "viejo"}),)); con.commit(); con.close()
+        abiertas = []
+        pas = Pasada(self.m, {"boligportal": [[1]]})
+        with mock.patch.object(self.m, "fetch", pas.fetch), mock.patch.object(self.m, "parse_boligportal", pas.parser("boligportal")), \
+             mock.patch.object(self.m, "parse_lejebolig", lambda h: {}), mock.patch.object(self.m, "estado_anuncio", pas.estado), \
+             mock.patch.object(self.m, "detalle", lambda it: abiertas.append(it["id"]) or {"amueblado": True}), mock.patch("time.sleep"), \
+             contextlib.redirect_stdout(io.StringIO()):
+            self.m.main()
+        self.assertEqual(abiertas, ["1"])
+        c = json.loads((self.m.BRIDGE / "candidatos.json").read_text(encoding="utf-8"))
+        self.assertIs(c["pisos"][0]["amueblado"], True)
     def test_ficha_edc_balcon_ascensor_descripcion(self):
         html = TestEDC.FICHA.replace("<dt>Lejeperiode</dt>", "<dt>Altan/terrasse</dt><dd>Ja</dd><dt>Elevator</dt><dd>Nej</dd><dt>Lejeperiode</dt>") \
             .replace("<p>Boligen er delevenlig.</p>", "<a>Hent boligpræsentation</a><p>Bo ved vandet. Boligen er delevenlig og umøbleret.</p><a>Læs hele sagsbeskrivelsen</a>")

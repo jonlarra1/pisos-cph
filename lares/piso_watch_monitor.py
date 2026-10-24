@@ -446,7 +446,8 @@ def main():
             time.sleep(2)
             if ultima or not page: break                          # no hay más páginas
             if i + 1 >= minimo and not (set(page) - vistos_antes): break
-    cache = {r[0]: json.loads(r[1]) for r in con.execute("SELECT id, data FROM v2_detalle")}
+    # fichas leídas antes de que Lares sacara amueblado/balcón/ascensor: se vuelven a abrir (con el mismo cupo por pasada)
+    cache = {i: d for i, d in ((r[0], json.loads(r[1])) for r in con.execute("SELECT id, data FROM v2_detalle")) if "amueblado" in d}
 
     budget, budget_edc, pendientes = MAX_DETAIL, MAX_DETAIL_EDC, 0
     orden_ids = sorted(listings, key=lambda k: (bool(listings[k].get("_edc")), listings[k]["portal"] != "EDC"))  # EDC propios antes que copias
