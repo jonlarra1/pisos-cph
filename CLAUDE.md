@@ -57,6 +57,16 @@ The user is Jon. He works at Nordic Solar (Hellerup). He prefers short, simple, 
     permisos de otros usuarios (pasó con lares/cron/jobs.json, revertido). Comprobar `getfacl` antes y después.
 - Hosting: GitHub Pages (fixed link for flatmates). Commit + push to update.
 
+## Métricas DORA (regla de Jon, 26-oct)
+- Medir siempre con `python3 tools/dora.py` (usa el python de `.venv` para la parte de calidad): frecuencia de despliegue, cambio → producción,
+  tasa de fallos, tasa de retrabajo, recuperación y commits sin desplegar, por pieza (web, backend, lares) + calidad (líneas, duplicado,
+  complejidad, bandit, avisos de estilo). Fuentes: git, GitHub Pages (`gh api`) y `docs/despliegues.jsonl`.
+- `backend/deploy.sh` apunta cada instalación (ok / vuelta_atras). Lares se instala a mano: después, `python3 tools/dora.py --registrar lares ok "nota"`.
+- Al cerrar cada bloque: `python3 tools/dora.py --guardar` (añade la foto a `docs/metricas.jsonl`) y contar a Jon las cifras y qué mejorar.
+- Punto de partida (26-oct, 30 días): web 1,6 despliegues/día, 1 min, 20 % fallos (6 builds de Pages fallidos), 10 % retrabajo;
+  backend 0,2/día, mediana 2,2 h, 33 % fallos/retrabajo, recuperación 41 min; Lares 0,1/día, 37 h, 0 %; calidad: 2303 líneas,
+  0,2 % duplicado, 15 funciones con complejidad >20, 1122 avisos de estilo.
+
 ## Tests (obligatorio antes de cada commit)
 - `./tests/run.sh` (backend + datos, ~3 s, sin internet) antes de cada commit; `./tests/run.sh web` (Chromium, ~40 s) si se toca index.html.
   Por función: `./tests/run.sh -k propuestos`. Cada función nueva lleva su test (tests/test_backend.py, test_datos.py, test_web.py).
