@@ -13,6 +13,7 @@ services:
     environment:
       ALLOWED_ORIGINS: "https://jonlarra1.github.io,http://localhost:8000"
       API_KEY: "${API_KEY}"
+      CLAVE_LARES: "${CLAVE_LARES}"   # chat de Lares (lares/pisos.py); vacía = no se acepta
       ADMIN_USERS: "larrabajojon@"    # Tailscale login(s) allowed to open the status panel
     read_only: true
     tmpfs: [/tmp]

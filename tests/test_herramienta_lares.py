@@ -42,11 +42,25 @@ class TestHerramientaLares(BaseV2):
         self.assertIn("propuesto → gusta (lares:jon) le gusta a Jon", ficha)
         self.assertEqual(pedir("/api/estados")[2]["11810121"]["st"], "gusta")        # la web lo ve
 
+    def test_nota_y_dormitorios_del_plano(self):
+        self.ejecutar("añadir", BP)
+        self.assertIn("Nota guardada", self.ejecutar("nota", BP, "ficha", "revisada:", "gemela", "de", "1917762"))
+        salida = self.ejecutar("dormitorios", BP, "2")
+        self.assertIn("2 dorm.", salida)
+        self.assertIn("no pasa", salida)                                   # con 2 dormitorios ya no cumple el mínimo
+        ficha = self.ejecutar("consultar", BP)
+        self.assertIn("nota: ficha revisada: gemela de 1917762", ficha)
+        self.assertIn("dormitorios según plano: 2", ficha)
+        p = {str(x["id"]): x for x in pedir("/api/candidatos")[2]["pisos"]}["5481965"]
+        self.assertTrue(any("📝 ficha revisada" in av for av in p["avisos"]))  # se ve en Propuestos del mapa
+        self.assertEqual(p["dorm"], 2)
+
     def test_errores_claros_sin_tocar_nada(self):
         for args, texto in ((("añadir", "https://evil.com/x"), "no es un enlace"),
                             (("estado", BP, "borrado"), "estado no válido"),
                             (("estado", BP, "gusta", "--por", "pepe"), "--por solo"),
-                            (("borrar", BP), "orden no válida")):
+                            (("borrar", BP), "orden no válida"),
+                            (("dormitorios", BP, "tres"), "un número")):
             with self.assertRaises(H.Error) as e:
                 self.ejecutar(*args)
             self.assertIn(texto, str(e.exception))

@@ -116,6 +116,10 @@ class TestDebeFallar(BaseV2):
         self.assertEqual(post("/api/v2/enlaces", {"url": BP}, VIG)[0], 403)
         self.assertEqual(post("/api/v2/anuncios", {"datos": {"link": BP, "precio": 1}}, LARES)[0], 403)
         self.assertEqual(post(u + "/estado", {"estado": "retirado"}, LARES)[0], 403)
+        self.assertEqual(post(u + "/nota", {"texto": "hola hola"}, VIG)[0], 403)
+        self.assertEqual(post(u + "/dormitorios", {"dorm": 3}, COMP)[0], 403)
+        self.assertEqual(post(u + "/dormitorios", {"dorm": "3; DROP"}, LARES)[0], 400)
+        self.assertEqual(post(u + "/nota", {"texto": ""}, LARES)[0], 400)
 
     def test_datos_malos(self):
         self.assertEqual(post("/api/v2/enlaces", {"url": "https://evil.com/x"}, LARES)[0], 400)
@@ -201,6 +205,25 @@ class TestPuenteConLaWeb(BaseV2):
         post("/api/estado", {"id": "5481965", "st": "descartado", "by": "jon"}, WEB, self.ORIGEN)
         code, _, a = post("/api/v2/enlaces", {"url": BP}, LARES)
         self.assertEqual((code, a["estado"]), (200, "descartado"))
+
+
+class TestRetiradoPorElVigilante(BaseV2):
+    def test_retirados_json_llega_a_la_base_unica_sin_pisar_decisiones(self):
+        import json as _json
+        post("/api/v2/enlaces", {"url": BP}, LARES)
+        post("/api/v2/enlaces", {"url": EDC}, LARES)
+        post(uid_url("EDC:11810121") + "/estado", {"estado": "gusta"}, LARES)
+        with app.db() as c:
+            c.execute("DELETE FROM retirado_aplicado WHERE id IN ('5481965', '11810121')")
+        retirados = {"pisos": {"5481965": {"desde": "2026-10-26", "motivo": "udlejet"},
+                               "11810121": {"desde": "2026-10-26", "motivo": "404"}}}
+        with open(app.os.path.join(app.BRIDGE, "retirados.json"), "w", encoding="utf-8") as f:
+            _json.dump(retirados, f)
+        app.aplicar_retirados()
+        bp, edc = pedir(uid_url("Boligportal:5481965"))[2], pedir(uid_url("EDC:11810121"))[2]
+        self.assertEqual(bp["estado"], "retirado")                              # propuesto -> retirado
+        self.assertEqual(edc["estado"], "gusta")                                # vuestra decisión no se toca
+        self.assertTrue(any("el portal dice" in a for a in edc["avisos"]))
 
 
 class TestPanel(BaseV2):

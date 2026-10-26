@@ -17,15 +17,16 @@ ESTADOS = SISTEMA + PERSONA
 
 # Qué puede hacer cada cliente de la API. No existe ninguna operación de borrar.
 PERMISOS = {
-    "web": {"leer", "entregar_enlace", "cambiar_estado", "filtros"},
-    "lares": {"leer", "entregar_enlace", "cambiar_estado"},
+    "web": {"leer", "entregar_enlace", "cambiar_estado", "anotar", "filtros"},
+    "lares": {"leer", "entregar_enlace", "cambiar_estado", "anotar"},
     "vigilante": {"leer", "entregar"},
     "comprobador": {"leer", "comprobar"},
     "panel": {"leer"},
 }
 # Estados que cada cliente puede poner a mano. «propuesto» = devolver a «sin decidir» (deshacer una decisión).
 PUEDE_PONER = {"web": set(PERSONA) | {"propuesto"}, "lares": set(PERSONA) | {"propuesto"}}
-TOPE_CAMBIOS_HORA = {"lares": 20, "web": 300}  # cambios de estado por hora y cliente
+TOPE_CAMBIOS_HORA = {"lares": 20, "web": 300}  # cambios (estados, notas, dormitorios) por hora y cliente
+MAX_NOTAS = 30  # notas guardadas por anuncio (las más recientes)
 
 ORIGENES = ("vigilante", "lares", "jon", "unai", "web", "import")
 
@@ -281,15 +282,7 @@ def cambiar_estado(con, uid, nuevo, cliente, quien, motivo=None, ahora=None):
     if nuevo not in PUEDE_PONER.get(cliente, ()):
         raise Prohibido(f"«{cliente}» no puede poner «{nuevo}»")
     ahora = int(ahora or time.time())
-    tope = TOPE_CAMBIOS_HORA.get(cliente)
-    if (
-        tope
-        and con.execute(
-            "SELECT COUNT(*) FROM cambio WHERE quien LIKE ? AND ts > ?", (f"{cliente}%", ahora - 3600)
-        ).fetchone()[0]
-        >= tope
-    ):
-        raise Tope(f"«{cliente}» ya ha hecho {tope} cambios en la última hora")
+    _tope(con, cliente, ahora)
     a = obtener(con, uid)
     if a is None:
         raise NoValido("anuncio no encontrado")
@@ -298,6 +291,58 @@ def cambiar_estado(con, uid, nuevo, cliente, quien, motivo=None, ahora=None):
     motivo = (motivo or "")[:300] or None
     con.execute("UPDATE anuncio SET estado=?, motivo=?, actualizado=? WHERE uid=?", (nuevo, motivo, ahora, a["uid"]))
     _registrar(con, a["uid"], a["estado"], nuevo, motivo, f"{cliente}:{quien}" if quien != cliente else cliente, ahora)
+    return obtener(con, a["uid"])
+
+
+def _tope(con, cliente, ahora):
+    tope = TOPE_CAMBIOS_HORA.get(cliente)
+    hechos = con.execute(
+        "SELECT COUNT(*) FROM cambio WHERE quien LIKE ? AND ts > ?", (f"{cliente}%", ahora - 3600)
+    ).fetchone()[0]
+    if tope and hechos >= tope:
+        raise Tope(f"«{cliente}» ya ha hecho {tope} cambios en la última hora")
+
+
+def _quien(cliente, quien):
+    return f"{cliente}:{quien}" if quien != cliente else cliente
+
+
+def anotar(con, uid, texto, cliente, quien, ahora=None):
+    """Nota de Lares o de una persona («ficha revisada», «gemela de…»). Se guarda en datos.notas y en el historial."""
+    permitir(cliente, "anotar")
+    texto = " ".join(str(texto or "").split())[:300]
+    if len(texto) < 3:
+        raise NoValido("nota vacía")
+    ahora = int(ahora or time.time())
+    _tope(con, cliente, ahora)
+    a = obtener(con, uid)
+    if a is None:
+        raise NoValido("anuncio no encontrado")
+    notas = (a["datos"].get("notas") or []) + [{"ts": ahora, "quien": _quien(cliente, quien), "texto": texto}]
+    datos = {**a["datos"], "notas": notas[-MAX_NOTAS:]}
+    con.execute(
+        "UPDATE anuncio SET datos=?, actualizado=? WHERE uid=?",
+        (json.dumps(datos, ensure_ascii=False), ahora, a["uid"]),
+    )
+    _registrar(con, a["uid"], a["estado"], a["estado"], f"nota: {texto}", _quien(cliente, quien), ahora)
+    return obtener(con, a["uid"])
+
+
+def fijar_dormitorios(con, uid, dorm, cliente, quien, filtros, zonas, ahora=None):
+    """Dormitorios reales (p. ej. leídos en el plano). Se vuelve a evaluar el anuncio con ese dato."""
+    permitir(cliente, "anotar")
+    if not isinstance(dorm, int) or isinstance(dorm, bool) or not 0 <= dorm <= 10:
+        raise NoValido("dormitorios: un número de 0 a 10")
+    ahora = int(ahora or time.time())
+    _tope(con, cliente, ahora)
+    a = obtener(con, uid)
+    if a is None:
+        raise NoValido("anuncio no encontrado")
+    datos = {**a["datos"], "dorm": dorm, "dorm_fuente": f"plano ({quien})"}
+    entregar(con, datos, a["origen"], _quien(cliente, quien), filtros, zonas, ahora=ahora)
+    _registrar(
+        con, a["uid"], a["estado"], a["estado"], f"dormitorios según plano: {dorm}", _quien(cliente, quien), ahora
+    )
     return obtener(con, a["uid"])
 
 

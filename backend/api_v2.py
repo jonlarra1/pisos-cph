@@ -7,6 +7,8 @@
     POST /api/v2/anuncios       {datos}           entregar lo que encuentra        vigilante
     POST /api/v2/anuncios/<uid>/estado  {estado, quien?, motivo?}                 web, lares
     POST /api/v2/anuncios/<uid>/comprobacion {resultado, motivo?}                 comprobador
+    POST /api/v2/anuncios/<uid>/nota    {texto, quien?}                           web, lares
+    POST /api/v2/anuncios/<uid>/dormitorios {dorm, quien?}  (p. ej. del plano)    web, lares
 
 Clientes: «web» = la clave pública de la página (API_KEY) + Origin permitido; «lares», «vigilante» y «comprobador» =
 claves secretas propias (CLAVE_LARES, CLAVE_VIGILANTE, CLAVE_COMPROBADOR), solo en la Pi. No hay operación de borrar.
@@ -271,17 +273,23 @@ def escribir(ctx, path, cliente, cuerpo):
             if a["estado"] == "propuesto" and not a["datos"].get("ficha_leida"):
                 encolar_ficha(a["uid"], a["datos"]["link"])
             return 200, {"uid": a["uid"], "estado": a["estado"], "motivo": a["motivo"]}
-        m = re.fullmatch(r"/api/v2/anuncios/([^/]+)/(estado|comprobacion)", path)
+        m = re.fullmatch(r"/api/v2/anuncios/([^/]+)/(estado|comprobacion|nota|dormitorios)", path)
         if not m or not UID_RE.match(urllib.parse.unquote(m.group(1))):
             return 404, {"error": "not found"}
         uid = urllib.parse.unquote(m.group(1))
         with ctx.db() as con:
             if m.group(2) == "estado":
                 a = A.cambiar_estado(con, uid, cuerpo.get("estado"), cliente, quien, _txt(cuerpo.get("motivo"), 300))
+            elif m.group(2) == "nota":
+                a = A.anotar(con, uid, _txt(cuerpo.get("texto"), 300), cliente, quien)
+            elif m.group(2) == "dormitorios":
+                a = A.fijar_dormitorios(con, uid, cuerpo.get("dorm"), cliente, quien, ctx.filtros(), ctx.zonas())
             else:
                 A.permitir(cliente, "comprobar")
                 a = A.comprobar(con, uid, cuerpo.get("resultado"), _txt(cuerpo.get("motivo"), 200) or "")
-        ctx.log("events", level="info", src="anuncios", msg=f"{uid} -> {a['estado']}", by=f"{cliente}:{quien}")
+        ctx.log(
+            "events", level="info", src="anuncios", msg=f"{uid} {m.group(2)} -> {a['estado']}", by=f"{cliente}:{quien}"
+        )
         ctx.avisar("anuncios", {"uid": uid, "estado": a["estado"]})
         if ctx.al_cambiar and m.group(2) == "estado":
             ctx.al_cambiar(a, cliente, quien, "estado")

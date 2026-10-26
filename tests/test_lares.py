@@ -176,6 +176,27 @@ class TestRetirados(unittest.TestCase):
         self.assertNotIn("100", p2.comprobados)                                  # ya retirado: no se vuelve a pedir
         self.assertTrue(set(p2.comprobados).isdisjoint(set(p.comprobados) - {"100"}) or len(mapa) < 2 * self.m.MAX_ACTIVO)
 
+    def test_piso_anadido_por_el_chat_tambien_se_comprueba(self):
+        chat = {"anuncios": [
+            {"origen": "lares", "datos": {"link": "https://www.boligportal.dk/x-id-777777"}},
+            {"origen": "vigilante", "datos": {"link": "https://www.boligportal.dk/x-id-888888"}}]}   # del vigilante: no
+        p = Pasada(self.m, {}, estados={"777777": ("retirado", "udlejet")})
+        fetch = p.fetch
+        p.fetch = lambda u, timeout=20: json.dumps(chat) if u.startswith(self.m.PISOS_API) else fetch(u, timeout)
+        p()
+        self.assertIn("777777", p.comprobados)
+        self.assertNotIn("888888", p.comprobados)
+        self.assertIn("777777", self.retirados())
+
+    def test_si_la_api_no_responde_la_pasada_sigue(self):
+        p = Pasada(self.m, {"boligportal": [[1]]})
+        fetch = p.fetch
+        def caida(u, timeout=20):
+            if u.startswith(self.m.PISOS_API): raise OSError("sin red")
+            return fetch(u, timeout)
+        p.fetch = caida
+        self.assertEqual([x["id"] for x in p()["pisos"]], ["1"])
+
 
 class TestEDC(unittest.TestCase):
     FICHA = ("<html><body><h1>Hyrdindestien 9</h1><div>Ledig fra d. 1. jan. 2027</div><dl><dt>Rum/værelser</dt><dd>4/3</dd>"

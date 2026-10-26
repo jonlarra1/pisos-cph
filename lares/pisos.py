@@ -5,6 +5,8 @@ Habla con la API del backend (base única); no escribe ningún archivo.
     python3 pisos.py consultar                    resumen + propuestos y los que os gustan
     python3 pisos.py consultar <enlace>           ficha de un piso con su historial
     python3 pisos.py estado <enlace> <gusta|contactado|descartado|propuesto> [motivo…] [--por jon|unai]
+    python3 pisos.py nota <enlace> <texto…>       lo que has comprobado («ficha revisada: …», «gemela de …»)
+    python3 pisos.py dormitorios <enlace> <n>     dormitorios reales (p. ej. contados en el plano)
 
 Enlaces válidos: anuncios de Lejebolig, Boligportal o EDC (https). La clave va en el archivo .pisos_api_key
 junto a la carpeta scripts del perfil (o en la variable PISOS_API_KEY); nunca se escribe en la salida.
@@ -121,6 +123,20 @@ def estado(enlace, nuevo, motivo, por):
     print("Hecho: " + linea(a))
 
 
+def nota(enlace, texto, por):
+    a = llamar("POST", ruta_uid(uid_de(enlace)) + "/nota", {"texto": texto, "quien": por or "lares"})
+    print("Nota guardada: " + linea(a))
+
+
+def dormitorios(enlace, n, por):
+    if not n.isdigit():
+        raise Error("dormitorios: un número (p. ej. 3)")
+    a = llamar("POST", ruta_uid(uid_de(enlace)) + "/dormitorios", {"dorm": int(n), "quien": por or "lares"})
+    print("Dormitorios guardados: " + linea(a))
+    for av in a.get("avisos") or []:
+        print(f"  aviso: {av}")
+
+
 def main(args):
     por = None
     if "--por" in args:
@@ -139,6 +155,10 @@ def main(args):
         consultar(resto[0] if resto else None)
     elif orden == "estado" and len(resto) >= 2:
         estado(resto[0], resto[1].lower(), " ".join(resto[2:])[:300], por)
+    elif orden == "nota" and len(resto) >= 2:
+        nota(resto[0], " ".join(resto[1:])[:300], por)
+    elif orden == "dormitorios" and len(resto) == 2:
+        dormitorios(resto[0], resto[1], por)
     else:
         raise Error("orden no válida; mira: python3 pisos.py ayuda")
 

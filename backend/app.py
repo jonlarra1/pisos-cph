@@ -574,7 +574,7 @@ def aplicar_retirados():
         pisos = d.get("pisos") or {}
     except Exception:
         return 0
-    n, ts = 0, int(time.time())
+    n, ts, nuevos_v2 = 0, int(time.time()), []
     with lock, db() as c:
         hechos = {r[0] for r in c.execute("SELECT id FROM retirado_aplicado")}
         for pid, r in pisos.items():
@@ -584,6 +584,7 @@ def aplicar_retirados():
             desde = str(r.get("desde", ""))[:10]
             motivo = f"Anuncio retirado del portal ({desde}): {str(r.get('motivo', ''))[:120]}"
             c.execute("INSERT INTO retirado_aplicado (id, desde, ts) VALUES (?,?,?)", (pid, desde, ts))
+            nuevos_v2.append((pid, motivo))
             cur = c.execute("SELECT st FROM estado WHERE id=?", (pid,)).fetchone()
             if cur and cur[0] == "descartado":
                 continue  # ya lo habíais descartado vosotros
@@ -598,6 +599,12 @@ def aplicar_retirados():
             )
             log("events", level="warn", src="lares", msg=f"{pid}: {motivo} -> descartado (48 h en el mapa)")
             n += 1
+    for pid, motivo in nuevos_v2:  # y en la base única (puente.py)
+        try:
+            with _db_filas() as con:
+                puente.retirado(con, pid, motivo)
+        except Exception as e:
+            log("events", level="warn", src="puente", msg=f"retirado {pid}: {type(e).__name__}: {e}")
     if n:
         write_config()
         avisar("estados", all_estados())

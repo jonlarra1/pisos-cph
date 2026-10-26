@@ -94,6 +94,9 @@ ZONA_POSTNR = {  # zona del mapa -> códigos postales (los de K, V y Frederiksbe
     "Klampenborg": [2930],
 }
 MAX_ACTIVO = 8  # anuncios comprobados por pasada para ver si siguen publicados
+# pisos añadidos por el chat (base única del backend): también se comprueba si siguen publicados
+PISOS_API = os.environ.get("PISOS_API", "https://raspberrypi.tail9f1069.ts.net:8443")
+ORIGENES_CHAT = ("lares", "jon", "unai", "web", "import")
 RETIRADO_DIAS = 14  # cuánto se guarda un retirado en retirados.json (el backend lo aplica una vez)
 CUARENTENA_DIAS = 3  # un propuesto retirado sigue en candidatos.json estos días (la web lo enseña 48 h)
 RECUERDO_DIAS = 7  # un candidato que ya no sale en las páginas leídas se sigue proponiendo estos días
@@ -859,6 +862,7 @@ def comprobar_publicados(con, mapa, cands, listings, now):
     )
     revisar = {num_id(p["link"]): p["link"] for p in mapa if num_id(p["link"])}
     revisar.update({c["id"]: c["link"] for c in cands if c["id"] not in listings})
+    revisar.update({i: link for i, link in anuncios_del_chat().items() if i not in listings and i not in revisar})
     prev = {r[0]: (r[1], r[2]) for r in con.execute("SELECT id, estado, ultimo FROM v2_activo")}
     orden = sorted(
         (i for i in revisar if (prev.get(i) or ("", ""))[0] != "retirado"), key=lambda i: (prev.get(i) or ("", ""))[1]
@@ -883,6 +887,21 @@ def comprobar_publicados(con, mapa, cands, listings, now):
             (i, revisar[i], est, mot, now, now),
         )
     return len(orden), nuevos_ret
+
+
+def anuncios_del_chat():
+    """{id: enlace} de los pisos añadidos a mano (chat de Lares, web) que siguen abiertos en la base única.
+    Lectura pública de la API; si no responde, la pasada sigue sin ellos."""
+    try:
+        lista = json.loads(fetch(PISOS_API + "/api/v2/anuncios?estado=propuesto,gusta,contactado"))["anuncios"]
+    except Exception:
+        return {}
+    out = {}
+    for a in lista:
+        link = (a.get("datos") or {}).get("link") or ""
+        if a.get("origen") in ORIGENES_CHAT and num_id(link):
+            out[num_id(link)] = link
+    return out
 
 
 def _dias_desde(d):

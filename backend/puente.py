@@ -33,6 +33,9 @@ def candidatos(con, ya, limite=200):
         avisos = list(a["avisos"])
         if a["precision"] == "calle":
             avisos.append("ubicación aproximada (sin número de portal)")
+        if d.get("dorm_fuente"):
+            avisos.append(f"{d.get('dorm')} dormitorios según {d['dorm_fuente']}")
+        avisos += [f"📝 {n['texto']} ({n['quien'].split(':')[-1]})" for n in (d.get("notas") or [])[-5:]]
         out.append(
             {
                 "id": pid,
@@ -76,3 +79,9 @@ def al_anadir(con, a, estado_web):
     if nuevo in A.PERSONA and a["estado"] != nuevo:
         return A.cambiar_estado(con, a["uid"], nuevo, "web", (estado_web.get("by") or "web"), "ya decidido en la web")
     return a
+
+
+def retirado(con, pid, motivo):
+    """El vigilante vio que el portal retiró el piso `pid`: se apunta en la base única (sin pisar decisiones)."""
+    uids = [r[0] for r in con.execute("SELECT uid FROM anuncio WHERE pid=?", (str(pid),)).fetchall()]
+    return [A.comprobar(con, uid, "retirado", motivo)["uid"] for uid in uids]
