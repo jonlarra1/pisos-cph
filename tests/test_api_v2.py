@@ -41,6 +41,9 @@ class BaseV2(Base):
         portales.geocodificar = lambda q: (55.72, 12.43)            # sin internet
         with app.db() as c:
             c.execute("DELETE FROM cambio"); c.execute("DELETE FROM alias"); c.execute("DELETE FROM anuncio")
+            # estados de la web y retirados ya aplicados de los pisos de prueba: cada test empieza limpio
+            c.execute("DELETE FROM estado WHERE id IN ('5481965', '11810121', '1812509')")
+            c.execute("DELETE FROM retirado_aplicado WHERE id IN ('5481965', '11810121', '1812509')")
             c.execute("UPDATE zonas SET permitida=1 WHERE zona IN ('Herlev','Brønshøj','Glostrup')")
 
     def tearDown(self):
