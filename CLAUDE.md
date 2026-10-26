@@ -4,6 +4,10 @@
 A single-page Leaflet map (`index.html`) of rental flats (3 bedrooms, shared by 3 people) in Copenhagen and suburbs.
 The user is Jon. He works at Nordic Solar (Hellerup). He prefers short, simple, direct answers (non-native English speaker; Spanish is fine too).
 
+## Arquitectura (diseño de referencia)
+- **Leer `docs/arquitectura.md` antes de tocar datos, backend o Lares.** Una sola base de datos (backend), una sola puerta
+  (la API), una sola entidad (el anuncio con estados), nada se borra, permisos por clave. Migración en 5 fases (26-oct).
+
 ## Files
 - `index.html` — the whole app (HTML + CSS + JS, Leaflet 1.9.4 + leaflet-polylineoffset from CDN).
   Big inline data constants inside the `<script>`:
