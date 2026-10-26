@@ -104,6 +104,15 @@ The user is Jon. He works at Nordic Solar (Hellerup). He prefers short, simple, 
   estados compartidos vía Pi, Lares v2 conectado (buzón pisos-bridge), menú «Búsqueda (Lares)» / «Visualización», galería de fotos,
   panel privado :9444, logs + checks. Listado izquierdo: principal = solo 🔵 gusta + 🟢 contactado; «🟠 Propuestos» = nuevos del
   mapa + candidatos de Lares juntos (una sola categoría); «🔴 Descartados» = temporales (48 h, con «recuperar») + definitivos.
+- 27-oct HECHO EN LOCAL (commits sin subir; instalar EN ESTE ORDEN con clave SSH de 1 h):
+  1. Backend (`deploy.sh --aplicar`): destinos compartidos (destinos.py), freno + cálculo previo de rutas (precalculo.py:
+     máx. 6 búsquedas esperando, cola de 400, 24 h de caché; /api/ruta 240/min por IP), panel sin Lejebolig.
+  2. Lares: piso_watch_monitor.py (sin Lejebolig, no recuerda propuestos de Lejebolig) + SOUL.md con lares/instrucciones-pisos.md.
+  3. `git push` (web: barra de destinos compartidos, ocultar rutas del otro, cola de rutas, barra «la Pi está preparando…»;
+     datos: Gyngemose 102 m² → Boligportal 5193904, avisos «solo en Lejebolig»).
+  4. `python3 tools/migrar_lejebolig.py --aplicar` (3 pisos de Boligportal que sustituyen propuestos de Lejebolig + 5 sin pareja con nota).
+  Lejebolig sin pareja: Vasekær, Rosendal, Gyngemose 6. th y 4. th (mapa) + 5 propuestos. Retirados: Mortonsvej, Molestien, Glostrup 104 m²
+  (los pasa a descartados el comprobador de Lares).
 - Pendiente:
   1. Fireworks (proveedor del modelo de Lares) suspendido → avisos de Lares al Bot Chat fallan (check `lares_cron` en rojo). Lo arregla Jon.
   2. Tarea IA de Lares que mire los planos y escriba `pisos-bridge/planos.json` (`{"<id>": {"dorm": 3}}`) — cuando Lares tenga modelo.
