@@ -23,7 +23,7 @@ import sync_web
 def const(nombre):
     """Valor de `const NOMBRE = ...;` dentro de la web (literal o JSON.parse('...'))."""
     try: return sync_web.valor(APP, nombre)
-    except KeyError: raise AssertionError(f"no encuentro const {nombre} en la web")
+    except KeyError: raise AssertionError(f"no encuentro const {nombre} en la web") from None
 
 
 class TestWebIgualQueData(unittest.TestCase):

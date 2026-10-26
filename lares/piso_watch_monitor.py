@@ -13,7 +13,7 @@ Corre en el cron de Lares cada 3 h, sin LLM. Pasos:
  5. Imprime solo los candidatos NUEVOS (salida vacía = el agente no se despierta).
 """
 import json, os, re, sqlite3, tempfile, urllib.error, urllib.parse, urllib.request
-from datetime import date, datetime, timezone
+from datetime import datetime, timezone
 from html import unescape
 from pathlib import Path
 
@@ -156,7 +156,7 @@ def parse_lejebolig(html):
         price_m = re.search(r'class="rent[^"]*"><div>([\d,\.]+)', block) or re.search(r"([0-9][0-9,\.]*)\s*kr", block)
         if not (title_m and price_m):
             continue
-        def spec(icon):
+        def spec(icon, block=block):
             mm = re.search(rf'resultat-stat-{icon}[^>]*>\s*<span>\s*([\d.,]+)\s*</span>', block, re.S)
             return int(float(mm.group(1).replace(",", "."))) if mm else None
         out[lid] = {"portal": "Lejebolig", "id": lid, "link": f"https://en.lejebolig.dk/lejebolig/{lid}",

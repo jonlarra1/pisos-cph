@@ -71,7 +71,7 @@ def preparar(zip_path, out_path):
         flags = (1 if ipu is not None and row[ipu] == "1" else 0) | (2 if ido is not None and row[ido] == "1" else 0)
         L.append((int(row[iq]), s, ts(row[ia]), ts(row[idp]), flags))
     if cur is not None and cur not in hechos: cerrar(cur, L)
-    del tinfo
+    tinfo.clear()                       # libera memoria (la preparación corre en la Pi)
     dates = sorted(d for _, a, b in cal.values() for d in (a, b))
     data = {"version": 1, "creado": time.strftime("%Y-%m-%dT%H:%M:%S"), "stops": stops, "trips": trips, "cal": cal,
             "exc": dict(exc), "desde": dates[0] if dates else "", "hasta": dates[-1] if dates else ""}
@@ -120,7 +120,7 @@ class Motor:
         prev = (datetime.date(int(ymd[:4]), int(ymd[4:6]), int(ymd[6:])) - datetime.timedelta(days=1)).strftime("%Y%m%d")
         conns = []
         for shift, svc in ((0, self.activos(ymd)), (-86400, self.activos(prev))):
-            for ti, (name, rtype, head, s, st, arr, dep, fl) in enumerate(self.trips):
+            for ti, (_name, _rtype, _head, s, st, arr, dep, fl) in enumerate(self.trips):
                 if s not in svc: continue
                 if shift and dep[-1] < 86400: continue
                 for k in range(len(st)-1):

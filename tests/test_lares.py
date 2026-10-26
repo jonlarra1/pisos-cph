@@ -1,7 +1,7 @@
 """Tests del vigilante de Lares (lares/piso_watch_monitor.py) sin internet: los portales se simulan.
     python3 -m unittest tests.test_lares -v
 """
-import contextlib, importlib.util, io, json, os, sqlite3, sys, tempfile, unittest
+import contextlib, importlib.util, io, json, os, sqlite3, tempfile, unittest
 from datetime import datetime, timedelta, timezone
 from unittest import mock
 
