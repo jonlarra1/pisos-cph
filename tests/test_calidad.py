@@ -10,7 +10,7 @@ CODIGO = sorted([*RAIZ.glob("backend/*.py"), *RAIZ.glob("lares/*.py")])
 VENV = RAIZ / ".venv" / "bin"
 
 # Deuda conocida (26-oct): funciones largas que ya existían. No añadir más; si se arregla una, quitarla de aquí.
-COMPLEJAS_CONOCIDAS = {"main", "evaluar", "do_POST"}
+COMPLEJAS_CONOCIDAS = {"evaluar", "do_POST"}
 MAX_COMPLEJIDAD = 40          # radon: por encima es grado F
 MAX_LINEAS_FUNCION = 120
 

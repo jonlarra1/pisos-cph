@@ -18,6 +18,7 @@ import os
 import re
 import sqlite3
 import tempfile
+import time
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -594,8 +595,68 @@ def evaluar(item, F, zonas):
 
 
 # ---------------------------------------------------------------------- main
+# Campos de cada anuncio que salen hacia el buzón (candidatos.json / rechazados.json)
+CAMPOS_SALIDA = (
+    "id",
+    "portal",
+    "link",
+    "titulo",
+    "lugar",
+    "zona",
+    "precio",
+    "aconto",
+    "dep",
+    "pre",
+    "m2",
+    "vaer",
+    "disp",
+    "contrato_meses",
+    "lat",
+    "lon",
+    "plano",
+    "plano_dorm",
+    "dorm",
+    "fotos",
+    "amueblado",
+    "compartible",
+    "ascensor",
+    "balcon",
+    "mascotas",
+    "lavadora",
+    "parking",
+    "descripcion",
+)
+
+
 def main():
+    """Una pasada del vigilante (sin IA). Cada paso es una función: leer → evaluar → comprobar → escribir."""
     now = datetime.now(timezone.utc).isoformat(timespec="seconds")
+    F, zonas, planos, decididos = leer_config()
+    known, mapa = pisos_conocidos()
+    con = abrir_db()
+    vistos_antes = {r[0] for r in con.execute("SELECT id FROM v2_eval")} | known
+    listings, errors, paginas = leer_portales(vistos_antes, zonas, F)
+    ev = evaluar_anuncios(con, listings, known, planos, F, zonas, decididos, now)
+    ev.cands += candidatos_recordados(con, listings, known)
+    comprobados, nuevos_ret = comprobar_publicados(con, mapa, ev.cands, listings, now)
+    ret = retirados_en_cuarentena(con, ev.cands)
+    write_json(
+        BRIDGE / "retirados.json",
+        {"actualizado": now, "pisos": {k: {**v, "desde": v["desde"][:19]} for k, v in ret.items()}},
+    )
+    STATS.update(comprobados=comprobados, retirados_nuevos=nuevos_ret, retirados=len(ret))
+    con.commit()
+    historial(con, now)
+    con.close()
+
+    ev.cands.sort(key=lambda x: (x["visto"], -x["precio"]), reverse=True)
+    write_json(BRIDGE / "candidatos.json", {"actualizado": now, "filtros": F, "pisos": ev.cands, "errores": errors})
+    write_json(BRIDGE / "rechazados.json", {"actualizado": now, "pisos": ev.rech[:400]})
+    resumen(listings, paginas, errors, ev, known)
+
+
+def leer_config():
+    """Filtros y zonas (config.json, los escribe el backend), planos revisados y pisos ya decididos en la web."""
     try:
         cfg = json.loads((BRIDGE / "config.json").read_text(encoding="utf-8"))
     except Exception:
@@ -611,8 +672,13 @@ def main():
     # Lo decidido en la web (gusta/contactado/descartado) se sigue evaluando y escribiendo: el backend
     # lo oculta. Así, si alguien lo vuelve a poner en «nuevo», reaparece al momento.
     decididos = {str(k) for k, v in (cfg.get("con_estado") or {}).items() if (v or {}).get("st") != "nuevo"}
+    return F, zonas, planos, decididos
+
+
+def pisos_conocidos():
+    """Ids ya en el mapa o en la lista fija de descartados (y enlaces en sus notas), y los pisos del mapa."""
     known, mapa = set(), []
-    for u in MAP_URLS:  # pisos ya en el mapa o en la lista fija de descartados
+    for u in MAP_URLS:
         try:
             datos = json.loads(fetch(u))
             if u.endswith("/pisos.json"):
@@ -627,18 +693,23 @@ def main():
                         known.add(j)
         except Exception:
             pass
+    return known, mapa
 
+
+def abrir_db():
     con = sqlite3.connect(DB)
     con.execute("CREATE TABLE IF NOT EXISTS v2_detalle (id TEXT PRIMARY KEY, data TEXT, ts TEXT)")
     con.execute(
         "CREATE TABLE IF NOT EXISTS v2_eval (id TEXT PRIMARY KEY, portal TEXT, link TEXT, ok INTEGER, motivo TEXT, "
         "item TEXT, first_seen TEXT, last_seen TEXT, avisado INTEGER DEFAULT 0)"
     )
-    vistos_antes = {r[0] for r in con.execute("SELECT id FROM v2_eval")} | known
+    return con
 
+
+def leer_portales(vistos_antes, zonas, F):
+    """Páginas de resultados de Lejebolig, Boligportal y EDC. Páginas adaptativas: mínimo fijo y se sigue
+    mientras haya anuncios nunca vistos (hasta el máximo)."""
     listings, errors, paginas = {}, [], {}
-    import time
-
     for name, parser in (("lejebolig", parse_lejebolig), ("boligportal", parse_boligportal)):
         url_de, minimo, maximo = PAGINAS[name]
         for i in range(maximo):
@@ -672,6 +743,19 @@ def main():
                 break  # no hay más páginas
             if i + 1 >= minimo and not (set(page) - vistos_antes):
                 break
+    return listings, errors, paginas
+
+
+class Evaluacion:
+    """Resultado de evaluar los anuncios leídos: listas para el buzón y lo gastado del cupo de fichas."""
+
+    def __init__(self):
+        self.cands, self.rech, self.nuevos = [], [], []
+        self.budget, self.budget_edc, self.pendientes = MAX_DETAIL, MAX_DETAIL_EDC, 0
+
+
+def evaluar_anuncios(con, listings, known, planos, F, zonas, decididos, now):
+    """Evalúa cada anuncio con los filtros; abre la ficha (con cupo) de los que pasan lo barato, y guarda en v2_eval."""
     # fichas leídas antes de que Lares sacara amueblado/balcón/ascensor:
     # se vuelven a abrir (con el mismo cupo por pasada)
     cache = {
@@ -679,12 +763,10 @@ def main():
         for i, d in ((r[0], json.loads(r[1])) for r in con.execute("SELECT id, data FROM v2_detalle"))
         if "amueblado" in d
     }
-
-    budget, budget_edc, pendientes = MAX_DETAIL, MAX_DETAIL_EDC, 0
+    ev = Evaluacion()
     orden_ids = sorted(
         listings, key=lambda k: (bool(listings[k].get("_edc")), listings[k]["portal"] != "EDC")
     )  # EDC propios antes que copias
-    cands, rech, nuevos = [], [], []
     for lid in orden_ids:
         it = listings[lid]
         if lid in known:
@@ -692,81 +774,65 @@ def main():
         it.update({k: v for k, v in cache.get(lid, {}).items() if it.get(k) in (None, "")})
         if isinstance((planos.get(lid) or {}).get("dorm"), int):
             it["plano_dorm"] = planos[lid]["dorm"]
-        ok, motivo, avisos = evaluar(it, F, zonas)
-        de_edc = it.get("_edc") and lid not in cache
-        if ok and de_edc and budget_edc <= 0:
-            pendientes += 1
-            continue  # sin ficha no se propone: a la siguiente pasada
-        if (
-            ok and lid not in cache and (budget_edc if de_edc else budget) > 0
-        ):  # pasa lo barato: abrir ficha para lo caro
-            try:
-                d = detalle(it)
-                if de_edc:
-                    budget_edc -= 1
-                else:
-                    budget -= 1
-                con.execute(
-                    "INSERT OR REPLACE INTO v2_detalle VALUES (?,?,?)", (lid, json.dumps(d, ensure_ascii=False), now)
-                )
-                it.update({k: v for k, v in d.items() if v is not None and (k == "texto" or it.get(k) in (None, ""))})
-                ok, motivo, avisos = evaluar(it, F, zonas)
-            except Exception:
-                if de_edc:
-                    pendientes += 1
-                    continue  # de EDC sin ficha no se propone
-                avisos.append("ficha no disponible")
-        row = con.execute("SELECT first_seen, avisado FROM v2_eval WHERE id=?", (lid,)).fetchone()
-        first = row[0] if row else now
-        out = {
-            k: it.get(k)
-            for k in (
-                "id",
-                "portal",
-                "link",
-                "titulo",
-                "lugar",
-                "zona",
-                "precio",
-                "aconto",
-                "dep",
-                "pre",
-                "m2",
-                "vaer",
-                "disp",
-                "contrato_meses",
-                "lat",
-                "lon",
-                "plano",
-                "plano_dorm",
-                "dorm",
-                "fotos",
-                "amueblado",
-                "compartible",
-                "ascensor",
-                "balcon",
-                "mascotas",
-                "lavadora",
-                "parking",
-                "descripcion",
+        resultado = _evaluar_con_ficha(con, ev, it, lid, lid not in cache, F, zonas, now)
+        if resultado is None:
+            continue  # de EDC sin ficha: a la siguiente pasada
+        _guardar_evaluacion(con, ev, it, lid, *resultado, decididos, now)
+    return ev
+
+
+def _evaluar_con_ficha(con, ev, it, lid, sin_cache, F, zonas, now):
+    """(ok, motivo, avisos), o None si es de EDC y no se pudo abrir su ficha (sin ficha no se propone)."""
+    ok, motivo, avisos = evaluar(it, F, zonas)
+    de_edc = it.get("_edc") and sin_cache
+    if ok and de_edc and ev.budget_edc <= 0:
+        ev.pendientes += 1
+        return None
+    if ok and sin_cache and (ev.budget_edc if de_edc else ev.budget) > 0:  # pasa lo barato: abrir ficha para lo caro
+        try:
+            d = detalle(it)
+            if de_edc:
+                ev.budget_edc -= 1
+            else:
+                ev.budget -= 1
+            con.execute(
+                "INSERT OR REPLACE INTO v2_detalle VALUES (?,?,?)", (lid, json.dumps(d, ensure_ascii=False), now)
             )
-        }
-        out.update({"avisos": avisos, "visto": first[:10]})
-        con.execute(
-            "INSERT INTO v2_eval (id, portal, link, ok, motivo, item, first_seen, last_seen) VALUES (?,?,?,?,?,?,?,?) "
-            "ON CONFLICT(id) DO UPDATE SET ok=excluded.ok, motivo=excluded.motivo, item=excluded.item, "
-            "last_seen=excluded.last_seen",
-            (lid, it["portal"], it["link"], int(ok), motivo, json.dumps(out, ensure_ascii=False), first, now),
-        )
-        if ok:
-            cands.append(out)
-            if lid not in decididos and not (row and row[1]):
-                nuevos.append(out)
-                con.execute("UPDATE v2_eval SET avisado=1 WHERE id=?", (lid,))
-        else:
-            rech.append({**out, "motivo": motivo})
-    # candidatos de pasadas anteriores que ya no salen en las páginas leídas: se siguen proponiendo unos días
+            it.update({k: v for k, v in d.items() if v is not None and (k == "texto" or it.get(k) in (None, ""))})
+            ok, motivo, avisos = evaluar(it, F, zonas)
+        except Exception:
+            if de_edc:
+                ev.pendientes += 1
+                return None
+            avisos.append("ficha no disponible")
+    return ok, motivo, avisos
+
+
+def _guardar_evaluacion(con, ev, it, lid, ok, motivo, avisos, decididos, now):
+    """Guarda el resultado en v2_eval y lo apunta como candidato (nuevo si nadie lo vio ni decidió) o rechazado."""
+    row = con.execute("SELECT first_seen, avisado FROM v2_eval WHERE id=?", (lid,)).fetchone()
+    first = row[0] if row else now
+    out = {k: it.get(k) for k in CAMPOS_SALIDA}
+    out.update({"avisos": avisos, "visto": first[:10]})
+    con.execute(
+        "INSERT INTO v2_eval (id, portal, link, ok, motivo, item, first_seen, last_seen) VALUES (?,?,?,?,?,?,?,?) "
+        "ON CONFLICT(id) DO UPDATE SET ok=excluded.ok, motivo=excluded.motivo, item=excluded.item, "
+        "last_seen=excluded.last_seen",
+        (lid, it["portal"], it["link"], int(ok), motivo, json.dumps(out, ensure_ascii=False), first, now),
+    )
+    if ok:
+        ev.cands.append(out)
+        if lid not in decididos and not (row and row[1]):
+            ev.nuevos.append(out)
+            con.execute("UPDATE v2_eval SET avisado=1 WHERE id=?", (lid,))
+    else:
+        ev.rech.append({**out, "motivo": motivo})
+
+
+def candidatos_recordados(con, listings, known):
+    """Candidatos de pasadas anteriores que ya no salen en las páginas leídas: se siguen proponiendo RECUERDO_DIAS."""
     limite = datetime.now(timezone.utc).timestamp() - RECUERDO_DIAS * 86400
+    recordados = []
     for lid, item, last in con.execute("SELECT id, item, last_seen FROM v2_eval WHERE ok=1"):
         if lid in listings or lid in known:
             continue
@@ -779,8 +845,14 @@ def main():
         it["avisos"] = [a for a in (it.get("avisos") or []) if not a.startswith("no visto desde")] + [
             f"no visto desde {last[:10]} (ya no sale en las primeras páginas)"
         ]
-        cands.append(it)
-    # ¿siguen publicados? pisos del mapa + propuestos que ya no salen en las páginas leídas (los que salen, sí lo están)
+        recordados.append(it)
+    return recordados
+
+
+def comprobar_publicados(con, mapa, cands, listings, now):
+    """¿Siguen publicados? Pisos del mapa + propuestos que ya no salen en las páginas leídas (los que salen, sí lo
+    están). Como mucho MAX_ACTIVO por pasada, los que hace más tiempo que no se miran primero.
+    Devuelve (comprobados, retirados nuevos)."""
     con.execute(
         "CREATE TABLE IF NOT EXISTS v2_activo (id TEXT PRIMARY KEY, link TEXT, estado TEXT, motivo TEXT, desde "
         "TEXT, ultimo TEXT)"
@@ -810,60 +882,58 @@ def main():
             "desde=CASE WHEN v2_activo.estado=excluded.estado THEN v2_activo.desde ELSE excluded.desde END",
             (i, revisar[i], est, mot, now, now),
         )
+    return len(orden), nuevos_ret
 
-    def hace(d):
-        return (datetime.now(timezone.utc) - datetime.fromisoformat(d)).total_seconds() / 86400
 
+def _dias_desde(d):
+    return (datetime.now(timezone.utc) - datetime.fromisoformat(d)).total_seconds() / 86400
+
+
+def retirados_en_cuarentena(con, cands):
+    """Retirados de los últimos RETIRADO_DIAS. A los candidatos retirados les pone el aviso 🚫 (la web los enseña
+    48 h en Descartados) y pasados CUARENTENA_DIAS los quita de la lista. Devuelve {id: retirado}."""
     ret = {
         r[0]: {"link": r[1], "motivo": r[2], "desde": r[3]}
         for r in con.execute("SELECT id, link, motivo, desde FROM v2_activo WHERE estado='retirado'")
-        if hace(r[3]) <= RETIRADO_DIAS
+        if _dias_desde(r[3]) <= RETIRADO_DIAS
     }
-    for c in list(cands):  # propuestos retirados: cuarentena (la web los enseña 48 h en Descartados)
+    for c in list(cands):
         r = ret.get(c["id"])
         if not r:
             continue
-        if hace(r["desde"]) > CUARENTENA_DIAS:
+        if _dias_desde(r["desde"]) > CUARENTENA_DIAS:
             cands.remove(c)
             continue
         c["retirado"] = r["desde"][:10]
         c["avisos"] = [a for a in (c.get("avisos") or []) if not a.startswith(("no visto desde", "🚫"))] + [
             f"🚫 anuncio retirado del portal el {r['desde'][:10]}: {r['motivo']}"
         ]
-    write_json(
-        BRIDGE / "retirados.json",
-        {"actualizado": now, "pisos": {k: {**v, "desde": v["desde"][:19]} for k, v in ret.items()}},
-    )
-    STATS.update(comprobados=len(orden), retirados_nuevos=nuevos_ret, retirados=len(ret))
-    con.commit()
-    historial(con, now)
-    con.close()
+    return ret
 
-    cands.sort(key=lambda x: (x["visto"], -x["precio"]), reverse=True)
-    write_json(BRIDGE / "candidatos.json", {"actualizado": now, "filtros": F, "pisos": cands, "errores": errors})
-    write_json(BRIDGE / "rechazados.json", {"actualizado": now, "pisos": rech[:400]})
 
+def resumen(listings, paginas, errors, ev, known):
+    """Estadísticas de la pasada (van a lares_runs.jsonl) y las líneas «NUEVO |…» que lee Lares para avisar."""
     leidos = {}
     for it in listings.values():
         leidos[it["portal"]] = leidos.get(it["portal"], 0) + 1
     STATS.update(
         leidos=leidos,
         paginas=paginas,
-        candidatos=len(cands),
-        nuevos=len(nuevos),
-        rechazados=len(rech),
+        candidatos=len(ev.cands),
+        nuevos=len(ev.nuevos),
+        rechazados=len(ev.rech),
         errores=errors,
-        fichas_abiertas=MAX_DETAIL - budget,
-        fichas_edc=MAX_DETAIL_EDC - budget_edc,
-        edc_pendientes=pendientes,
+        fichas_abiertas=MAX_DETAIL - ev.budget,
+        fichas_edc=MAX_DETAIL_EDC - ev.budget_edc,
+        edc_pendientes=ev.pendientes,
         mapa_conocidos=len(known),
     )
-    for n in nuevos:
+    for n in ev.nuevos:
         print(
             f"NUEVO | {n['zona']} | {n['precio']} kr/mes | {n['m2'] or '?'} m², {n['vaer'] or '?'} vær. | "
             f"{(n['titulo'] or '')[:45]} | {n['link']}" + (f" | ⚠ {', '.join(n['avisos'][:2])}" if n["avisos"] else "")
         )
-    if errors and not nuevos:
+    if errors and not ev.nuevos:
         print(f"[aviso] fuentes con error: {', '.join(errors)}")
 
 
