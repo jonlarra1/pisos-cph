@@ -79,6 +79,12 @@ The user is Jon. He works at Nordic Solar (Hellerup). He prefers short, simple, 
 - Commits pequeños + push, estilo midudev: `type(scope): summary` en inglés, sin Co-Authored-By.
 
 ## Estado (2026-10-22, 23:00) y pendientes
+- 26-oct 21:04 INSTALADO en la Pi: backend con API v2 (fase 1; sin claves nuevas en .env: solo acepta la de la web) y Lares v5
+  (main partida en pasos; pasada de prueba 41 s, 22 candidatos, 0 errores). 1.er intento del backend → vuelta atrás automática
+  porque el Funnel estaba caído (no por el código); 2.º intento con la prueba por túnel SSH (`PISOS_URL=http://127.0.0.1:18788`).
+  INCIDENTE ABIERTO: Funnel público caído desde el 25-oct 23:27 UTC (la web no llega a la Pi). La Pi tiene dos salidas: wlan0
+  (10.20.15.232, red de DTU, métrica 50 = preferida) y eth0 (192.168.1.110, métrica 100); la WiFi se cae y vuelve («major link
+  change», DERP Amsterdam inalcanzable) y el saludo TLS del Funnel se corta. Es red de Jon: NO tocar sin su decisión.
 - 26-oct: fase 1 de docs/arquitectura.md HECHA EN LOCAL (sin desplegar): backend/portales.py (leer fichas de Lejebolig/Boligportal/EDC),
   anuncios.py (modelo, estados, permisos, historial), api_v2.py (/api/v2/…, claves por cliente: API_KEY web, CLAVE_LARES,
   CLAVE_VIGILANTE, CLAVE_COMPROBADOR). Dockerfile ya copia los módulos nuevos. Limpieza: quitado LARES_CRON (sin uso desde el 21-oct);
@@ -145,6 +151,9 @@ The user is Jon. He works at Nordic Solar (Hellerup). He prefers short, simple, 
   · 24-oct 14:20 — BORRADAS backend backup-20261024-130912 y -132528 (versiones ya superadas).
   · QUEDAN en la Pi: /home/docker/pisos-backend/backup-20261024-141600 (antes de «directa solo dentro del límite»);
     Lares scripts/piso_watch_monitor.py.v4-20261024-preAmueblado.bak. Borrar el 25-oct si todo va bien.
+  · 26-oct 21:07 — BORRADAS backend backup-20261024-141600 y backup-20261026-210159 (igual que la de las 21:04) y Lares
+    .v4-20261024-preAmueblado.bak. QUEDAN: backend backup-20261026-210404; Lares .v5-20261026-preRefactor.bak. Borrar el 27-oct si va bien.
+    Clave SSH temporal quitada (sin copia de authorized_keys).
   · PC: ~/.claude/settings.json.bak, .bak-narrator, .bak-20261024-voz (configuración del narrador, 1–2 KB).
 - Puertos ya usados en la Pi (no tocar): Portainer 8000/9000/9443. Nuestro: 127.0.0.1:8787 (API, Funnel :8443), 127.0.0.1:8790 (panel: serve https :9444 por nombre, y serve TCP :9445 por IP http://100.72.170.60:9445 para aparatos sin MagicDNS). Comprobar siempre con `ss -ltnp | grep :PUERTO` antes de usar uno nuevo.
 - Acceso a la Pi: clave SSH temporal de 1 h (expiry-time en authorized_keys, comentario «claude-pisos-1h»); pedir una nueva a Jon.

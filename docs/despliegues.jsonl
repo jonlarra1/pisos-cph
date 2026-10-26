@@ -7,3 +7,6 @@
 {"ts": "2026-10-24T11:25:46Z", "pieza": "backend", "resultado": "ok", "nota": "reconstruido del historial (deploy.sh, backup-20261024-132528)"}
 {"ts": "2026-10-24T11:25:53Z", "pieza": "lares", "resultado": "ok", "nota": "reconstruido del historial (amueblado, copia .v4-20261024-preAmueblado)"}
 {"ts": "2026-10-24T12:16:20Z", "pieza": "backend", "resultado": "ok", "nota": "reconstruido del historial (deploy.sh, backup-20261024-141600)"}
+{"ts": "2026-10-26T20:02:28Z", "pieza": "backend", "commit": "347f837fd4f0f368039afafc4fa2de0fed2f6977", "resultado": "vuelta_atras", "nota": "backup-20261026-210159"}
+{"ts": "2026-10-26T20:04:22Z", "pieza": "backend", "commit": "347f837fd4f0f368039afafc4fa2de0fed2f6977", "resultado": "ok", "nota": "backup-20261026-210404"}
+{"ts": "2026-10-26T20:06:18Z", "pieza": "lares", "commit": "347f837fd4f0f368039afafc4fa2de0fed2f6977", "resultado": "ok", "nota": "v5 refactor de main, pasada de prueba 41 s, 22 candidatos"}
