@@ -9,7 +9,8 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 TMP = tempfile.mkdtemp(prefix="pisos-test-")
 os.environ.update({"DB_PATH": os.path.join(TMP, "pisos.db"), "LOG_DIR": os.path.join(TMP, "logs"),
                    "BRIDGE_DIR": os.path.join(TMP, "bridge"), "API_KEY": "clave-test",
-                   "ALLOWED_ORIGINS": "https://jonlarra1.github.io", "GTFS_DIR": os.path.join(TMP, "gtfs")})
+                   "ALLOWED_ORIGINS": "https://jonlarra1.github.io", "GTFS_DIR": os.path.join(TMP, "gtfs"),
+                   "CLAVE_LARES": "clave-lares-test", "CLAVE_VIGILANTE": "clave-vigilante-test", "CLAVE_COMPROBADOR": "clave-comprobador-test"})
 os.makedirs(os.environ["BRIDGE_DIR"], exist_ok=True)
 sys.path.insert(0, os.path.join(ROOT, "backend"))
 spec = importlib.util.spec_from_file_location("app", os.path.join(ROOT, "backend", "app.py"))
@@ -20,7 +21,9 @@ ORIGIN = "https://jonlarra1.github.io"
 
 
 def tearDownModule():
-    if Servidor.srv: Servidor.srv.shutdown(); Servidor.srv.server_close()
+    if Servidor.srv:
+        Servidor.srv.shutdown(); Servidor.srv.server_close()
+        Servidor.srv = None                          # otro módulo de tests puede volver a arrancarlo
 
 
 class Servidor:
