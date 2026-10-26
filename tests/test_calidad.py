@@ -89,8 +89,17 @@ class TestLegibilidad(unittest.TestCase):
     @unittest.skipUnless((VENV / "ruff").exists() or shutil.which("ruff"), "ruff no está instalado")
     def test_ruff_limpio(self):
         ruff = str(VENV / "ruff") if (VENV / "ruff").exists() else "ruff"
-        r = subprocess.run([ruff, "check", "--select", "F,E9,B", "--output-format", "concise", "backend", "lares", "tests"],
-                           cwd=RAIZ, capture_output=True, text=True, check=False)
+        # backend y lares: todas las reglas de ruff.toml (estilo incluido); tests y tools: solo errores y bugs probables
+        for args in (["backend", "lares"], ["--select", "F,E9,B", "tests", "tools"]):
+            r = subprocess.run([ruff, "check", "--output-format", "concise", *args],
+                               cwd=RAIZ, capture_output=True, text=True, check=False)
+            self.assertEqual(r.returncode, 0, r.stdout)
+
+    @unittest.skipUnless((VENV / "ruff").exists() or shutil.which("ruff"), "ruff no está instalado")
+    def test_formato(self):
+        """backend y lares formateados con `ruff format` (una instrucción por línea, ≤120 columnas)."""
+        ruff = str(VENV / "ruff") if (VENV / "ruff").exists() else "ruff"
+        r = subprocess.run([ruff, "format", "--check", "backend", "lares"], cwd=RAIZ, capture_output=True, text=True, check=False)
         self.assertEqual(r.returncode, 0, r.stdout)
 
     def test_funciones_no_gigantes(self):
