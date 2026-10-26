@@ -73,8 +73,9 @@ The user is Jon. He works at Nordic Solar (Hellerup). He prefers short, simple, 
 - Los tests de la web corren CON la CSP: no usar `page.wait_for_function` (usa eval); usar `self.esperar(expr)`.
 - `tests/test_calidad.py`: seguridad (sin eval/exec/shell=True, SQL siempre con `?`, sin assert, sin claves en el código, sin borrado
   en la API, bandit sin hallazgos altos), legibilidad (ruff F,E9,B limpio; funciones ≤120 líneas) y eficiencia (complejidad ≤40,
-  lecturas de red con tope). ruff/bandit/radon solo en `.venv` local (si no están, esos tests se saltan). Deuda conocida: `main`
-  de Lares (complejidad 103), `evaluar`, `do_POST` — no añadir más a la lista.
+  lecturas de red con tope). ruff/bandit/radon solo en `.venv` local (si no están, esos tests se saltan). Deuda conocida: `evaluar`
+  (complejidad 31–33) y `do_POST` — no añadir más a la lista. `main` de Lares partida en pasos el 26-oct (103 → 1).
+  Estilo: `ruff format` + `ruff check` (ruff.toml, 120 columnas) en backend y Lares, 0 avisos.
 - Commits pequeños + push, estilo midudev: `type(scope): summary` en inglés, sin Co-Authored-By.
 
 ## Estado (2026-10-22, 23:00) y pendientes
