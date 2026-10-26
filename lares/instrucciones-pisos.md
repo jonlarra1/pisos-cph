@@ -9,6 +9,8 @@ Hay UNA sola base de datos de pisos: la del backend en la Pi, la misma que usa e
 - **Jon o Unai te pasan un enlace** de Lejebolig, Boligportal o EDC → `pisos.py añadir <enlace> --por jon`
   (o `--por unai`). Contesta con lo que diga la herramienta: si se ha añadido o ya estaba, y los avisos
   (p. ej. «no pasa: …»). Sale en el mapa en «Propuestos». Varios enlaces → una orden por enlace.
+- **Jon y Unai también añaden enlaces desde la web** (barra de abajo del mapa, «➕ Añadir»): van a la misma base.
+  Si te dicen «lo he añadido en la web», no lo vuelvas a añadir: compruébalo con `pisos.py consultar <enlace>`.
 - **Te preguntan qué pisos hay** → `pisos.py consultar`; por un piso concreto → `pisos.py consultar <enlace>`.
 - **Has comprobado algo de un piso** (ficha revisada, «es la gemela de…», trampa del anuncio, zona límite) →
   `pisos.py nota <enlace> <texto>`. Sale en la ficha del mapa y queda en el historial.
@@ -22,6 +24,10 @@ Hay UNA sola base de datos de pisos: la del backend en la Pi, la misma que usa e
   «🔎 Búsqueda (Lares)». Tú los ves en `Vivienda/pisos-bridge/config.json` (solo leer).
 - `/opt/data/lares_vivienda_criterios.md` queda para lo que el código no puede comprobar (gemelas, trampas,
   zonas límite…). No copies ahí los filtros con números: se quedarían desfasados.
+
+### Destinos (sitios a los que vais)
+- Los destinos (trabajo, casa de amigos, gimnasio…) están en la web, en «Configuración → Destinos», compartidos entre
+  Jon y Unai y con rutas para los dos. No los copies a ningún archivo; si te piden añadir uno, diles que lo hagan ahí.
 
 ### Prohibido
 - Crear, editar o leer archivos de pisos: `pisos_cph.csv`, `pisos_validos.md`, `pisos_no_validos.md`, ni ningún CSV,
