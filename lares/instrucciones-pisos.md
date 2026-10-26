@@ -6,7 +6,9 @@ Hay UNA sola base de datos de pisos: la del backend en la Pi, la misma que usa e
     python3 /opt/data/profiles/lares/scripts/pisos.py <orden>
 
 ### Qué hacer
-- **Jon o Unai te pasan un enlace** de Lejebolig, Boligportal o EDC → `pisos.py añadir <enlace> --por jon`
+- **Lejebolig ya NO se busca** (a Jon no le gusta): no busques ni propongas pisos de Lejebolig por tu cuenta. Si te
+  pasan un enlace de Lejebolig, se añade igual, pero sugiere buscar el mismo piso en Boligportal.
+- **Jon o Unai te pasan un enlace** de Boligportal, EDC (o Lejebolig) → `pisos.py añadir <enlace> --por jon`
   (o `--por unai`). Contesta con lo que diga la herramienta: si se ha añadido o ya estaba, y los avisos
   (p. ej. «no pasa: …»). Sale en el mapa en «Propuestos». Varios enlaces → una orden por enlace.
 - **Jon y Unai también añaden enlaces desde la web** (barra de abajo del mapa, «➕ Añadir»): van a la misma base.

@@ -5,7 +5,7 @@ Corre en el cron de Lares cada 3 h, sin LLM. Pasos:
  1. Lee config.json del buzón compartido con el mapa (pisos-bridge/): filtros, zonas
     permitidas (editables desde la web) y pisos que ya tienen estado.
  2. Lee el mapa publicado (pisos.json + descartados.json en GitHub Pages) para no repetir.
- 3. Descarga los listados de Lejebolig y Boligportal (páginas adaptativas, ver PAGINAS) y, solo para los
+ 3. Descarga los listados de Boligportal y EDC (páginas adaptativas, ver PAGINAS) y, solo para los
     que pasan el primer filtro, abre la ficha (máx. MAX_DETAIL por pasada, con caché).
  4. Aplica los filtros en código y escribe:
       candidatos.json  -> los que pasan (el mapa los muestra como «Propuestos por Lares»)
@@ -37,8 +37,8 @@ MAP_URLS = [
 # Los portales ordenan por más nuevo. Páginas adaptativas: como mínimo MIN_PAGES (lo de siempre) y se sigue
 # mientras salgan anuncios que Lares no ha visto nunca, hasta MAX_PAGES. Con pasadas cada 3 h casi siempre
 # se para en el mínimo; si un día entran muchos anuncios, no se pierden los que bajan de página.
+# Lejebolig ya NO se busca (decisión de Jon, 27-oct): sus enlaces solo entran a mano (chat o barra de la web).
 PAGINAS = {  # portal: (url de la página i, mínimo, máximo)
-    "lejebolig": (lambda i: "https://en.lejebolig.dk/lejeboliger/koebenhavn" + (f"?page={i + 1}" if i else ""), 2, 6),
     "boligportal": (
         lambda i: f"https://www.boligportal.dk/lejligheder/k%C3%B8benhavn/?max_monthly_rent=23000&offset={18 * i}",
         3,
@@ -259,33 +259,6 @@ def num_id(url_or_id):
 
 
 # ------------------------------------------------------------------ listados
-def parse_lejebolig(html):
-    out = {}
-    for m in re.finditer(r'id="lease-(\d+)"(.*?)(?=id="lease-\d+"|</body|$)', html, re.S):
-        lid, block = m.group(1), m.group(2)
-        title_m = re.search(r"<h2>(.*?)</h2>", block, re.S)
-        sub_m = re.search(r'lease-sub-header">\s*<div>(.*?)</div>', block, re.S)
-        price_m = re.search(r'class="rent[^"]*"><div>([\d,\.]+)', block) or re.search(r"([0-9][0-9,\.]*)\s*kr", block)
-        if not (title_m and price_m):
-            continue
-
-        def spec(icon, block=block):
-            mm = re.search(rf'resultat-stat-{icon}[^>]*>\s*<span>\s*([\d.,]+)\s*</span>', block, re.S)
-            return int(float(mm.group(1).replace(",", "."))) if mm else None
-
-        out[lid] = {
-            "portal": "Lejebolig",
-            "id": lid,
-            "link": f"https://en.lejebolig.dk/lejebolig/{lid}",
-            "titulo": unescape(re.sub(r"\s+", " ", title_m.group(1)).strip()),
-            "lugar": unescape(re.sub(r"<[^>]+>", "", sub_m.group(1)).strip()) if sub_m else "",
-            "precio": int(re.sub(r"[,.\-]", "", price_m.group(1))),
-            "m2": spec("areal"),
-            "vaer": spec("vaerelser"),
-        }
-    return out
-
-
 def parse_boligportal(html):
     """BoligPortal trae los anuncios en <script id="store" type="application/json">."""
     m = re.search(r'<script id="store" type="application/json">(.*?)</script>', html, re.S)
@@ -710,10 +683,10 @@ def abrir_db():
 
 
 def leer_portales(vistos_antes, zonas, F):
-    """Páginas de resultados de Lejebolig, Boligportal y EDC. Páginas adaptativas: mínimo fijo y se sigue
+    """Páginas de resultados de Boligportal y EDC (Lejebolig no). Páginas adaptativas: mínimo fijo y se sigue
     mientras haya anuncios nunca vistos (hasta el máximo)."""
     listings, errors, paginas = {}, [], {}
-    for name, parser in (("lejebolig", parse_lejebolig), ("boligportal", parse_boligportal)):
+    for name, parser in (("boligportal", parse_boligportal),):
         url_de, minimo, maximo = PAGINAS[name]
         for i in range(maximo):
             try:

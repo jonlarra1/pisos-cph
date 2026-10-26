@@ -72,7 +72,7 @@ const N={
  gh:[95,330,"GitHub Pages","web estática"],      nav:[95,180,"Navegador","Jon · Unai · amigos"],
  funnel:[315,180,"Tailscale Funnel",":8443 público"], api:[535,180,"pisos-api","contenedor en la Pi"],
  db:[535,330,"SQLite","estados · zonas · filtros"], img:[755,180,"Caché de fotos","/api/img"],
- portal:[975,180,"Portales","Boligportal · Lejebolig"], bridge:[755,330,"Buzón compartido","vault/pisos-bridge"],
+ portal:[975,180,"Portales","Boligportal · EDC"], bridge:[755,330,"Buzón compartido","vault/pisos-bridge"],
  lares:[975,330,"Lares","cron cada 3 h"]};
 const E=[ // [desde, hasta, etiqueta]
  ["gh","nav","descarga la web"],["nav","funnel","HTTPS"],["funnel","api","proxy"],["api","db","lee / guarda"],
@@ -141,7 +141,7 @@ function pulse(k,color){const [x,y]=N[k]; const r=el("rect",{class:"ring",x:x-W/
   r.animate([{opacity:1},{opacity:0}],{duration:1200,easing:"ease-out"}).onfinish=()=>r.remove();}
 function animate(it,delay){const bad=isBad(it), txt=describe(it);
   if(it.k==="check"){const k=CHKNODE[it.name]; if(k){note(k,txt,bad); setTimeout(()=>pulse(k,bad?"var(--bad)":"var(--mon)"),delay);} return;}
-  if(it.k==="lares"){const l=it.leidos||{}; portalSt.bad=!(l.Boligportal>0&&l.Lejebolig>0); portalSt.txt=`Última pasada de Lares: Boligportal ${l.Boligportal||0} anuncios · Lejebolig ${l.Lejebolig||0} anuncios`;}
+  if(it.k==="lares"){const l=it.leidos||{}; portalSt.bad=!(l.Boligportal>0); portalSt.txt=`Última pasada de Lares: Boligportal ${l.Boligportal||0} anuncios · EDC ${l.EDC||0} anuncios (Lejebolig ya no se busca)`;}
   if(it.k==="api"&&String(it.note||"").startsWith("portal:")){portalSt.bad=bad;}
   const path=pathOf(it); if(path.length<2){path.forEach(k=>note(k,txt,bad));return;}
   [...new Set(path)].forEach(k=>note(k,txt,bad));

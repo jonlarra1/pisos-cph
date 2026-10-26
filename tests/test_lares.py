@@ -61,7 +61,6 @@ class Pasada:
     def __call__(self):
         with mock.patch.object(self.m, "fetch", self.fetch), \
              mock.patch.object(self.m, "parse_boligportal", self.parser("boligportal")), \
-             mock.patch.object(self.m, "parse_lejebolig", self.parser("lejebolig")), \
              mock.patch.object(self.m, "detalle", lambda it: {"amueblado": None}), mock.patch("time.sleep"), \
              mock.patch.object(self.m, "estado_anuncio", self.estado), \
              contextlib.redirect_stdout(io.StringIO()) as self.salida:          # las líneas «NUEVO |…» que lee Lares
@@ -74,9 +73,12 @@ class TestPaginas(unittest.TestCase):
     def cuenta(self, pas, portal): return sum(1 for u in pas.pedidas if portal in u and not u.startswith(self.m.EDC_API))
 
     def test_lee_el_minimo_aunque_no_haya_nada_nuevo(self):
-        pas = Pasada(self.m, {"boligportal": [[1], [2], [3], [4]], "lejebolig": [[10], [11], [12]]}); pas()
-        pas2 = Pasada(self.m, {"boligportal": [[1], [2], [3], [4]], "lejebolig": [[10], [11], [12]]}); pas2()
-        self.assertEqual(self.cuenta(pas2, "boligportal"), 3); self.assertEqual(self.cuenta(pas2, "lejebolig"), 2)
+        pas = Pasada(self.m, {"boligportal": [[1], [2], [3], [4]]}); pas()
+        pas2 = Pasada(self.m, {"boligportal": [[1], [2], [3], [4]]}); pas2()
+        self.assertEqual(self.cuenta(pas2, "boligportal"), 3)
+    def test_no_busca_en_lejebolig(self):                                       # decisión de Jon, 27-oct
+        pas = Pasada(self.m, {"boligportal": [[1], [2], [3]]}); pas()
+        self.assertEqual(self.cuenta(pas, "lejebolig"), 0); self.assertNotIn("lejebolig", self.m.PAGINAS)
     def test_sigue_mientras_haya_nuevos(self):
         pas = Pasada(self.m, {"boligportal": [[i] for i in range(1, 7)]}); pas()      # 6 páginas, todas nuevas
         self.assertEqual(self.cuenta(pas, "boligportal"), 7)                            # 6 con anuncios + 1 vacía
@@ -279,7 +281,7 @@ class TestAmuebladoYRasgos(unittest.TestCase):
         abiertas = []
         pas = Pasada(self.m, {"boligportal": [[1]]})
         with mock.patch.object(self.m, "fetch", pas.fetch), mock.patch.object(self.m, "parse_boligportal", pas.parser("boligportal")), \
-             mock.patch.object(self.m, "parse_lejebolig", lambda h: {}), mock.patch.object(self.m, "estado_anuncio", pas.estado), \
+             mock.patch.object(self.m, "estado_anuncio", pas.estado), \
              mock.patch.object(self.m, "detalle", lambda it: abiertas.append(it["id"]) or {"amueblado": True}), mock.patch("time.sleep"), \
              contextlib.redirect_stdout(io.StringIO()):
             self.m.main()

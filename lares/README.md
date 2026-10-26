@@ -10,7 +10,7 @@ Buzón compartido con el backend: `Vivienda/pisos-bridge/` del vault
 - `candidatos.json` / `rechazados.json` — los escribe este script.
 - `planos.json` — `{"<id>": {"dorm": 3, "nota": "..."}}`: revisión de planos hecha por Lares con IA (pendiente).
 
-Fuentes: Lejebolig, Boligportal y EDC (edc.dk, desde el 23-oct). EDC se lee por su API JSON
+Fuentes: Boligportal y EDC (edc.dk, desde el 23-oct). Lejebolig ya NO se busca (decisión de Jon, 27-oct): sus enlaces solo entran a mano. EDC se lee por su API JSON
 (`/api/v1/cases/quick-search`, sin clave) con los códigos postales de las zonas activas (`ZONA_POSTNR`), ≥ værelser y
 ≤ precio, más nuevo primero, máx. 3 páginas de 100 por grupo de códigos (4 grupos con todas las zonas). Trae anuncios propios
 de EDC y copias de Boligportal (se guardan con su id de Boligportal; si Boligportal ya lo trajo, vale esa versión).
