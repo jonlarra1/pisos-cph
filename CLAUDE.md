@@ -82,7 +82,8 @@ The user is Jon. He works at Nordic Solar (Hellerup). He prefers short, simple, 
 - 26-oct 21:04 INSTALADO en la Pi: backend con API v2 (fase 1; sin claves nuevas en .env: solo acepta la de la web) y Lares v5
   (main partida en pasos; pasada de prueba 41 s, 22 candidatos, 0 errores). 1.er intento del backend → vuelta atrás automática
   porque el Funnel estaba caído (no por el código); 2.º intento con la prueba por túnel SSH (`PISOS_URL=http://127.0.0.1:18788`).
-  INCIDENTE ABIERTO: Funnel público caído desde el 25-oct 23:27 UTC (la web no llega a la Pi). La Pi tiene dos salidas: wlan0
+  INCIDENTE CERRADO 26-oct 21:15 (≈22 h): `sudo systemctl restart tailscaled` (entrando por el cable, 192.168.1.110: la Pi
+  cuelga de este PC por eth0) y el Funnel volvió. tailscaled llevaba sin reiniciar desde el 14-sep. Funnel caído desde el 25-oct 23:27 UTC (la web no llega a la Pi). La Pi tiene dos salidas: wlan0
   (10.20.15.232, red de DTU, métrica 50 = preferida) y eth0 (192.168.1.110, métrica 100); la WiFi se cae y vuelve («major link
   change», DERP Amsterdam inalcanzable) y el saludo TLS del Funnel se corta. Es red de Jon: NO tocar sin su decisión.
 - 26-oct: fase 1 de docs/arquitectura.md HECHA EN LOCAL (sin desplegar): backend/portales.py (leer fichas de Lejebolig/Boligportal/EDC),
