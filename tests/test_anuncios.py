@@ -122,6 +122,12 @@ class TestEntregar(unittest.TestCase):
         self.assertEqual((a["datos"]["dep"], a["datos"]["pre"]), (48000, 16000))
         self.assertEqual(len(A.listar(self.con)), 1)
 
+    def test_si_lo_anade_una_persona_tras_el_vigilante_pasa_a_manual(self):
+        A.entregar(self.con, piso(pid="2", precio=40000), "vigilante", "vigilante", FILTROS, ZONAS)   # rechazado
+        a = A.entregar(self.con, piso(pid="2", precio=40000), "web", "web:jon", FILTROS, ZONAS)
+        self.assertEqual((a["estado"], a["origen"]), ("propuesto", "web"))                        # sale en «Propuestos»
+        a = A.entregar(self.con, piso(pid="2", precio=40000), "vigilante", "vigilante", FILTROS, ZONAS)
+        self.assertEqual((a["estado"], a["origen"]), ("propuesto", "web"))                        # el vigilante no lo devuelve
     def test_la_decision_de_una_persona_no_la_pisa_el_vigilante(self):
         A.entregar(self.con, piso(), "vigilante", "vigilante", FILTROS, ZONAS)
         A.cambiar_estado(self.con, "Boligportal:1", "gusta", "web", "jon")

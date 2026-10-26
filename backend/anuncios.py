@@ -232,7 +232,7 @@ def entregar(con, datos, origen, quien, filtros, zonas, ubicacion=None, ahora=No
         lat, lon, prec = (lat, lon, prec) if lat is not None else (previo["lat"], previo["lon"], previo["precision"])
         con.execute(
             "UPDATE anuncio SET datos=?, estado=?, motivo=?, avisos=?, zona=?, lat=?, lon=?, precision=?, "
-            "actualizado=? "
+            "origen=?, actualizado=? "
             "WHERE uid=?",
             (
                 json.dumps(datos, ensure_ascii=False),
@@ -243,6 +243,7 @@ def entregar(con, datos, origen, quien, filtros, zonas, ubicacion=None, ahora=No
                 lat,
                 lon,
                 prec,
+                origen_efectivo,  # si una persona añade uno que ya vio el vigilante, pasa a ser «manual»
                 ahora,
                 uid,
             ),
