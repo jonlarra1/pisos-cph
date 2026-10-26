@@ -180,6 +180,40 @@ class TestVarios(Base):
         self.assertEqual(pedir("/api/ruta?olat=55.7&olon=12.5&dlat=55.7&dlon=12.5&fecha=2026-10-26&hora=09:00")[0], 503)
 
 
+class MotorFalso:
+    desde, hasta, creado = "20260101", "20271231", "x"
+    def __init__(self): self.n = 0
+    def ruta(self, *a): self.n += 1; return [{"min": 20, "legs": []}]
+
+
+class TestRutasPrevias(Base):
+    """Freno del motor y cálculo previo de rutas al añadir un destino (backend/precalculo.py)."""
+    Q = "olat=55.70&olon=12.40&dlat=55.69&dlon=12.55&fecha=2026-10-27&hora=08:30&modo=llegar&perfil=bike&lim=10&vw=5&vb=20"
+    def setUp(self):
+        super().setUp(); self.m = MotorFalso(); app.MOTOR["m"] = self.m; app.RUTA_CACHE.clear()
+        app.COLA_RUTAS.q.clear(); app.FRENO.n = 0
+    def tearDown(self): app.MOTOR["m"] = None; app.FRENO.n = 0
+    def test_previa_dura_24_h_y_la_web_la_aprovecha(self):
+        self.assertEqual(app.ruta(self.Q, previo=True)[0], 200)
+        self.assertEqual(list(app.RUTA_CACHE.values())[0][2], 86400)
+        code, d = app.ruta(self.Q); self.assertEqual((code, d.get("cache"), self.m.n), (200, True, 1))
+    def test_freno_lleno_da_ocupado_al_momento(self):
+        app.FRENO.n = app.FRENO.maximo
+        code, d = app.ruta(self.Q); self.assertEqual(code, 503); self.assertEqual(self.m.n, 0)
+        self.assertEqual(app.ruta(self.Q, previo=True)[0], 200)                       # la cola no pasa por el freno
+    def test_el_freno_se_libera_aunque_falle(self):
+        self.m.ruta = lambda *a: 1 / 0
+        with self.assertRaises(ZeroDivisionError): app.ruta(self.Q)
+        self.assertEqual(app.FRENO.n, 0)
+    def test_anadir_destino_llena_la_cola(self):
+        with app.db() as c: c.execute("DELETE FROM destino")
+        app._PISOS_MAPA.update(t=time.time(), ll=[(55.70, 12.40), (55.65, 12.55)])
+        d = {"accion": "anadir", "id": "xcola01", "n": "Clase", "addr": "", "ll": [55.69, 12.55], "by": "jon"}
+        self.assertEqual(escribir("/api/destino", d)[0], 200)
+        self.assertEqual(len(app.COLA_RUTAS.q), 2 * 2 * app.precalculo.DIAS)
+        self.assertIn("rutas previas: en cola", app.check_destinos()[1])
+
+
 class TestEtag(Base):
     def test_304_si_no_cambia(self):
         code, hd, _ = pedir("/api/zonas"); tag = hd["ETag"]

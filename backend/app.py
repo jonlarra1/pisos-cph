@@ -25,6 +25,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import anuncios
 import api_v2
 import destinos
+import precalculo
 import puente
 
 DB = os.environ.get("DB_PATH", "/data/pisos.db")
@@ -772,7 +773,10 @@ class H(BaseHTTPRequestHandler):
         if cambiado:
             log("events", level="info", src="destinos", msg=f"{accion} {x['id']} {x.get('n', '')}".strip(), by=by)
             avisar("destinos", {})
-        return self.reply(200, {"destinos": lista, "cambiado": cambiado})
+            if accion == "anadir":  # la Pi calcula ya las rutas de los pisos del mapa a ese destino
+                n = COLA_RUTAS.destino(x["ll"], x["n"])
+                log("events", level="info", src="rutas_previas", msg=f"{x['id']}: {n} rutas en cola")
+        return self.reply(200, {"destinos": lista, "cambiado": cambiado, "preparando": precalculo.progreso()})
 
     def v2_post(self):
         """Escrituras de la API v2: cliente por su clave, tamaño máximo, JSON → api_v2.escribir."""
@@ -841,11 +845,11 @@ class H(BaseHTTPRequestHandler):
             return self.reply(200, filtros())
         if self.path == "/api/destinos":
             with db() as c:
-                return self.reply(200, {"destinos": destinos.listar(c)})
+                return self.reply(200, {"destinos": destinos.listar(c), "preparando": precalculo.progreso()})
         if self.path == "/api/candidatos":
             return self.reply(200, candidatos())
         if self.path.startswith("/api/ruta?"):
-            if limited("ruta:" + self.client_ip(), 60, "ruta:*", 200):
+            if limited("ruta:" + self.client_ip(), 240, "ruta:*", 600):  # cachés baratas; el motor lo protege FRENO
                 return self.reply(429, {"error": "demasiadas búsquedas, espera un minuto"})
             code, obj = ruta(urllib.parse.urlparse(self.path).query)
             self._note = (
@@ -958,7 +962,7 @@ GTFS_DIR = os.environ.get("GTFS_DIR", os.path.join(os.path.dirname(DB) or "/data
 GTFS_URL = os.environ.get("GTFS_URL", "https://www.rejseplanen.info/labs/GTFS.zip")
 GTFS_EVERY = 7 * 86400  # descarga semanal
 MOTOR = {"m": None, "error": "", "cargado": 0, "ultima_ms": None, "busquedas": 0}
-RUTA_CACHE = collections.OrderedDict()  # resultados recientes (10 min)
+RUTA_CACHE = collections.OrderedDict()  # resultados recientes: (hora, respuesta, vida en s) — 10 min; previas 24 h
 RUTA_LOCK = threading.Semaphore(1)  # una búsqueda a la vez (CPU de la Pi)
 COMPACTO = os.path.join(GTFS_DIR, "compacto.pkl")
 
@@ -1044,9 +1048,10 @@ def _f(q, k, lo, hi):
     return v
 
 
-def ruta(qs):
+def ruta(qs, previo=False):
     """GET "
-    "/api/ruta?olat&olon&dlat&dlon&dname&fecha=YYYY-MM-DD&hora=HH:MM&modo=llegar|salir&perfil=foot|bike&lim&vw&vb"""
+    "/api/ruta?olat&olon&dlat&dlon&dname&fecha=YYYY-MM-DD&hora=HH:MM&modo=llegar|salir&perfil=foot|bike&lim&vw&vb
+    previo=True: cálculo previo de la cola (no pasa por el freno de la web y se guarda 24 h)."""
     import routing
 
     q = urllib.parse.parse_qs(qs, max_num_fields=20)
@@ -1081,17 +1086,23 @@ def ruta(qs):
         return 400, {"error": f"fuera del periodo de horarios ({M.desde}–{M.hasta})"}
     key = (round(olat, 4), round(olon, 4), round(dlat, 4), round(dlon, 4), fecha, hora, modo, perfil, lim, vw, vb)
     hit = RUTA_CACHE.get(key)
-    if hit and time.time() - hit[0] < 600:
+    if hit and time.time() - hit[0] < hit[2]:
         return 200, {**hit[1], "cache": True}
-    if not RUTA_LOCK.acquire(timeout=10):
+    if not previo and not FRENO.entrar():  # demasiadas esperando: «ocupado» al momento, sin ocupar un hilo
         return 503, {"error": "motor ocupado, prueba en unos segundos"}
     try:
-        t0 = time.time()
-        pf = {"mode": perfil, "v_walk": vw / 3.6, "v_bike": vb / 3.6, "lim_min": lim}
-        opts = M.ruta(olat, olon, (dlat, dlon), dname, fecha, hora, modo, pf)
-        ms = round((time.time() - t0) * 1000)
+        if not RUTA_LOCK.acquire(timeout=10):
+            return 503, {"error": "motor ocupado, prueba en unos segundos"}
+        try:
+            t0 = time.time()
+            pf = {"mode": perfil, "v_walk": vw / 3.6, "v_bike": vb / 3.6, "lim_min": lim}
+            opts = M.ruta(olat, olon, (dlat, dlon), dname, fecha, hora, modo, pf)
+            ms = round((time.time() - t0) * 1000)
+        finally:
+            RUTA_LOCK.release()
     finally:
-        RUTA_LOCK.release()
+        if not previo:
+            FRENO.salir()
     MOTOR["ultima_ms"] = ms
     MOTOR["busquedas"] += 1
     res = {
@@ -1100,10 +1111,27 @@ def ruta(qs):
         "horarios": {"creado": M.creado, "hasta": M.hasta},
         "fuente": "GTFS Rejseplanen (horario, sin retrasos)",
     }
-    RUTA_CACHE[key] = (time.time(), res)
-    while len(RUTA_CACHE) > 300:
+    RUTA_CACHE[key] = (time.time(), res, 86400 if previo else 600)
+    while len(RUTA_CACHE) > 2000:
         RUTA_CACHE.popitem(last=False)
     return 200, res
+
+
+FRENO = precalculo.Freno()
+_PISOS_MAPA = {"t": 0, "ll": []}
+
+
+def pisos_mapa():
+    """[(lat, lon)] de los pisos del mapa publicado (data/pisos.json de GitHub Pages), 1 h en memoria."""
+    if time.time() - _PISOS_MAPA["t"] > 3600:
+        _, raw = _get(SITE + "data/pisos.json")
+        d = json.loads(raw)
+        lista = d if isinstance(d, list) else d.get("pisos", [])
+        _PISOS_MAPA.update(t=time.time(), ll=[(p["lat"], p["lon"]) for p in lista if p.get("lat") and p.get("lon")])
+    return _PISOS_MAPA["ll"]
+
+
+COLA_RUTAS = precalculo.Cola(lambda qs: ruta(qs, previo=True), pisos_mapa, FRENO)
 
 
 def check_rutas():
@@ -1427,7 +1455,8 @@ def check_anuncios():
 def check_destinos():
     """Destinos compartidos: cuántos hay, cambios desde el arranque y peticiones rechazadas."""
     with db() as c:
-        return destinos.resumen(c)
+        ok, txt = destinos.resumen(c)
+    return ok and precalculo.ESTADO["errores"] < 50, f"{txt} · {precalculo.resumen()}"
 
 
 CHECKS_LISTA = (
@@ -1617,6 +1646,7 @@ if __name__ == "__main__":
     log("events", level="info", src="api", msg="arranque del backend")
     threading.Thread(target=housekeeper, daemon=True).start()
     threading.Thread(target=gtfs_worker, daemon=True).start()
+    threading.Thread(target=COLA_RUTAS.trabajar, daemon=True).start()
     threading.Thread(target=monitor, daemon=True).start()
     threading.Thread(target=api_v2.lector, args=(CTX,), daemon=True).start()
     threading.Thread(target=vigilar_candidatos, daemon=True).start()
