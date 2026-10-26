@@ -19,7 +19,7 @@ APLICAR=0; COMPOSE=0
 for a in "$@"; do case "$a" in --aplicar) APLICAR=1;; --con-compose) COMPOSE=1;; *) echo "opción desconocida: $a"; exit 2;; esac; done
 DIR=/home/docker/pisos-backend
 URL=https://raspberrypi.tail9f1069.ts.net:8443
-FILES=(app.py routing.py admin.html Dockerfile)
+FILES=(app.py routing.py portales.py anuncios.py api_v2.py admin.html Dockerfile)
 [ "$COMPOSE" = 1 ] && FILES+=(compose.yml)
 KEYOPT=(); [ -n "${PI_KEY:-}" ] && KEYOPT=(-i "$PI_KEY" -o IdentitiesOnly=yes)   # PI_KEY=ruta de la clave temporal
 SSH=(ssh "${KEYOPT[@]}" -o BatchMode=yes -o ConnectTimeout=10 "$HOST")
@@ -39,11 +39,12 @@ echo "== 1. Tests locales"
 
 B="backup-$(date +%Y%m%d-%H%M%S)"
 echo "== 2. Copia de seguridad en la Pi: $DIR/$B"
-"${SSH[@]}" "cd $DIR && mkdir $B && for f in app.py routing.py admin.html Dockerfile compose.yml; do if [ -e \$f ]; then cp -a \$f $B/; fi; done && ls $B"
+"${SSH[@]}" "cd $DIR && mkdir $B && for f in ${FILES[*]} compose.yml; do if [ -e \$f ]; then cp -a \$f $B/; fi; done && ls $B"
 
 volver() {
   echo "!! Algo falló: restaurando $B y reconstruyendo"
   "${SSH[@]}" "cd $DIR && cp -a $B/. . && docker compose up -d --build" || echo "!! LA VUELTA ATRÁS TAMBIÉN FALLÓ: revisar a mano en la Pi"
+  python3 tools/dora.py --registrar backend vuelta_atras "$B"      # métricas DORA: cuenta como fallo
   exit 1
 }
 
@@ -59,4 +60,5 @@ done
 
 echo "== 5. Prueba desde fuera ($URL)"
 python3 backend/smoke_test.py "$URL" || volver
+python3 tools/dora.py --registrar backend ok "$B"                  # métricas DORA (docs/despliegues.jsonl)
 echo "== Instalado. Copia anterior en $DIR/$B (borrarla cuando todo lleve un día bien)."

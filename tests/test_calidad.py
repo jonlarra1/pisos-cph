@@ -108,6 +108,18 @@ class TestLegibilidad(unittest.TestCase):
             self.assertTrue(ast.get_docstring(t), nombre)
 
 
+class TestDespliegue(unittest.TestCase):
+    def test_modulos_del_backend_en_dockerfile_y_deploy(self):
+        """Todo módulo propio que importa app.py va en el Dockerfile y en deploy.sh (si falta, el contenedor no arranca)."""
+        propios = {f.stem for f in (RAIZ / "backend").glob("*.py")}
+        t = ast.parse((RAIZ / "backend" / "app.py").read_text(encoding="utf-8"))
+        usados = {a.name for n in ast.walk(t) if isinstance(n, ast.Import) for a in n.names} & propios
+        dockerfile = (RAIZ / "backend" / "Dockerfile").read_text(encoding="utf-8")
+        deploy = (RAIZ / "backend" / "deploy.sh").read_text(encoding="utf-8")
+        faltan = [f"{m}.py" for m in sorted(usados | {"app"}) if f"{m}.py" not in dockerfile or f"{m}.py" not in deploy]
+        self.assertEqual(faltan, [])
+
+
 class TestEficiencia(unittest.TestCase):
     @unittest.skipUnless((VENV / "radon").exists(), "radon no está en .venv")
     def test_complejidad(self):
