@@ -9,7 +9,7 @@ def foot(pts, prof="foot"):
     key = ("bike:" if prof == "bike" else "")+";".join(f"{lo:.5f},{la:.5f}" for la, lo in pts)
     if key not in cache:
         u = f"https://routing.openstreetmap.de/routed-{prof}/route/v1/driving/{key.split(':')[-1]}?overview=full&geometries=geojson"
-        for i in range(3):
+        for _intento in range(3):
             try:
                 r = json.load(urllib.request.urlopen(urllib.request.Request(u, headers={"User-Agent": UA}), timeout=30)); break
             except Exception as e:

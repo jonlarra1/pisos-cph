@@ -27,7 +27,7 @@ for t,a,d,s,q,pu,do,_ in rr:
 conns=[]
 for t,L in seq.items():
     L.sort()
-    for x,y in zip(L,L[1:]):
+    for x,y in zip(L,L[1:], strict=False):
         if x[4]=="1" or y[5]=="1": continue
         if T0<=x[3]<=T1: conns.append((x[3],y[2],x[1],y[1],t))
 conns.sort()

@@ -15,7 +15,7 @@ def polys(g):
     return [g["coordinates"]] if g["type"] == "Polygon" else g["coordinates"]
 def area_c(ring):
     A = cx = cy = 0
-    for (x1, y1), (x2, y2) in zip(ring, ring[1:]+ring[:1]):
+    for (x1, y1), (x2, y2) in zip(ring, ring[1:]+ring[:1], strict=False):
         f = x1*y2-x2*y1; A += f; cx += (x1+x2)*f; cy += (y1+y2)*f
     return A/2, (cx/(3*A) if A else ring[0][0], cy/(3*A) if A else ring[0][1])
 def feat(name, kind, g):

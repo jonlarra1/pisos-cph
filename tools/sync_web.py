@@ -29,7 +29,10 @@ def valor(html, nombre):
     return json.loads(v)
 
 
-def sync(path=os.path.join(ROOT, "index.html")):
+INDEX = os.path.join(ROOT, "index.html")
+
+
+def sync(path=INDEX):
     with open(path, encoding="utf-8") as f: html = f.read()
     def poner(nombre, linea):
         nonlocal html

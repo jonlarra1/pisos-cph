@@ -5,8 +5,8 @@ F = sys.argv[1]
 # Replace them with the latest earlier-slot route of the same flat/dest that still arrives on time.
 R = json.load(open(F)); T = R["times"]; late = fixed = 0
 ok = lambda i, t: R["routes"][i]["llega"] <= t
-for mo, D in R["ix"].items():
-    for d, TT in D.items():
+for _mo, D in R["ix"].items():
+    for _d, TT in D.items():
         for ti, t in enumerate(T):
             for lim, FF in TT.get(t, {}).items():
                 for fid, X in FF.items():
