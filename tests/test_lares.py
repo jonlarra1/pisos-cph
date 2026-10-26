@@ -76,6 +76,13 @@ class TestPaginas(unittest.TestCase):
         pas = Pasada(self.m, {"boligportal": [[1], [2], [3], [4]]}); pas()
         pas2 = Pasada(self.m, {"boligportal": [[1], [2], [3], [4]]}); pas2()
         self.assertEqual(self.cuenta(pas2, "boligportal"), 3)
+    def test_no_recuerda_propuestos_de_lejebolig(self):
+        con = self.m.abrir_db()
+        hoy = self.m.datetime.now(self.m.timezone.utc).isoformat()
+        for lid, portal in (("1914884", "Lejebolig"), ("5681028", "Boligportal")):
+            con.execute("INSERT OR REPLACE INTO v2_eval (id, portal, link, ok, item, first_seen, last_seen) VALUES (?,?,?,1,?,?,?)",
+                        (lid, portal, "x", json.dumps({"id": lid, "portal": portal}), hoy, hoy))
+        self.assertEqual([c["id"] for c in self.m.candidatos_recordados(con, {}, set())], ["5681028"])
     def test_no_busca_en_lejebolig(self):                                       # decisión de Jon, 27-oct
         pas = Pasada(self.m, {"boligportal": [[1], [2], [3]]}); pas()
         self.assertEqual(self.cuenta(pas, "lejebolig"), 0); self.assertNotIn("lejebolig", self.m.PAGINAS)

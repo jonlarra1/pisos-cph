@@ -813,6 +813,10 @@ def candidatos_recordados(con, listings, known):
         if lid in listings or lid in known:
             continue
         try:
+            if (
+                json.loads(item).get("portal") == "Lejebolig"
+            ):  # ya no se busca ahí (27-oct): esos viven en la base única
+                continue
             if datetime.fromisoformat(last).timestamp() < limite:
                 continue
             it = json.loads(item)
