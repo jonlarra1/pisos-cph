@@ -24,6 +24,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 import anuncios
 import api_v2
+import puente
 
 DB = os.environ.get("DB_PATH", "/data/pisos.db")
 ORIGINS = set(os.environ.get("ALLOWED_ORIGINS", "https://jonlarra1.github.io,http://localhost:8000").split(","))
@@ -397,7 +398,7 @@ def candidatos():
         with open(os.path.join(BRIDGE, "candidatos.json"), encoding="utf-8") as f:
             c = json.load(f)
     except Exception:
-        return {"actualizado": None, "pisos": []}
+        c = {}
     est = all_estados()
     pisos = c.get("pisos", []) if isinstance(c, dict) else []
     out = []
@@ -415,7 +416,29 @@ def candidatos():
                 **({"motivo": e["motivo"]} if e.get("motivo") else {}),
             }
         )
+    out += _con_estado(_candidatos_v2({str(p.get("id")) for p in out}), est)
     return {"actualizado": c.get("actualizado") if isinstance(c, dict) else None, "pisos": out}
+
+
+def _con_estado(pisos, est):
+    return [
+        {
+            **p,
+            **{k: est.get(p["id"], {}).get(k) for k in ("stF", "by", "ts")},
+            "st": est.get(p["id"], {}).get("st", "nuevo"),
+        }
+        for p in pisos
+    ]
+
+
+def _candidatos_v2(ya):
+    """Anuncios añadidos por el chat de Lares o por la web (base única) que aún no están en candidatos.json."""
+    try:
+        with _db_filas() as con:
+            return puente.candidatos(con, ya)
+    except Exception as e:
+        log("events", level="warn", src="puente", msg=f"candidatos: {type(e).__name__}: {e}")
+        return []
 
 
 class _RedirSoloPortales(urllib.request.HTTPRedirectHandler):
@@ -891,6 +914,7 @@ class H(BaseHTTPRequestHandler):
             c.execute("INSERT INTO historial (id, st, stF, by, ts) VALUES (?,?,?,?,?)", (pid, st, stF, by, ts))
         write_config()
         log("events", level="info", src="estado", msg=f"{pid} -> {st}", by=by)
+        _estado_a_v2(pid, st, by)
         est = all_estados()
         avisar("estados", est)
         self.reply(200, est)
@@ -1495,8 +1519,50 @@ def _db_filas():
     return cm()
 
 
+def _estado_a_v2(pid, st, by):
+    """La web cambió un estado: si el piso está en la base única, se cambia también allí (puente.py)."""
+    try:
+        with _db_filas() as con:
+            hechos = puente.desde_web(con, pid, st, by)
+        if hechos:
+            log("events", level="info", src="puente", msg=f"web -> base única: {', '.join(hechos)} -> {st}", by=by)
+    except Exception as e:
+        log("events", level="warn", src="puente", msg=f"web -> base única {pid}: {type(e).__name__}: {e}")
+
+
+def _v2_a_web(a, cliente, quien, tipo):
+    """Cambios hechos por la API v2 que la web actual tiene que ver (puente.py)."""
+    if tipo == "enlace":
+        with _db_filas() as con:
+            a = puente.al_anadir(con, a, all_estados().get(str(a["pid"])))
+        avisar("candidatos", {"uid": a["uid"]})
+        return a
+    fila = puente.a_web(a, cliente, quien)
+    if fila:
+        pid, st, by = fila
+        ts = int(time.time())
+        stF = time.strftime("%Y-%m-%d")
+        with lock, db() as c:
+            c.execute(
+                "INSERT INTO estado (id, st, stF, by, ts, motivo) VALUES (?,?,?,?,?,NULL) ON CONFLICT(id) DO UPDATE "
+                "SET st=excluded.st, stF=excluded.stF, by=excluded.by, ts=excluded.ts, motivo=NULL",
+                (pid, st, stF, by, ts),
+            )
+            c.execute("INSERT INTO historial (id, st, stF, by, ts) VALUES (?,?,?,?,?)", (pid, st, stF, by, ts))
+        write_config()
+        avisar("estados", all_estados())
+    return a
+
+
 CTX = api_v2.Contexto(
-    db=_db_filas, filtros=filtros, zonas=zonas_permitidas, log=log, avisar=avisar, limitado=limited, origenes=ORIGINS
+    db=_db_filas,
+    filtros=filtros,
+    zonas=zonas_permitidas,
+    log=log,
+    avisar=avisar,
+    limitado=limited,
+    origenes=ORIGINS,
+    al_cambiar=_v2_a_web,
 )
 api_v2.configurar()
 

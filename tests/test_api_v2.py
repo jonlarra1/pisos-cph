@@ -159,6 +159,50 @@ class TestVigilante(BaseV2):
         self.assertEqual(len(a["datos"]["titulo"]), 200)
 
 
+class TestPuenteConLaWeb(BaseV2):
+    """Hasta la fase 3, la web usa /api/candidatos y /api/estado: lo de la base única tiene que verse allí."""
+
+    ORIGEN = "https://jonlarra1.github.io"
+
+    def setUp(self):
+        super().setUp()
+        with app.db() as c:
+            c.execute("DELETE FROM estado WHERE id IN ('5481965', '11810121')")
+
+    def ids_propuestos(self):
+        return {str(p["id"]): p for p in pedir("/api/candidatos")[2]["pisos"]}
+
+    def test_lo_que_anade_lares_sale_en_propuestos(self):
+        post("/api/v2/enlaces", {"url": EDC}, LARES)
+        p = self.ids_propuestos().get("11810121")
+        self.assertIsNotNone(p)
+        self.assertEqual((p["st"], p["origen"], p["portal"], p["dorm"]), ("nuevo", "lares", "EDC", 3))
+        self.assertTrue(p["lat"] and p["link"].startswith("https://www.edc.dk/"))
+
+    def test_lo_del_vigilante_no_sale_por_el_puente(self):
+        post("/api/v2/anuncios", {"datos": {"link": BP, "precio": 16300, "vaer": 4, "lat": 55.7, "lon": 12.4}}, VIG)
+        self.assertNotIn("5481965", self.ids_propuestos())
+
+    def test_la_web_cambia_el_estado_y_la_base_unica_tambien(self):
+        post("/api/v2/enlaces", {"url": BP}, LARES)
+        code, _, _ = post("/api/estado", {"id": "5481965", "st": "gusta", "by": "unai"}, WEB, self.ORIGEN)
+        self.assertEqual(code, 200)
+        a = pedir(uid_url("Boligportal:5481965"))[2]
+        self.assertEqual((a["estado"], a["historial"][0]["quien"]), ("gusta", "web:unai"))
+
+    def test_lares_cambia_el_estado_y_la_web_lo_ve(self):
+        post("/api/v2/enlaces", {"url": BP}, LARES)
+        post(uid_url("Boligportal:5481965") + "/estado", {"estado": "descartado", "motivo": "pedido por Jon"}, LARES)
+        e = pedir("/api/estados")[2]["5481965"]
+        self.assertEqual((e["st"], e["by"]), ("descartado", "lares"))
+        self.assertEqual(self.ids_propuestos()["5481965"]["st"], "descartado")
+
+    def test_un_piso_ya_descartado_en_la_web_no_vuelve_como_propuesto(self):
+        post("/api/estado", {"id": "5481965", "st": "descartado", "by": "jon"}, WEB, self.ORIGEN)
+        code, _, a = post("/api/v2/enlaces", {"url": BP}, LARES)
+        self.assertEqual((code, a["estado"]), (200, "descartado"))
+
+
 class TestPanel(BaseV2):
     def test_check_anuncios(self):
         post("/api/v2/enlaces", {"url": EDC}, LARES)

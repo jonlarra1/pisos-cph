@@ -19,7 +19,7 @@ APLICAR=0; COMPOSE=0
 for a in "$@"; do case "$a" in --aplicar) APLICAR=1;; --con-compose) COMPOSE=1;; *) echo "opción desconocida: $a"; exit 2;; esac; done
 DIR=/home/docker/pisos-backend
 URL="${PISOS_URL:-https://raspberrypi.tail9f1069.ts.net:8443}"   # PISOS_URL: otra URL para la prueba (p. ej. un túnel SSH si el Funnel está caído)
-FILES=(app.py routing.py portales.py anuncios.py api_v2.py admin.html Dockerfile)
+FILES=(app.py routing.py portales.py anuncios.py api_v2.py puente.py admin.html Dockerfile)
 [ "$COMPOSE" = 1 ] && FILES+=(compose.yml)
 KEYOPT=(); [ -n "${PI_KEY:-}" ] && KEYOPT=(-i "$PI_KEY" -o IdentitiesOnly=yes)   # PI_KEY=ruta de la clave temporal
 SSH=(ssh "${KEYOPT[@]}" -o BatchMode=yes -o ConnectTimeout=10 "$HOST")

@@ -44,6 +44,9 @@ class Contexto:
     avisar: Callable  # (tipo, data) -> aviso por SSE a las páginas abiertas
     limitado: Callable  # (clave, tope, clave_global, tope_global) -> bool
     origenes: set  # Origin permitidos para la web
+    al_cambiar: Callable = (
+        None  # (anuncio, cliente, quien, tipo «enlace»|«estado») -> anuncio; puente con la web actual
+    )
 
 
 CLAVES = {}  # clave -> cliente; se carga en configurar()
@@ -280,6 +283,8 @@ def escribir(ctx, path, cliente, cuerpo):
                 a = A.comprobar(con, uid, cuerpo.get("resultado"), _txt(cuerpo.get("motivo"), 200) or "")
         ctx.log("events", level="info", src="anuncios", msg=f"{uid} -> {a['estado']}", by=f"{cliente}:{quien}")
         ctx.avisar("anuncios", {"uid": uid, "estado": a["estado"]})
+        if ctx.al_cambiar and m.group(2) == "estado":
+            ctx.al_cambiar(a, cliente, quien, "estado")
         return 200, _para_lista(a)
     except A.Prohibido as e:  # clave buena pero acción no permitida: se registra (posible abuso)
         ESTADO["prohibido"] += 1
@@ -319,4 +324,6 @@ def _anadir_enlace(ctx, url, cliente, quien):
         by=f"{cliente}:{quien}",
     )
     ctx.avisar("anuncios", {"uid": a["uid"], "estado": a["estado"]})
+    if ctx.al_cambiar:
+        a = ctx.al_cambiar(a, cliente, quien, "enlace") or a
     return 200, {**_para_lista(a), "ya_estaba": bool(previo)}
