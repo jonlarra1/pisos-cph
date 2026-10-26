@@ -1,7 +1,9 @@
 """Pisos CPH backend: shared flat status (gusta / nuevo / contactado / descartado).
 Python stdlib only. SQLite at /data/pisos.db."""
-import base64, contextlib, json, os, re, sqlite3, threading, time, tempfile, ssl, socket, http.client, urllib.request, urllib.parse, collections, hashlib, gzip, glob, shutil, datetime
+import base64, contextlib, json, os, re, sqlite3, threading, time, tempfile, ssl, socket, urllib.request, urllib.parse, collections, hashlib, gzip, glob, shutil, datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+
+import anuncios, api_v2
 
 DB = os.environ.get("DB_PATH", "/data/pisos.db")
 ORIGINS = set(os.environ.get("ALLOWED_ORIGINS", "https://jonlarra1.github.io,http://localhost:8000").split(","))
@@ -26,7 +28,6 @@ STARTED = time.time()
 LOGDIR = os.environ.get("LOG_DIR", "/data/logs")
 PUBLIC_HOST = os.environ.get("PUBLIC_HOST", "raspberrypi.tail9f1069.ts.net"); PUBLIC_PORT = int(os.environ.get("PUBLIC_PORT", "8443"))
 SITE = os.environ.get("SITE_URL", "https://jonlarra1.github.io/pisos-cph/")
-LARES_CRON = os.environ.get("LARES_CRON", "/lares_cron/jobs.json")
 ADMIN_USERS = [u for u in os.environ.get("ADMIN_USERS", "").split(",") if u]
 SITE_DATA = {}                               # PISOS / OUT de la web publicada (lo rellena check_site)
 CHECKS = {}                                  # último resultado de cada comprobación
@@ -176,9 +177,14 @@ def init():
         c.execute("CREATE TABLE IF NOT EXISTS historial (n INTEGER PRIMARY KEY AUTOINCREMENT, id TEXT, st TEXT, stF TEXT, by TEXT, ts INTEGER)")
         c.execute("CREATE TABLE IF NOT EXISTS zonas (zona TEXT PRIMARY KEY, permitida INTEGER NOT NULL, by TEXT, ts INTEGER)")
         c.execute("CREATE TABLE IF NOT EXISTS ajustes (k TEXT PRIMARY KEY, v TEXT NOT NULL, by TEXT, ts INTEGER)")
+        anuncios.crear_tablas(c)
         for z, v in ZONAS_DEFAULT.items():
             c.execute("INSERT OR IGNORE INTO zonas (zona, permitida, by, ts) VALUES (?,?,?,?)", (z, v, "", 0))
     write_config()
+
+def zonas_permitidas():
+    with db() as c:
+        return {z: bool(v) for z, v in c.execute("SELECT zona, permitida FROM zonas")}
 
 def all_estados():
     with db() as c:
@@ -196,19 +202,24 @@ def filtros():
     return f
 
 def validar_filtros(d):
+    # Comprobaciones explícitas (no assert: con python -O desaparecen)
     f = {}
     try:
-        f["precio_max"] = int(d["precio_max"]); assert 8000 <= f["precio_max"] <= 40000
-        f["dorm_min"] = int(d["dorm_min"]); assert 1 <= f["dorm_min"] <= 5
+        f["precio_max"] = int(d["precio_max"])
+        f["dorm_min"] = int(d["dorm_min"])
         f["vaer_min"] = f["dorm_min"] + 1
         for k in ("disp_desde", "disp_hasta"):
-            v = str(d[k]); assert re.match(r"^20\d\d-\d\d-\d\d$", v); f[k] = v
-        assert f["disp_desde"] <= f["disp_hasta"]
+            f[k] = str(d[k])
         f["compartir"] = bool(d["compartir"]); f["contrato_largo"] = bool(d["contrato_largo"])
-        f["amueblado"] = str(d.get("amueblado", "igual")); assert f["amueblado"] in ("igual", "si", "no")   # opcional (webs viejas)
-    except Exception:
+        f["amueblado"] = str(d.get("amueblado", "igual"))   # opcional (webs viejas)
+    except (KeyError, TypeError, ValueError, AttributeError):
         return None
-    return f
+    fecha = re.compile(r"^20\d\d-\d\d-\d\d$")
+    ok = (8000 <= f["precio_max"] <= 40000 and 1 <= f["dorm_min"] <= 5
+          and fecha.match(f["disp_desde"]) and fecha.match(f["disp_hasta"])
+          and f["disp_desde"] <= f["disp_hasta"]
+          and f["amueblado"] in ("igual", "si", "no"))
+    return f if ok else None
 
 def all_zonas():
     with db() as c:
@@ -255,7 +266,7 @@ def img_proxy(u):
     if ".." in raw or "\\" in raw or pu.username or pu.password or pu.port not in (None, 443): raise ValueError("ruta no permitida")
     if pu.hostname.startswith("s3.") and not raw.startswith("/lejeboligdata/images/"): raise ValueError("ruta no permitida")
     if pu.hostname == "billeder.edc.dk" and not raw.startswith("/edcmedia/"): raise ValueError("ruta no permitida")
-    key = hashlib.sha1(u.encode()).hexdigest(); path = os.path.join(IMG_DIR, key)
+    key = hashlib.sha1(u.encode(), usedforsecurity=False).hexdigest(); path = os.path.join(IMG_DIR, key)
     if os.path.exists(path):
         IMG_STATS["hit"] += 1
         with open(path, "rb") as f: data = f.read()
@@ -366,7 +377,7 @@ def vigilar_candidatos(cada=10):
             log("events", level="warn", src="lares", msg=f"vigilar candidatos: {type(e).__name__}: {e}"[:200])
         time.sleep(cada)
 
-def etag(b): return '"' + hashlib.sha1(b).hexdigest()[:20] + '"'
+def etag(b): return '"' + hashlib.sha1(b, usedforsecurity=False).hexdigest()[:20] + '"'
 
 class H(BaseHTTPRequestHandler):
     server_version = "pisos/1"
@@ -423,7 +434,7 @@ class H(BaseHTTPRequestHandler):
             self.wfile.write(b"retry: 5000\n: conectado\n\n"); self.wfile.flush()
             while time.time() - t0 < SSE_VIDA:
                 with _cambio:
-                    _cambio.wait_for(lambda: _ultimo["n"] != visto, timeout=SSE_PING)
+                    _cambio.wait_for(lambda v=visto: _ultimo["n"] != v, timeout=SSE_PING)
                     nuevo = dict(_ultimo) if _ultimo["n"] != visto else None
                 if nuevo:
                     visto = nuevo["n"]; msg = f"event: {nuevo['tipo']}\ndata: {nuevo['data']}\n\n"
@@ -437,6 +448,21 @@ class H(BaseHTTPRequestHandler):
                 SSE["n"] -= 1; SSE["por_ip"][ip] -= 1
                 if SSE["por_ip"][ip] <= 0: del SSE["por_ip"][ip]
             self._note = f"sse {round(time.time()-t0)} s"
+    def v2_post(self):
+        """Escrituras de la API v2: cliente por su clave, tamaño máximo, JSON → api_v2.escribir."""
+        cliente = api_v2.cliente_de(self.headers.get("X-Pisos-Key", ""), self.headers.get("Origin", ""), ORIGINS)
+        if cliente is None:
+            log("events", level="warn", src="anuncios", msg=f"clave u origen no válidos desde {self.client_ip()}")
+            return self.reply(403, {"error": "forbidden"})
+        if cliente == "web" and limited("w:" + self.client_ip(), 30, "w:*", 120): return self.reply(429, {"error": "too many requests"})
+        n = int(self.headers.get("Content-Length") or 0)
+        tope = api_v2.MAX_CUERPO.get(self.path, api_v2.MAX_CUERPO_DEFECTO)
+        if n <= 0 or n > tope: return self.reply(413, {"error": "bad size"})
+        try: cuerpo = json.loads(self.rfile.read(n))
+        except ValueError: return self.reply(400, {"error": "bad json"})
+        code, obj = api_v2.escribir(CTX, self.path, cliente, cuerpo)
+        self._note = f"{cliente}" + ("" if code == 200 else f" · {str(obj.get('error', ''))[:60]}")
+        return self.reply(code, obj)
     def do_OPTIONS(self):
         self.send_response(204); self.cors(); self.send_header("Content-Length", "0"); self.end_headers()
     def do_GET(self):
@@ -457,6 +483,8 @@ class H(BaseHTTPRequestHandler):
             self.send_response(200); self.cors(); self.send_header("Content-Type", ctype); self.send_header("Content-Length", str(len(data)))
             self.send_header("Cache-Control", "public, max-age=604800"); self.send_header("X-Content-Type-Options", "nosniff"); self.end_headers()
             self.wfile.write(data); return
+        if self.path.startswith("/api/v2/"):
+            code, obj = api_v2.leer(CTX, self.path); return self.reply(code, obj)
         if self.path == "/api/eventos": return self.eventos()
         if self.path == "/api/estados": return self.reply(200, all_estados())
         if self.path == "/api/zonas": return self.reply(200, all_zonas())
@@ -480,6 +508,7 @@ class H(BaseHTTPRequestHandler):
             except Exception: return self.reply(400, {"error": "bad json"})
             log("client", level=str(d.get("level", "error"))[:10], msg=str(d.get("msg", ""))[:500], where=str(d.get("where", ""))[:200])
             return self.reply(200, {"ok": True})
+        if self.path.startswith("/api/v2/"): return self.v2_post()
         if self.path not in ("/api/estado", "/api/zona", "/api/filtros"): return self.reply(404, {"error": "not found"})
         if KEY and self.headers.get("X-Pisos-Key") != KEY: return self.reply(403, {"error": "forbidden"})
         o = self.headers.get("Origin", "")
@@ -700,7 +729,7 @@ def check_site():
             try: SITE_DATA[k] = json.loads(m.group(1))
             except ValueError: problemas.append(f"{name} no es JSON válido")
         else: problemas.append(f"falta {name}")
-    h = hashlib.sha1(js.encode()).hexdigest()
+    h = hashlib.sha1(js.encode(), usedforsecurity=False).hexdigest()
     if h != _SITE_CACHE["hash"]:                              # solo se analizan las rutas cuando cambia la web
         _SITE_CACHE["hash"] = h; _SITE_CACHE["sin_rutas"] = []
         m = re.search(r"^const RUTAS ?= ?(.*?);[ \t]*$", js, re.M)
@@ -804,10 +833,24 @@ def check_storage():
     ok = logs_mb < 100 and free > 10
     return ok, f"logs {logs_mb:.1f} MB · caché de fotos {img_mb:.0f} MB · disco libre {free_gb:.0f} GB ({free:.0f} %)"
 
+def check_anuncios():
+    """Base única de anuncios: cuántos hay por estado, cola de fichas y errores del lector / de «añadir enlace»."""
+    with db() as c: n = anuncios.contar(c)
+    E = api_v2.ESTADO; leidas = E["lector_ok"] + E["lector_error"]
+    ok = (leidas < 5 or E["lector_error"] / leidas < 0.3) and api_v2.cola() < api_v2.LECTOR_MAX_COLA
+    return ok, (f"{sum(n.values())} anuncios ({', '.join(f'{k} {v}' for k, v in sorted(n.items()))}) · cola de fichas {api_v2.cola()}"
+                f" · fichas leídas {E['lector_ok']}, con error {E['lector_error']} · enlaces añadidos {E['enlaces_ok']}, fallidos {E['enlaces_error']} · entregas del vigilante {E['entregas']} (nuevas {E['entregas_nuevas']})"
+                f" · acciones no permitidas {E['prohibido']}"
+                + (f" · último error: {E['lector_ultimo_error']}" if E["lector_ultimo_error"] else ""))
+
+CHECKS_LISTA = (("funnel_publico", check_funnel), ("web_github", check_site), ("lares_pasadas", check_lares_runs),
+                ("lares_cron", check_lares_cron), ("buzon_compartido", check_bridge), ("api_errores", check_api_errors),
+                ("fotos", check_img), ("almacenamiento", check_storage), ("aislamiento_red", check_isolation),
+                ("motor_rutas", check_rutas), ("anuncios", check_anuncios))
+
 def monitor():
     while True:
-        for name, fn in (("funnel_publico", check_funnel), ("web_github", check_site), ("lares_pasadas", check_lares_runs),
-                         ("lares_cron", check_lares_cron), ("buzon_compartido", check_bridge), ("api_errores", check_api_errors), ("fotos", check_img), ("almacenamiento", check_storage), ("aislamiento_red", check_isolation), ("motor_rutas", check_rutas)):
+        for name, fn in CHECKS_LISTA:
             chk(name, fn)
         time.sleep(300)
 
@@ -855,9 +898,21 @@ class Admin(BaseHTTPRequestHandler):
             items.sort(key=lambda r: r.get("t", 0))
             return self.send(200, json.dumps({"now": time.time(), "checks": CHECKS, "items": items[-400:]}, ensure_ascii=False), "application/json; charset=utf-8")
         if self.path == "/checknow":
-            threading.Thread(target=lambda: [chk(n, f) for n, f in (("funnel_publico", check_funnel), ("web_github", check_site), ("lares_pasadas", check_lares_runs), ("lares_cron", check_lares_cron), ("buzon_compartido", check_bridge), ("api_errores", check_api_errors), ("fotos", check_img), ("almacenamiento", check_storage), ("aislamiento_red", check_isolation), ("motor_rutas", check_rutas))], daemon=True).start()
+            threading.Thread(target=lambda: [chk(n, f) for n, f in CHECKS_LISTA], daemon=True).start()
             return self.send(200, '{"ok":true}', "application/json")
         self.send(404, "not found", "text/plain")
+
+def _db_filas():
+    """Conexión para anuncios.*: filas como diccionarios."""
+    @contextlib.contextmanager
+    def cm():
+        with db() as c:
+            c.row_factory = sqlite3.Row; yield c
+    return cm()
+
+CTX = api_v2.Contexto(db=_db_filas, filtros=filtros, zonas=zonas_permitidas, log=log, avisar=avisar,
+                      limitado=limited, origenes=ORIGINS)
+api_v2.configurar()
 
 if __name__ == "__main__":
     migrate_old_logs()
@@ -870,6 +925,7 @@ if __name__ == "__main__":
     threading.Thread(target=housekeeper, daemon=True).start()
     threading.Thread(target=gtfs_worker, daemon=True).start()
     threading.Thread(target=monitor, daemon=True).start()
+    threading.Thread(target=api_v2.lector, args=(CTX,), daemon=True).start()
     threading.Thread(target=vigilar_candidatos, daemon=True).start()
     threading.Thread(target=lambda: ThreadingHTTPServer(("0.0.0.0", 8790), Admin).serve_forever(), daemon=True).start()
     ThreadingHTTPServer(("0.0.0.0", 8787), H).serve_forever()
