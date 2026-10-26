@@ -58,6 +58,7 @@ class Web(unittest.TestCase):
         if self.INIT: self.ctx.add_init_script(self.INIT)
         self.page = self.ctx.new_page()
         self.errores, self.posts, self.alerts, self.rutas_q = [], [], [], []
+        self.destinos = [dict(x) for x in getattr(self, "DESTINOS_PI", [])]   # destinos guardados en la Pi simulada
         self.page.on("pageerror", lambda e: self.errores.append(str(e)))
         self.page.on("dialog", lambda d: (self.alerts.append(d.message), d.dismiss()))
         self.page.route(PI + "/**", self.pi)
@@ -79,6 +80,11 @@ class Web(unittest.TestCase):
         if req.method == "POST":
             d = json.loads(req.post_data or "{}"); self.posts.append((path, d))
             if path == "/api/estado": FAKE["/api/estados"][d["id"]] = {"st": d["st"], "stF": "2026-10-22", "by": d.get("by", ""), "ts": int(time.time())}
+            if path == "/api/destino":                 # como la Pi: añadir (sin repetir) o quitar (ocultar)
+                if d["accion"] == "anadir" and not any(x["id"] == d["id"] for x in self.destinos):
+                    self.destinos.append({k: d[k] for k in ("id", "n", "addr", "ll")} | {"by": d.get("by", "")})
+                if d["accion"] == "quitar": self.destinos[:] = [x for x in self.destinos if x["id"] != d["id"]]
+                return route.fulfill(status=200, headers=self.cors(), json={"destinos": self.destinos, "cambiado": True})
             return route.fulfill(status=200, headers=self.cors(), json=FAKE.get("/api/estados" if path == "/api/estado" else path, {"ok": True}))
         if path == "/api/eventos":                 # por defecto como la Pi actual (sin tiempo real); los tests lo cambian
             sse = getattr(self, "sse", None)
@@ -93,6 +99,7 @@ class Web(unittest.TestCase):
                 {"m": "walk", "min": 8, "d": 600, "to": "Enghave Brygge St.", "path": [[55.649, 12.553], [55.653, 12.556]]},
                 {"m": "Metro", "line": "M4", "head": "Orientkaj", "from": "Enghave Brygge St.", "to": "København H", "dep": "08:12", "arr": "08:16", "n": 2, "path": [[55.653, 12.556], [55.672, 12.564]]},
                 {"m": "walk", "min": 11, "d": 800, "to": "Cris", "path": [[55.672, 12.564], [55.6935, 12.548]]}]}]})
+        if path == "/api/destinos": return route.fulfill(status=200, headers=self.cors(), json={"destinos": self.destinos})
         if path == "/api/img": return route.fulfill(status=200, headers=self.cors(), content_type="image/png", body=PNG)
         if path in FAKE: return route.fulfill(status=200, headers=self.cors(), json=FAKE[path])
         route.fulfill(status=404, headers=self.cors(), json={"error": "not found"})
@@ -322,6 +329,38 @@ class TestAnadirEnlace(Web):
         self.assertEqual(self.js("document.getElementById('add-url').value"), self.URL)   # el enlace no se pierde
 
 
+class TestDestinosCompartidos(Web):
+    """Destinos compartidos por la Pi: los ven los dos, con rutas para cada perfil; se puede ocultar el otro perfil."""
+    DESTINOS_PI = [{"id": "xgym01", "n": "Gimnasio", "addr": "Nørrebrogade 20", "ll": [55.6935, 12.548], "by": "unai"}]
+    def test_salen_los_de_la_pi_con_rutas_para_los_dos(self):
+        self.esperar("EXTRA.some(d=>d.id==='xgym01')")
+        self.assertEqual(self.js("allRows().filter(r=>r.k==='xgym01').map(r=>r.who)"), ["jon", "unai"])
+    def test_ocultar_las_rutas_del_otro(self):
+        self.esperar("EXTRA.some(d=>d.id==='xgym01')"); self.js("YO='jon'; renderWalk()")
+        self.assertIn("Unai", self.page.inner_text("#soloyo-l"))
+        self.page.check("#soloyo")
+        self.assertEqual(set(self.js("allRows().map(r=>r.who)")), {"jon"})
+        self.assertTrue(self.js("JSON.parse(localStorage.getItem('ui')).soloYo"))
+        self.page.uncheck("#soloyo"); self.assertEqual(set(self.js("allRows().map(r=>r.who)")), {"jon", "unai"})
+    def test_quitar_es_para_los_dos(self):
+        self.esperar("EXTRA.some(d=>d.id==='xgym01')"); self.js("YO='jon'; window.confirm=()=>true")
+        self.js("quitarDestino('xgym01')"); self.esperar("!EXTRA.length")
+        self.assertIn(("/api/destino", {"accion": "quitar", "id": "xgym01", "by": "jon"}), self.posts)
+    def test_aviso_en_tiempo_real_los_recarga(self):
+        self.esperar("EXTRA.length===1"); self.destinos.append({"id": "xclase1", "n": "Clase", "addr": "", "ll": [55.68, 12.57], "by": "jon"})
+        self.js("pullDestinos()"); self.esperar("EXTRA.length===2")
+
+
+class TestDestinosDeAntes(Web):
+    """Los destinos que cada uno tenía solo en su navegador se suben una vez a la Pi."""
+    INIT = "localStorage.setItem('destinos', JSON.stringify([{id:'xcris',n:'Cris',addr:'Nørrebrogade',ll:[55.6935,12.548],who:'unai'}])); localStorage.setItem('yo','unai');"
+    def test_se_suben_una_vez(self):
+        self.esperar("EXTRA.length===1&&!EXTRA[0].pend")
+        subidas = [d for p, d in self.posts if p == "/api/destino"]
+        self.assertEqual([(d["accion"], d["id"], d["by"]) for d in subidas], [("anadir", "xcris", "unai")])
+        self.assertEqual(self.js("localStorage.getItem('destinos_v2')"), "1")
+
+
 class TestDestinoAnadido(Web):
     INIT = "localStorage.setItem('destinos', JSON.stringify([{id:'xcris',n:'Cris',addr:'Nørrebrogade',ll:[55.6935,12.548],who:'unai'}]));"
     def abrir(self):
@@ -337,8 +376,9 @@ class TestDestinoAnadido(Web):
         pid = self.abrir(); self.esperar(f"RTS('{pid}','xcris-unai').length===1")
         self.js(f"drawRoute('{pid}','xcris-unai',false)")
         self.esperar("Object.values(LIVE).some(v=>v&&v.path)")                       # OSRM (simulado) ha contestado
+        self.esperar("Object.values(LIVE).every(v=>v!=='pending')")                   # también la ruta del otro perfil
         self.js(f"drawRoute('{pid}','xcris-unai',false)")
-        tramos = self.js("routeLayer.getLayers().filter(l=>l.options&&/walk|bike/.test(l.options.className||'')).map(l=>l.getLatLngs().length)")
+        tramos = self.js("routeLayer.getLayers().filter(l=>l.options&&/route-ant.*(walk|bike)/.test(l.options.className||'')).map(l=>l.getLatLngs().length)")
         self.assertTrue(tramos); self.assertTrue(all(n > 2 for n in tramos), tramos)    # ningún tramo en línea recta (2 puntos)
     def test_metro_del_motor_sigue_la_via(self):
         pid = self.abrir(); self.esperar(f"RTS('{pid}','xcris-unai').length===1")
@@ -350,8 +390,12 @@ class TestDestinoAnadido(Web):
     def test_barra_de_progreso(self):
         self.ruta_retenida = []; pid = self.abrir()
         self.esperar("document.querySelector('#sheet .tp-bar')")
-        self.assertIn("0 de 1 ruta (0 %)", self.page.inner_text("#sheet .tp-bar"))
-        r = self.ruta_retenida.pop(); self.ruta_retenida = None; self.pi(r)          # la Pi contesta
+        self.assertIn("0 de 2 rutas (0 %)", self.page.inner_text("#sheet .tp-bar"))  # una por perfil (Jon y Unai)
+        for _ in range(20):                                                             # esperar a las 2 peticiones al motor
+            if len(self.ruta_retenida) == 2: break
+            self.page.wait_for_timeout(100)
+        rs, self.ruta_retenida = self.ruta_retenida, None
+        for r in rs: self.pi(r)                                                         # la Pi contesta
         self.esperar(f"RTS('{pid}','xcris-unai').length===1 && !document.querySelector('#sheet .tp-bar')")
     def test_si_la_pi_falla_queda_solo_andando(self):
         self.ruta_caida = True; pid = self.abrir()
