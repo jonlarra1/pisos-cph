@@ -2016,9 +2016,10 @@ function renderCands(){const el=document.getElementById("lares"); if(!el)return;
     ${SHOW.nuevo?(todos.map(x=>x.html).join("")||'<p style="color:var(--muted);margin:6px 0">No hay propuestos ahora mismo.</p>'):'<p style="color:var(--muted);margin:6px 0">Ocultos en Visualización.</p>'}
     ${gus.length?`<div class="out-h">🔵 Os gustan · pendientes de pasar al mapa <small>${gus.length}</small></div>${gus.map(c=>it(candPiso(c))).join("")}`:""}</div></details>`;
   candLayer.clearLayers();
-  CANDS.filter(c=>c.st!=="descartado"&&idOk(c)&&candConUbic(c)).forEach(c=>{const lb=Math.round(((c.precio||0)+(c.aconto||0))/1000)+"k";
-    L.marker([c.lat,c.lon],{zIndexOffset:950,icon:L.divIcon({className:"",iconSize:[30,30],iconAnchor:[15,15],
-    html:`<div class="pin" style="width:30px;height:30px;background:${(ESTADOS[c.st]||ESTADOS.nuevo).c};font-size:12px">${lb}</div>`})}).bindTooltip(`Propuesto · ${esc(c.zona||"")} · ${kr0(c.precio)} kr`,{direction:"top"}).on("click",()=>openCand(c.id)).addTo(candLayer);});}
+  /* descartados: 48 h en rojo con la cuenta atrás (como los pisos del mapa), luego solo en «Descartados» */
+  CANDS.filter(c=>(c.st!=="descartado"||(c.ts&&!expired(c)))&&SHOW[c.st]!==false&&idOk(c)&&candConUbic(c)).forEach(c=>{const lb=Math.round(((c.precio||0)+(c.aconto||0))/1000)+"k", cd=c.st==="descartado"?Math.ceil(leftH(c)):0;
+    L.marker([c.lat,c.lon],{zIndexOffset:cd?900:950,icon:L.divIcon({className:"",iconSize:[30,30],iconAnchor:[15,15],
+    html:`<div class="pin${cd?" has-cd":""}" style="width:30px;height:30px;background:${(ESTADOS[c.st]||ESTADOS.nuevo).c};font-size:12px">${lb}${cd?`<span class="cd">${cd}h</span>`:""}</div>`})}).bindTooltip(cd?`Descartado · desaparece del mapa en ${cd} h · ${esc(c.zona||"")}`:`Propuesto · ${esc(c.zona||"")} · ${kr0(c.precio)} kr`,{direction:"top"}).on("click",()=>openCand(c.id)).addTo(candLayer);});}
 let candSig="", candSig0=false;
 async function pullCandidatos(){try{const r=await fetch(API+"/api/candidatos",{cache:"no-cache"}); if(!r.ok)throw 0; const d=await r.json(); const sig=JSON.stringify(d.pisos||[]); if(sig!==candSig){candSig=sig;
     const antes=new Map(CANDS.map(c=>[String(c.id),c.st])), nuevos=d.pisos||[];
@@ -2070,7 +2071,7 @@ addEventListener("error",e=>clientLog(e.message,(e.filename||"")+":"+(e.lineno||
 document.addEventListener("securitypolicyviolation",e=>clientLog("CSP bloqueó "+e.violatedDirective+": "+String(e.blockedURI).slice(0,120)));
 liveStart();
 addEventListener("unhandledrejection",e=>clientLog("promise: "+(e.reason&&e.reason.message||e.reason)));
-setInterval(()=>{if(document.hidden||!PISOS.some(p=>p.st==="descartado"))return; PISOS.forEach(p=>markers[p.id].setIcon(pinIcon(p,p.id===selId))); applyFilter(false); renderOut();},300000);
+setInterval(()=>{if(document.hidden||![...PISOS,...CANDS].some(p=>p.st==="descartado"))return; PISOS.forEach(p=>markers[p.id].setIcon(pinIcon(p,p.id===selId))); applyFilter(false); renderCands(); renderOut();},300000);
 document.addEventListener("visibilitychange",()=>{if(!document.hidden){pullEstados(); pullCandidatos(); checkVersion();}});
 /* ---------- tiempo real: si se publica una versión nueva (p. ej. un piso añadido), la página se recarga sola ---------- */
 let VER=null, verNew=false, lastAct=Date.now();

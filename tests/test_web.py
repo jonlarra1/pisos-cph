@@ -281,12 +281,15 @@ class TestRetirados(Web):
         self.assertIn("Han retirado el anuncio propuesto", self.page.inner_text("#toasts"))
         self.js("document.querySelector('#out details').open=true")
         out = self.page.inner_text("#out"); self.assertIn("Piso de prueba", out); self.assertIn("el portal ya no lo publica", out)
-        self.assertEqual(self.js("candLayer.getLayers().length"), 0)                 # ya no sale como punto naranja
+        self.assertEqual(self.js("candLayer.getLayers().length"), 1)                 # sigue 48 h en el mapa…
+        pin = self.js("candLayer.getLayers()[0].getElement().innerHTML")
+        self.assertIn("has-cd", pin); self.assertIn("48h", pin)                       # …en rojo con la cuenta atrás
     def test_propuesto_caducado_desaparece(self):
         self.esperar("CANDS.length===1")
         viejo = dict(FAKE["/api/candidatos"]["pisos"][0], st="descartado", by="lares", ts=int(time.time()) - 49 * 3600)
-        self.js("c=>{CANDS=[c]; renderOut();}", viejo)
+        self.js("c=>{CANDS=[c]; renderCands(); renderOut();}", viejo)
         self.assertNotIn("Piso de prueba", self.page.inner_text("#out"))
+        self.assertEqual(self.js("candLayer.getLayers().length"), 0)                 # pasadas 48 h, fuera del mapa
 
 
 class TestDestinoAnadido(Web):
