@@ -1,0 +1,9 @@
+# Estilo del código Python (backend, lares, tools, tests). Comprobado en tests/test_calidad.py.
+line-length = 120
+target-version = "py312"
+
+[format]
+quote-style = "preserve"
+
+[lint]
+select = ["F", "E", "W", "B"]
