@@ -1,0 +1,9 @@
+{"ts": "2026-10-22T22:23:04Z", "pieza": "backend", "resultado": "ok", "nota": "reconstruido del historial (deploy.sh, backup-20261023-002247)"}
+{"ts": "2026-10-22T22:53:42Z", "pieza": "backend", "resultado": "ok", "nota": "reconstruido del historial (deploy.sh, backup-20261023-005325)"}
+{"ts": "2026-10-23T11:50:22Z", "pieza": "backend", "resultado": "ok", "nota": "reconstruido del historial (deploy.sh, backup-20261023-135005)"}
+{"ts": "2026-10-23T11:51:02Z", "pieza": "lares", "resultado": "ok", "nota": "reconstruido del historial (copia .v2-20261023)"}
+{"ts": "2026-10-23T16:29:44Z", "pieza": "lares", "resultado": "ok", "nota": "reconstruido del historial (EDC, copia .v3-20261023-preEDC)"}
+{"ts": "2026-10-24T11:09:32Z", "pieza": "backend", "resultado": "ok", "nota": "reconstruido del historial (deploy.sh, backup-20261024-130912)"}
+{"ts": "2026-10-24T11:25:46Z", "pieza": "backend", "resultado": "ok", "nota": "reconstruido del historial (deploy.sh, backup-20261024-132528)"}
+{"ts": "2026-10-24T11:25:53Z", "pieza": "lares", "resultado": "ok", "nota": "reconstruido del historial (amueblado, copia .v4-20261024-preAmueblado)"}
+{"ts": "2026-10-24T12:16:20Z", "pieza": "backend", "resultado": "ok", "nota": "reconstruido del historial (deploy.sh, backup-20261024-141600)"}
