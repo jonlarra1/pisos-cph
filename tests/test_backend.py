@@ -381,6 +381,45 @@ class TestPanel(Base):
         self.assertEqual(self.get("/status", {"Tailscale-User-Login": "larrabajojon@gmail.com"})[0], 200)
 
 
+class TestDestinos(Base):
+    """Destinos compartidos (Configuración → Destinos): los ven Jon y Unai; quitar = ocultar, no borrar."""
+    D = {"accion": "anadir", "id": "xprueba1", "n": "Gimnasio", "addr": "Nørrebrogade 20, 2200", "ll": [55.6935, 12.548], "by": "jon"}
+    def setUp(self):
+        super().setUp()
+        with app.db() as c: c.execute("DELETE FROM destino")
+    def test_anadir_y_listar(self):
+        code, _, d = escribir("/api/destino", self.D)
+        self.assertEqual(code, 200); self.assertTrue(d["cambiado"])
+        self.assertEqual(pedir("/api/destinos")[2]["destinos"], [{"id": "xprueba1", "n": "Gimnasio", "addr": "Nørrebrogade 20, 2200", "ll": [55.6935, 12.548], "by": "jon"}])
+    def test_repetido_no_duplica(self):
+        escribir("/api/destino", self.D)
+        self.assertFalse(escribir("/api/destino", self.D)[2]["cambiado"])                                   # mismo id
+        otro = {**self.D, "id": "xprueba2", "n": "gimnasio", "ll": [55.6936, 12.5481], "by": "unai"}       # mismo sitio, subido por Unai
+        self.assertEqual(len(escribir("/api/destino", otro)[2]["destinos"]), 1)
+    def test_quitar_lo_oculta_sin_borrar(self):
+        escribir("/api/destino", self.D)
+        code, _, d = escribir("/api/destino", {"accion": "quitar", "id": "xprueba1", "by": "unai"})
+        self.assertEqual((code, d["destinos"]), (200, []))
+        with app.db() as c: self.assertEqual(c.execute("SELECT oculto, oculto_by FROM destino").fetchall(), [(1, "unai")])
+        self.assertFalse(escribir("/api/destino", self.D)[2]["cambiado"])                                   # una copia vieja no lo resucita
+    def test_datos_malos(self):
+        malos = ({**self.D, "id": "../x"}, {**self.D, "n": ""}, {**self.D, "n": "<script>"}, {**self.D, "ll": [40.4, -3.7]},
+                 {**self.D, "ll": [True, 12.5]}, {**self.D, "ll": "55,12"}, {**self.D, "accion": "borrar"}, {**self.D, "by": "otro"},
+                 {**self.D, "n": "x" * 31})
+        for d in malos:
+            with self.subTest(d=d): self.assertEqual(escribir("/api/destino", d)[0], 400)
+    def test_sin_clave_no(self):
+        self.assertEqual(escribir("/api/destino", self.D, clave="mala")[0], 403)
+    def test_tope(self):
+        with app.db() as c:                                              # directo a la base: por la API salta antes el límite de 30/min
+            for i in range(app.destinos.MAX):
+                app.destinos.aplicar(c, "anadir", {**self.D, "id": f"xtope{i:03d}", "n": f"Sitio {i}"}, "jon")
+        self.assertEqual(escribir("/api/destino", {**self.D, "id": "xtopemas", "n": "Uno más"})[0], 409)
+    def test_check(self):
+        escribir("/api/destino", self.D)
+        ok, det = app.check_destinos(); self.assertTrue(ok); self.assertIn("1 destinos compartidos", det)
+
+
 class TestComprobaciones(Base):
     def test_bridge(self):
         ok, det = app.check_bridge(); self.assertIn("config.json", det)

@@ -24,6 +24,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 import anuncios
 import api_v2
+import destinos
 import puente
 
 DB = os.environ.get("DB_PATH", "/data/pisos.db")
@@ -312,6 +313,7 @@ def init():
         )
         c.execute("CREATE TABLE IF NOT EXISTS ajustes (k TEXT PRIMARY KEY, v TEXT NOT NULL, by TEXT, ts INTEGER)")
         anuncios.crear_tablas(c)
+        destinos.crear_tabla(c)
         for z, v in ZONAS_DEFAULT.items():
             c.execute("INSERT OR IGNORE INTO zonas (zona, permitida, by, ts) VALUES (?,?,?,?)", (z, v, "", 0))
     write_config()
@@ -754,6 +756,24 @@ class H(BaseHTTPRequestHandler):
                     del SSE["por_ip"][ip]
             self._note = f"sse {round(time.time() - t0)} s"
 
+    def destino(self, d, by):
+        """POST /api/destino {accion: anadir|quitar, id, n, addr, ll, by}: destinos compartidos de Jon y Unai."""
+        v = destinos.validar(d)
+        if v is None:
+            destinos.ESTADO["rechazados"] += 1
+            return self.reply(400, {"error": "bad data"})
+        accion, x = v
+        try:
+            with lock, db() as c:
+                cambiado, lista = destinos.aplicar(c, accion, x, by)
+        except destinos.Lleno:
+            log("events", level="warn", src="destinos", msg=f"lleno ({destinos.MAX})", by=by)
+            return self.reply(409, {"error": f"máximo {destinos.MAX} destinos: quita alguno"})
+        if cambiado:
+            log("events", level="info", src="destinos", msg=f"{accion} {x['id']} {x.get('n', '')}".strip(), by=by)
+            avisar("destinos", {})
+        return self.reply(200, {"destinos": lista, "cambiado": cambiado})
+
     def v2_post(self):
         """Escrituras de la API v2: cliente por su clave, tamaño máximo, JSON → api_v2.escribir."""
         cliente = api_v2.cliente_de(self.headers.get("X-Pisos-Key", ""), self.headers.get("Origin", ""), ORIGINS)
@@ -819,6 +839,9 @@ class H(BaseHTTPRequestHandler):
             return self.reply(200, all_zonas())
         if self.path == "/api/filtros":
             return self.reply(200, filtros())
+        if self.path == "/api/destinos":
+            with db() as c:
+                return self.reply(200, {"destinos": destinos.listar(c)})
         if self.path == "/api/candidatos":
             return self.reply(200, candidatos())
         if self.path.startswith("/api/ruta?"):
@@ -857,7 +880,7 @@ class H(BaseHTTPRequestHandler):
             return self.reply(200, {"ok": True})
         if self.path.startswith("/api/v2/"):
             return self.v2_post()
-        if self.path not in ("/api/estado", "/api/zona", "/api/filtros"):
+        if self.path not in ("/api/estado", "/api/zona", "/api/filtros", "/api/destino"):
             return self.reply(404, {"error": "not found"})
         if KEY and self.headers.get("X-Pisos-Key") != KEY:
             return self.reply(403, {"error": "forbidden"})
@@ -893,6 +916,8 @@ class H(BaseHTTPRequestHandler):
             log("events", level="info", src="filtros", msg=json.dumps(f, ensure_ascii=False), by=by)
             avisar("ajustes", {})
             return self.reply(200, filtros())
+        if self.path == "/api/destino":
+            return self.destino(d, by)
         if self.path == "/api/zona":
             z, ok = str(d.get("zona", "")).strip(), d.get("permitida")
             if not ZONA_RE.match(z) or not isinstance(ok, bool):
@@ -1399,6 +1424,12 @@ def check_anuncios():
     )
 
 
+def check_destinos():
+    """Destinos compartidos: cuántos hay, cambios desde el arranque y peticiones rechazadas."""
+    with db() as c:
+        return destinos.resumen(c)
+
+
 CHECKS_LISTA = (
     ("funnel_publico", check_funnel),
     ("web_github", check_site),
@@ -1411,6 +1442,7 @@ CHECKS_LISTA = (
     ("aislamiento_red", check_isolation),
     ("motor_rutas", check_rutas),
     ("anuncios", check_anuncios),
+    ("destinos", check_destinos),
 )
 
 
