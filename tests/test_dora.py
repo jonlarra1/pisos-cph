@@ -50,6 +50,12 @@ class TestDora(unittest.TestCase):
         m = dora.medir("backend", deps, pend, h(0), h(48))
         self.assertEqual((m["despliegues"], m["tasa_fallos"], m["recuperacion_mediana_h"]), (1, 0.5, 1.0))
 
+    def test_publicacion_cancelada_por_otro_push_no_es_fallo(self):
+        b = lambda st, minuto: {"status": st, "created_at": f"2026-10-22T20:{minuto:02d}:00Z"}   # noqa: E731
+        self.assertTrue(dora._sustituido(b("errored", 0), [b("built", 1)]))
+        self.assertFalse(dora._sustituido(b("errored", 0), [b("built", 30)]))       # tardó: fallo de verdad
+        self.assertFalse(dora._sustituido(b("errored", 0), [b("errored", 1)]))
+
     def test_registrar_rechaza_valores_raros(self):
         with self.assertRaises(SystemExit):
             dora.registrar("otra", "ok", "")

@@ -63,7 +63,7 @@ The user is Jon. He works at Nordic Solar (Hellerup). He prefers short, simple, 
   complejidad, bandit, avisos de estilo). Fuentes: git, GitHub Pages (`gh api`) y `docs/despliegues.jsonl`.
 - `backend/deploy.sh` apunta cada instalación (ok / vuelta_atras). Lares se instala a mano: después, `python3 tools/dora.py --registrar lares ok "nota"`.
 - Al cerrar cada bloque: `python3 tools/dora.py --guardar` (añade la foto a `docs/metricas.jsonl`) y contar a Jon las cifras y qué mejorar.
-- Punto de partida (26-oct, 30 días): web 1,6 despliegues/día, 1 min, 20 % fallos (6 builds de Pages fallidos), 10 % retrabajo;
+- Punto de partida (26-oct, 30 días): web 1,6 despliegues/día, 1 min, 10 % fallos, 10 % retrabajo (los 6 builds «errored» de Pages eran cancelados por un push más nuevo: no cuentan);
   backend 0,2/día, mediana 2,2 h, 33 % fallos/retrabajo, recuperación 41 min; Lares 0,1/día, 37 h, 0 %; calidad: 2303 líneas,
   0,2 % duplicado, 15 funciones con complejidad >20, 1122 avisos de estilo.
 

@@ -36,6 +36,7 @@ PIEZAS = {
     "lares": ("lares/",),
 }
 VENTANA_FALLO = dt.timedelta(hours=48)       # un arreglo antes de esto cuenta como fallo del despliegue anterior
+SUSTITUIDO_EN = dt.timedelta(minutes=5)      # publicación de Pages cancelada por un push más nuevo que sí salió bien
 
 
 # ------------------------------------------------------------------ utilidades
@@ -91,13 +92,21 @@ def despliegues_web(commits):
     except (OSError, subprocess.SubprocessError, ValueError):
         return []
     hora_de = {c["sha"]: c["ts"] for c in commits}
+    builds = [b for b in sorted(builds, key=lambda b: b["created_at"]) if b["commit"] in hora_de]   # fuera commits que ya no están
     resultado = []
-    for b in sorted(builds, key=lambda b: b["created_at"]):
-        if b["commit"] not in hora_de:
-            continue                                   # commit que ya no está en la historia local
+    for i, b in enumerate(builds):
+        if b["status"] != "built" and _sustituido(b, builds[i + 1:]):
+            continue
         resultado.append({"ts": fecha(b["updated_at"]), "pieza": "web", "commit": b["commit"],
                           "resultado": "ok" if b["status"] == "built" else "fallo"})
     return resultado
+
+
+def _sustituido(build, siguientes):
+    """Pages marca «errored» una publicación que se canceló porque llegó otro push. Si en SUSTITUIDO_EN sale bien
+    una posterior, no fue un fallo de la web (comprobado el 26-oct en GitHub Actions: las 6 eran «cancelled»)."""
+    inicio = fecha(build["created_at"])
+    return any(s["status"] == "built" and fecha(s["created_at"]) - inicio <= SUSTITUIDO_EN for s in siguientes)
 
 
 def despliegues_pi():
