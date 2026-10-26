@@ -65,12 +65,17 @@ def main(base, escribir=False, clave=""):
     except Exception as e:
         ok("tiempo real (SSE)", False, f"{type(e).__name__}: {e}", grave=False)
     if escribir and sse_ok:
+        # el piso de prueba alterna nuevo <-> gusta: si se repite el mismo estado no hay cambio y no llega aviso
+        try:
+            antes = (json.loads(get(base, "/api/estados")[2]).get("9999999") or {}).get("st")
+        except Exception:
+            antes = None
         t0 = time.time()
         p = conn(base)
         p.request(
             "POST",
             "/api/estado",
-            body=json.dumps({"id": "9999999", "st": "nuevo", "by": ""}),
+            body=json.dumps({"id": "9999999", "st": "gusta" if antes == "nuevo" else "nuevo", "by": ""}),
             headers={"Origin": ORIGIN, "Content-Type": "application/json", "X-Pisos-Key": clave},
         )
         pr = p.getresponse()
