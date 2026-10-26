@@ -1018,6 +1018,14 @@ html,body{overflow-x:hidden}
 .route-ant.bike{animation:ant-bike .93s linear infinite}      /* bici: 6+6 = 12 px (2 ciclos) */
 @keyframes ant-walk{to{stroke-dashoffset:-16}}
 @keyframes ant-bike{to{stroke-dashoffset:-24}}
+/* barra de abajo: añadir un piso pegando el enlace del anuncio */
+.addbar{position:absolute;left:50%;bottom:28px;transform:translateX(-50%);z-index:640;display:flex;gap:6px;width:min(560px,calc(100% - 24px));box-sizing:border-box;background:var(--panel);border:1px solid var(--line);border-radius:999px;padding:5px 5px 5px 14px;box-shadow:var(--shadow)}
+.addbar input{flex:1;min-width:0;border:0;background:none;color:var(--fg);font:500 14px var(--f-body);outline:none}
+.addbar input::placeholder{color:var(--muted)}
+.addbar button{border:0;border-radius:999px;background:var(--accent);color:#fff;font:600 13px var(--f-body);padding:7px 14px;cursor:pointer;white-space:nowrap}
+.addbar button:disabled{opacity:.6;cursor:wait}
+.addbar:focus-within{border-color:var(--accent)}
+@media (max-width:760px){.addbar{bottom:22px}.mapwrap:has(#card:not([hidden])) .addbar{display:none}}
 @media (prefers-reduced-motion:reduce){
   .lines-card::details-content,.lines-card summary::after,.pin,.rcol .lines-card{transition:none}
   .sheet.open,#toasts>div,#nuevaver,#quiensoy{animation:none}
@@ -1044,6 +1052,10 @@ html,body{overflow-x:hidden}
   </aside>
   <section class="mapwrap">
     <div id="map" aria-label="Mapa de pisos"></div>
+    <form class="addbar" id="addbar" role="search" aria-label="Añadir un piso por su enlace" autocomplete="off">
+      <input type="url" id="add-url" name="url" inputmode="url" placeholder="Pega el enlace del anuncio (Lejebolig, Boligportal, EDC)" title="Pega el enlace de un anuncio de Lejebolig, Boligportal o EDC y pulsa Añadir" aria-label="Enlace del anuncio" required maxlength="500">
+      <button type="submit" id="add-btn">➕ Añadir</button>
+    </form>
     <div class="rcol">
       <details class="lines-card" id="d-viaje" open><summary>Viaje <small id="trip-s"></small></summary>
       <div class="trip" role="group" aria-label="Viaje">
@@ -2020,6 +2032,28 @@ function renderCands(){const el=document.getElementById("lares"); if(!el)return;
   CANDS.filter(c=>(c.st!=="descartado"||(c.ts&&!expired(c)))&&SHOW[c.st]!==false&&idOk(c)&&candConUbic(c)).forEach(c=>{const lb=Math.round(((c.precio||0)+(c.aconto||0))/1000)+"k", cd=c.st==="descartado"?Math.ceil(leftH(c)):0;
     L.marker([c.lat,c.lon],{zIndexOffset:cd?900:950,icon:L.divIcon({className:"",iconSize:[30,30],iconAnchor:[15,15],
     html:`<div class="pin${cd?" has-cd":""}" style="width:30px;height:30px;background:${(ESTADOS[c.st]||ESTADOS.nuevo).c};font-size:12px">${lb}${cd?`<span class="cd">${cd}h</span>`:""}</div>`})}).bindTooltip(cd?`Descartado · desaparece del mapa en ${cd} h · ${esc(c.zona||"")}`:`Propuesto · ${esc(c.zona||"")} · ${kr0(c.precio)} kr`,{direction:"top"}).on("click",()=>openCand(c.id)).addTo(candLayer);});}
+/* ---------- barra de abajo: añadir un piso por su enlace (API v2 de la Pi, la misma puerta que usa Lares) ---------- */
+const ENLACE_OK=[/^https:\/\/(?:en\.|www\.)?lejebolig\.dk\/lejebolig\/\d{4,10}(?:[\/?#]|$)/,
+  /^https:\/\/(?:www\.)?boligportal\.dk\/\S*?(?:id-|rental-apartments\/)\d{4,10}(?:[\/?#]|$)/,
+  /^https:\/\/(?:www\.)?edc\.dk\/leje\/\S*?\/\d{6,10}\/?(?:[?#]|$)/];
+async function anadirEnlace(url){
+  const r=await fetch(API+"/api/v2/enlaces",{method:"POST",headers:{"Content-Type":"application/json","X-Pisos-Key":API_KEY},body:JSON.stringify({url,quien:YO||"web"})});
+  const d=await r.json().catch(()=>({})); if(!r.ok)throw new Error(r.status===429?"demasiados cambios seguidos, espera un poco":(d.error||`la Pi respondió ${r.status}`));
+  return d;}
+document.getElementById("addbar")?.addEventListener("submit",async e=>{e.preventDefault();
+  const inp=document.getElementById("add-url"), btn=document.getElementById("add-btn"), url=inp.value.trim();
+  if(!ENLACE_OK.some(re=>re.test(url))){toast("⚠️ Pega el enlace de un anuncio de Lejebolig, Boligportal o EDC (https://…)"); inp.focus(); return;}
+  if(!YO&&!(await quienSoy()))return;
+  btn.disabled=true; btn.textContent="Leyendo el anuncio…";
+  try{const a=await anadirEnlace(url), pid=String(a.pid), d=a.datos||{};
+    inp.value="";
+    if(PISOS.some(p=>p.id===pid)){select(pid,true); toast("Ese piso ya está en el mapa");}
+    else{const total=(+d.precio||0)+(+d.aconto||0);
+      toast(`${a.ya_estaba?"Ya estaba":"✅ Añadido"} a «Propuestos»: ${a.zona||d.ciudad||""}${total?` · ${kr0(total)} kr/mes`:""}`);
+      (a.avisos||[]).slice(0,2).forEach(x=>toast("⚠️ "+x));
+      candSig=""; await pullCandidatos(); if(CANDS.some(c=>String(c.id)===pid))openCand(pid);}
+  }catch(err){toast("⚠️ No se ha podido añadir: "+(err.message||"sin conexión con la Pi"));}
+  finally{btn.disabled=false; btn.textContent="➕ Añadir";}});
 let candSig="", candSig0=false;
 async function pullCandidatos(){try{const r=await fetch(API+"/api/candidatos",{cache:"no-cache"}); if(!r.ok)throw 0; const d=await r.json(); const sig=JSON.stringify(d.pisos||[]); if(sig!==candSig){candSig=sig;
     const antes=new Map(CANDS.map(c=>[String(c.id),c.st])), nuevos=d.pisos||[];

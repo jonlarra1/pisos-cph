@@ -292,6 +292,36 @@ class TestRetirados(Web):
         self.assertEqual(self.js("candLayer.getLayers().length"), 0)                 # pasadas 48 h, fuera del mapa
 
 
+class TestAnadirEnlace(Web):
+    """Barra de abajo: pegar el enlace de un anuncio lo añade a «Propuestos» por la API v2."""
+    URL = "https://www.boligportal.dk/lejligheder/koebenhavn/90m2-3-vaer-id-5799999"
+    def responder(self, status, body):
+        self.page.route(PI + "/api/v2/enlaces", lambda r: r.fulfill(status=204, headers=self.cors()) if r.request.method == "OPTIONS"
+                        else (self.posts.append(("/api/v2/enlaces", json.loads(r.request.post_data))), r.fulfill(status=status, headers=self.cors(), json=body)))
+    def test_la_barra_esta_en_el_mapa(self):
+        self.assertTrue(self.page.is_visible(".mapwrap #addbar #add-url"))
+    def test_enlace_no_valido_no_llama_a_la_pi(self):
+        self.js("YO='jon'"); self.page.fill("#add-url", "https://example.com/piso/123"); self.page.click("#add-btn")
+        self.page.wait_for_timeout(300)
+        self.assertIn("Pega el enlace de un anuncio", self.page.inner_text("#toasts"))
+        self.assertFalse([p for p, _ in self.posts if p == "/api/v2/enlaces"])
+    def test_anadir_envia_el_enlace_y_avisa(self):
+        self.esperar("CANDS.length===1", 5000); self.js("YO='unai'")
+        self.responder(200, {"uid": "Boligportal:5799999", "pid": "5799999", "estado": "propuesto", "zona": "Valby", "ya_estaba": False,
+                             "avisos": ["no pasa: precio 17000 > 16000"], "datos": {"precio": 15000, "aconto": 1000}})
+        self.page.fill("#add-url", self.URL); self.page.click("#add-btn")
+        self.esperar("document.getElementById('add-url').value===''")
+        self.assertIn(("/api/v2/enlaces", {"url": self.URL, "quien": "unai"}), self.posts)
+        toasts = self.page.inner_text("#toasts")
+        self.assertIn("Añadido", toasts); self.assertIn("Valby", toasts); self.assertIn("no pasa", toasts)
+    def test_error_de_la_pi_se_cuenta(self):
+        self.js("YO='jon'"); self.responder(502, {"error": "el portal no responde, prueba en un rato"})
+        self.page.fill("#add-url", self.URL); self.page.click("#add-btn")
+        self.esperar("document.getElementById('add-btn').disabled===false&&document.getElementById('toasts')")
+        self.assertIn("el portal no responde", self.page.inner_text("#toasts"))
+        self.assertEqual(self.js("document.getElementById('add-url').value"), self.URL)   # el enlace no se pierde
+
+
 class TestDestinoAnadido(Web):
     INIT = "localStorage.setItem('destinos', JSON.stringify([{id:'xcris',n:'Cris',addr:'Nørrebrogade',ll:[55.6935,12.548],who:'unai'}]));"
     def abrir(self):
