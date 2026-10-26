@@ -99,7 +99,7 @@ class Web(unittest.TestCase):
                 {"m": "walk", "min": 8, "d": 600, "to": "Enghave Brygge St.", "path": [[55.649, 12.553], [55.653, 12.556]]},
                 {"m": "Metro", "line": "M4", "head": "Orientkaj", "from": "Enghave Brygge St.", "to": "København H", "dep": "08:12", "arr": "08:16", "n": 2, "path": [[55.653, 12.556], [55.672, 12.564]]},
                 {"m": "walk", "min": 11, "d": 800, "to": "Cris", "path": [[55.672, 12.564], [55.6935, 12.548]]}]}]})
-        if path == "/api/destinos": return route.fulfill(status=200, headers=self.cors(), json={"destinos": self.destinos})
+        if path == "/api/destinos": return route.fulfill(status=200, headers=self.cors(), json={"destinos": self.destinos, "preparando": getattr(self, "preparando", {"pendientes": 0, "total": 0})})
         if path == "/api/img": return route.fulfill(status=200, headers=self.cors(), content_type="image/png", body=PNG)
         if path in FAKE: return route.fulfill(status=200, headers=self.cors(), json=FAKE[path])
         route.fulfill(status=404, headers=self.cors(), json={"error": "not found"})
@@ -346,6 +346,12 @@ class TestDestinosCompartidos(Web):
         self.esperar("EXTRA.some(d=>d.id==='xgym01')"); self.js("YO='jon'; window.confirm=()=>true")
         self.js("quitarDestino('xgym01')"); self.esperar("!EXTRA.length")
         self.assertIn(("/api/destino", {"accion": "quitar", "id": "xgym01", "by": "jon"}), self.posts)
+    def test_barra_de_la_pi_preparando_rutas(self):
+        self.preparando = {"pendientes": 30, "total": 40}
+        self.js("pullDestinos()"); self.js("document.getElementById('cfg').open=true")
+        self.esperar("document.getElementById('prep')&&document.getElementById('prep').innerText.includes('10 de 40')")
+        self.preparando = {"pendientes": 0, "total": 0}
+        self.js("pullDestinos()"); self.esperar("document.getElementById('prep').innerText===''")
     def test_aviso_en_tiempo_real_los_recarga(self):
         self.esperar("EXTRA.length===1"); self.destinos.append({"id": "xclase1", "n": "Clase", "addr": "", "ll": [55.68, 12.57], "by": "jon"})
         self.js("pullDestinos()"); self.esperar("EXTRA.length===2")

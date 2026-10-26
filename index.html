@@ -1398,11 +1398,20 @@ function drawExtraMarkers(){extraLayer.clearLayers();
   EXTRA.forEach(d=>L.marker(d.ll,{icon:L.divIcon({className:"",html:`<div class="work dest">${esc(d.n)}</div>`,iconSize:null,iconAnchor:[30,12]}),zIndexOffset:880}).bindTooltip(esc(d.addr||d.n),{direction:"top",offset:[0,-14]}).addTo(extraLayer));}
 function saveExtra(){try{localStorage.setItem("destinos",JSON.stringify(EXTRA));}catch(e){} drawExtraMarkers();}
 async function destinoApi(body){const r=await fetch(API+"/api/destino",{method:"POST",headers:{"Content-Type":"application/json","X-Pisos-Key":API_KEY},body:JSON.stringify({...body,by:YO||""})});
-  const j=await r.json().catch(()=>({})); if(!r.ok)throw new Error(j.error||`la Pi respondió ${r.status}`); return j.destinos||[];}
+  const j=await r.json().catch(()=>({})); if(!r.ok)throw new Error(j.error||`la Pi respondió ${r.status}`); setPrep(j.preparando); return j.destinos||[];}
+/* Barra «la Pi está preparando las rutas» (cálculo previo al añadir un destino); mientras dure, se pregunta cada 4 s */
+let PREP={pendientes:0,total:0}, prepT=null;
+function prepHtml(){const {pendientes:n,total:t}=PREP; if(!n||!t)return ""; const pc=Math.round((t-n)/t*100);
+  return `<div class="tp-bar" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${pc}" style="margin:4px 0 6px;font-size:11.5px;color:var(--muted)">
+    ⏳ La Pi está preparando las rutas de los pisos: ${t-n} de ${t} (${pc} %)
+    <div style="height:6px;border-radius:3px;background:var(--line);margin-top:4px;overflow:hidden"><i style="display:block;height:100%;width:${Math.max(4,pc)}%;background:#2b6fd6;transition:width .3s"></i></div></div>`;}
+function setPrep(p){if(!p||typeof p.pendientes!=="number")return; PREP={pendientes:Math.max(0,p.pendientes|0),total:Math.max(0,p.total|0)};
+  const el=document.getElementById("prep"); if(el)el.innerHTML=prepHtml();
+  clearTimeout(prepT); if(PREP.pendientes)prepT=setTimeout(()=>{if(!document.hidden)pullDestinos();},4000);}
 function setExtra(lista){const ok=lista.filter(d=>d&&typeof d.id==="string"&&/^x[a-z0-9]{4,16}$/.test(d.id)&&Array.isArray(d.ll)&&d.ll.length===2);
   const nuevo=[...ok,...EXTRA.filter(d=>d.pend&&!ok.some(x=>x.id===d.id))];
   if(JSON.stringify(nuevo)===JSON.stringify(EXTRA))return; EXTRA=nuevo; saveExtra(); if(!rowOf(routeDest))routeDest=allRows()[0].key; tripChanged();}
-async function pullDestinos(){try{const r=await fetch(API+"/api/destinos",{cache:"no-cache"}); if(!r.ok)throw 0; let lista=(await r.json()).destinos||[];
+async function pullDestinos(){try{const r=await fetch(API+"/api/destinos",{cache:"no-cache"}); if(!r.ok)throw 0; const j=await r.json(); let lista=j.destinos||[]; setPrep(j.preparando);
     for(const d of EXTRA.filter(x=>x.pend)){   /* subir lo que se añadió sin conexión (y los de antes, una vez) */
       try{lista=await destinoApi({accion:"anadir",id:d.id,n:d.n,addr:d.addr||"",ll:d.ll}); d.pend=false;}catch(e){if(!(e instanceof TypeError))d.pend=false;}}
     setExtra(lista);}catch(e){}}
@@ -1427,11 +1436,18 @@ function tpFor(p,row){const pf=PERF[row.who], M=MOM(), fecha=tripDate(), key=[p.
   const dest=dLL(row.k), casa=[p.lat,p.lon], a=M.ida?casa:dest, b=M.ida?dest:casa;
   const q=new URLSearchParams({olat:a[0],olon:a[1],dlat:b[0],dlon:b[1],dname:String(M.ida?dName(row.k):String(p.calle||"Casa").split(" · ")[0]).slice(0,60),
     fecha,hora:tripTime,modo:M.modo,perfil:pf.mode,lim:pf.lim,vw:pf.vw,vb:pf.vb});
-  fetch(API+"/api/ruta?"+q,{cache:"no-cache"}).then(r=>r.ok?r.json():Promise.reject(r.status))
+  tpPedir(key,API+"/api/ruta?"+q,row.key===routeDest);
+  return "pending";}
+/* Cola de peticiones al motor de la Pi: como mucho TPQ.MAX a la vez (con muchos destinos no se le pide todo de golpe)
+   y primero la ruta que estás mirando. Si la Pi dice «ocupado» (503) o «demasiadas» (429), se reintenta a los 30 s. */
+const TPQ={cola:[],activas:0,MAX:2};
+function tpPedir(key,url,primero){TPQ.cola[primero?"unshift":"push"]({key,url}); tpSig();}
+function tpSig(){while(TPQ.activas<TPQ.MAX&&TPQ.cola.length){const {key,url}=TPQ.cola.shift(); TPQ.activas++;
+  fetch(url,{cache:"no-cache"}).then(r=>r.ok?r.json():Promise.reject(r.status))
    .then(d=>{TP[key]=Array.isArray(d.opciones)&&d.opciones.length?d.opciones:null; onLive();})
    .catch(st=>{TP[key]=null; onLive();
-     if(st===429||st===503)setTimeout(()=>{if(TP[key]===null){delete TP[key]; onLive();}},30000);});   /* Pi ocupada: reintentar */
-  return "pending";}
+     if(st===429||st===503)setTimeout(()=>{if(TP[key]===null){delete TP[key]; onLive();}},30000);})
+   .finally(()=>{TPQ.activas--; tpSig();});}}
 let liveT=null;
 function onLive(){clearTimeout(liveT); liveT=setTimeout(()=>{if(!card.hidden)showCard(card.dataset.id);
   const id=sheet.classList.contains("open")?sheet.dataset.id:selId; if(id)drawRoute(id,routeDest,false);
@@ -1600,7 +1616,7 @@ function renderWalk(){
      <label class="pfl">Andando <select data-pfvw="${w}">${VW.map(([v,t])=>opt(v,`${t} · ${v} km/h`,v===pf.vw)).join("")}</select></label>
      <label class="pfl">En bici <select data-pfvb="${w}">${VB.map(([v,t])=>opt(v,`${t} · ${v} km/h`,v===pf.vb)).join("")}</select></label>
      <small>${pf.mode==="bike"?`Bici + S-tog / tren / Letbane (sin bus ni metro)`:"Andando + bus, metro, Letbane y tren"}</small></div>`).join("")+
-    `<div class="pf"><b>Destinos</b>
+    `<div class="pf"><b>Destinos</b><div id="prep">${prepHtml()}</div>
       ${ROWS.map(r=>`<div class="dst"><span>${esc(dName(r.k))}</span><small>${PERF[r.who].n}</small></div>`).join("")}
       ${EXTRA.map(d=>`<div class="dst"><span>${esc(d.n)}</span><small>${d.pend?"⏳ sin subir a la Pi":"Jon y Unai"}</small><button class="lnk" data-deldest="${esc(d.id)}" title="Quitar para los dos">✕</button></div>`).join("")}
       <form class="addd" id="addd"><input name="n" placeholder="Nombre (p. ej. Gimnasio)" required maxlength="30">
