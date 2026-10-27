@@ -104,15 +104,15 @@ The user is Jon. He works at Nordic Solar (Hellerup). He prefers short, simple, 
   estados compartidos vía Pi, Lares v2 conectado (buzón pisos-bridge), menú «Búsqueda (Lares)» / «Visualización», galería de fotos,
   panel privado :9444, logs + checks. Listado izquierdo: principal = solo 🔵 gusta + 🟢 contactado; «🟠 Propuestos» = nuevos del
   mapa + candidatos de Lares juntos (una sola categoría); «🔴 Descartados» = temporales (48 h, con «recuperar») + definitivos.
-- 27-oct HECHO EN LOCAL (commits sin subir; instalar EN ESTE ORDEN con clave SSH de 1 h):
-  1. Backend (`deploy.sh --aplicar`): destinos compartidos (destinos.py), freno + cálculo previo de rutas (precalculo.py:
-     máx. 6 búsquedas esperando, cola de 400, 24 h de caché; /api/ruta 240/min por IP), panel sin Lejebolig.
-  2. Lares: piso_watch_monitor.py (sin Lejebolig, no recuerda propuestos de Lejebolig) + SOUL.md con lares/instrucciones-pisos.md.
-  3. `git push` (web: barra de destinos compartidos, ocultar rutas del otro, cola de rutas, barra «la Pi está preparando…»;
-     datos: Gyngemose 102 m² → Boligportal 5193904, avisos «solo en Lejebolig»).
-  4. `python3 tools/migrar_lejebolig.py --aplicar` (3 pisos de Boligportal que sustituyen propuestos de Lejebolig + 5 sin pareja con nota).
-  Lejebolig sin pareja: Vasekær, Rosendal, Gyngemose 6. th y 4. th (mapa) + 5 propuestos. Retirados: Mortonsvej, Molestien, Glostrup 104 m²
-  (los pasa a descartados el comprobador de Lares).
+- 27-oct 08:00 INSTALADO TODO: backend (destinos compartidos, freno + rutas previas, check «destinos», logs; backup-20261027-075658),
+  Lares (sin Lejebolig; pasada de prueba 34 s, Boligportal 158 + EDC 11, 0 errores; SOUL.md y skill piso-watch-cph reescritos con
+  pisos.py y la base única — copias SOUL.md.bak-20261027, SKILL.md.bak-20261027, script .v7-20261027-preLejebolig.bak), web publicada,
+  migración Lejebolig aplicada (Boligportal 5170785, 5681028, 5484666 con nota; 5 de Lejebolig con «solo en Lejebolig»).
+  Mapa: Gyngemose 102 m² → Boligportal 5193904 (punto sin mover, ~250 m: recalcular rutas si se quiere el punto exacto).
+  Avisos «solo en Lejebolig»: Vasekær, Rosendal, Gyngemose 6. th y 4. th. Retirados (los descarta el comprobador): Mortonsvej,
+  Molestien, Glostrup 104 m².
+  PENDIENTE del bloque de Lares: importar el CSV viejo (117) + archivar ficheros en Vivienda/archivo-2026-10-26/ (sus instrucciones ya
+  dicen que están archivados), apagar `piso-check-links`, probar por el chat que el hook deja usar pisos.py.
 - Pendiente:
   1. Fireworks (proveedor del modelo de Lares) suspendido → avisos de Lares al Bot Chat fallan (check `lares_cron` en rojo). Lo arregla Jon.
   2. Tarea IA de Lares que mire los planos y escriba `pisos-bridge/planos.json` (`{"<id>": {"dorm": 3}}`) — cuando Lares tenga modelo.
@@ -169,6 +169,8 @@ The user is Jon. He works at Nordic Solar (Hellerup). He prefers short, simple, 
   · 26-oct 21:07 — BORRADAS backend backup-20261024-141600 y backup-20261026-210159 (igual que la de las 21:04) y Lares
     .v4-20261024-preAmueblado.bak. QUEDAN: backend backup-20261026-210404; Lares .v5-20261026-preRefactor.bak. Borrar el 27-oct si va bien.
     Clave SSH temporal quitada (sin copia de authorized_keys).
+  · 27-oct 08:05 — BORRADAS backend backup-20261026-{210404,224401,231657}; Lares .v5 y .v6. QUEDAN: backend
+    backup-20261027-075658; Lares .v7-20261027-preLejebolig.bak, SOUL.md.bak-20261027, SKILL.md.bak-20261027. Clave SSH quitada (sin copia).
   · PC: ~/.claude/settings.json.bak, .bak-narrator, .bak-20261024-voz (configuración del narrador, 1–2 KB).
 - Puertos ya usados en la Pi (no tocar): Portainer 8000/9000/9443. Nuestro: 127.0.0.1:8787 (API, Funnel :8443), 127.0.0.1:8790 (panel: serve https :9444 por nombre, y serve TCP :9445 por IP http://100.72.170.60:9445 para aparatos sin MagicDNS). Comprobar siempre con `ss -ltnp | grep :PUERTO` antes de usar uno nuevo.
 - Acceso a la Pi: clave SSH temporal de 1 h (expiry-time en authorized_keys, comentario «claude-pisos-1h»); pedir una nueva a Jon.
