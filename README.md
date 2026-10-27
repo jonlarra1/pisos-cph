@@ -1,6 +1,8 @@
 # Pisos Copenhague
 
-Mapa (Leaflet + OpenStreetMap) de pisos de alquiler de 3 dormitorios en Copenhague y alrededores, con puntuación, líneas de S-tog/metro/Letbane y la ruta más rápida en transporte público desde cada piso a: Nordic Solar (trabajo, Hellerup), GN (Ballerup) y DTU (Lyngby).
+Mapa (Leaflet + OpenStreetMap) de pisos de alquiler de 3 dormitorios en Copenhague y alrededores, líneas de S-tog/metro/Letbane y la ruta más rápida en transporte público, bici o andando desde cada piso a: Nordic Solar (trabajo, Hellerup), GN (Ballerup), DTU (Lyngby) y los destinos que añadáis (compartidos).
+
+Estados compartidos (gusta / propuesto / contactado / descartado), pisos propuestos por Lares (agente en la Raspberry Pi) y una barra para añadir un piso pegando su enlace. Cómo encaja todo: `CLAUDE.md` (tabla «Estado real») y `docs/arquitectura.md`.
 
 ## Link para compartir
 https://jonlarra1.github.io/pisos-cph/ (GitHub Pages; el link no cambia).
@@ -13,17 +15,24 @@ python3 -m http.server 8000   # dentro de esta carpeta
 Abre http://localhost:8000 (no con file://).
 
 ## Archivos
-- `index.html` — toda la app. Los datos van inline (`PISOS`, `OUT`, `RUTAS`, `RAIL`…).
-- `data/pisos.json`, `data/descartados.json`, `data/rutas.json` — copias de esos datos.
-- `tools/` — scripts para recalcular las rutas.
+- `index.html` — toda la app. Los datos van inline (`PISOS`, `OUT`, `RUTAS`, `RAIL`…), copiados de `data/` con `tools/sync_web.py`.
+- `data/` — `pisos.json`, `descartados.json`, `rutas.json`, `directo.json`, `barrios.json`.
+- `backend/` — servidor de la Pi (API, base de datos, motor de rutas, panel). Ver `backend/README.md`.
+- `lares/` — lo que corre en el perfil de Lares en la Pi. Ver `lares/README.md`.
+- `tools/` — recalcular rutas, copiar datos a la web y métricas DORA (`dora.py`).
+- `docs/` — `arquitectura.md` (diseño y plan), `historial.md` (diario), `despliegues.jsonl` y `metricas.jsonl` (DORA).
 
 ## Tests
 ```
-./tests/run.sh               # backend + datos + Lares: ~4 s, sin internet (pásalo antes de cada commit)
-./tests/run.sh web           # además la web en Chromium: ~30 s (Pi y mapas simulados)
+./tests/run.sh               # backend, datos, Lares, calidad, DORA: ~10 s, sin internet (antes de cada commit)
+./tests/run.sh web           # la web en Chromium: ~100 s (Pi y mapas simulados)
 ./tests/run.sh -k propuestos # solo los tests cuyo nombre contiene esa palabra
 ```
-- `tests/test_backend.py` — API (estados, zonas, filtros, candidatos, fotos, límites, CORS), logs y comprobaciones del monitor.
+- `tests/test_backend.py` — API (estados, zonas, filtros, candidatos, destinos, rutas, fotos, límites, CORS), logs y checks del monitor.
+- `tests/test_anuncios.py`, `tests/test_api_v2.py` — base única de anuncios: reglas, estados, permisos por clave, historial.
+- `tests/test_precalculo.py` — cola de rutas previas y freno del motor.
+- `tests/test_herramienta_lares.py` — `lares/pisos.py` contra una API simulada.
+- `tests/test_calidad.py` — seguridad, estilo y complejidad del código. `tests/test_dora.py` — métricas.
 - `tests/test_datos.py` — `data/*.json` igual que la web, rutas para cada piso, coordenadas, enlaces, CSP y SRI.
 - `tests/test_lares.py` — vigilante de Lares con portales simulados: páginas adaptativas, recuerdo de candidatos, filtros.
 - `tests/test_web.py` — cada función de la página: pines, propuestos (y datos maliciosos), estados, ficha, fotos, tiempo real.

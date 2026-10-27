@@ -67,11 +67,13 @@ del panel.
 | web (Jon, Unai) | todo lo anterior + filtros y zonas (con confirmación de búsqueda) | — |
 | todas | — | **borrar** (no existe la operación) |
 
-Topes por clave (p. ej. Lares ≤ 20 cambios de estado por hora); si se superan, se corta y el panel lo marca.
-Copia de seguridad diaria de la base (se guardan las 7 últimas).
+Topes de escrituras por minuto (`ESCRITURAS_MIN` en `api_v2.py`): web 30, lares 60, vigilante y comprobador 600; todos
+juntos 1500. Si se superan: 429 y evento en el log.
+Copia de seguridad de la base: hoy solo la que hace `deploy.sh` antes de cada instalación. La copia diaria (7 últimas) está
+SIN HACER (paso E).
 
-Red: Lares llega a la API por una red interna de Docker con su propia clave; la API no puede llegar a Lares
-(el cortafuegos de salida de `pisos-api` no cambia).
+Red: Lares llega a la API por la dirección pública del Funnel (`https://raspberrypi.tail9f1069.ts.net:8443`) con su propia
+clave; la API no puede llegar a Lares (cortafuegos de salida de `pisos-api`).
 
 ## Lo que desaparece
 
@@ -87,9 +89,13 @@ copia estática de la web. Si Jon quiere verlo en Obsidian: una nota de solo lec
 
 ## Fases
 
+Estado: 1 hecha e instalada (26-oct). 2 sin hacer. 3: solo la barra «Añadir enlace». 4: solo la herramienta del chat
+(`pisos.py`) y las instrucciones; vigilante y comprobador aún escriben en el buzón. 5 sin hacer.
+
 1. **Backend** (local): modelo de datos, API con permisos y topes, historial, lectura de fichas de los 3 portales,
    geocodificación. Con pruebas «debe funcionar / debe fallar».
-2. **Migración:** importar pisos del mapa, descartados, propuestos, rechazados y el CSV de Lares (duplicados unidos).
+2. **Migración:** importar pisos del mapa, descartados y propuestos (duplicados unidos). El CSV de Lares ya se revisó el 27-oct
+   (solo pasaba 5390028, importado); los rechazados quedan en `historial.json` hasta el paso C.
 3. **Web:** cargar de la API, botón «Añadir enlace», copia estática de respaldo.
 4. **Lares:** vigilante y comprobador por la API; herramienta del chat (`pisos añadir/consultar/estado`); instrucciones
    de Lares actualizadas. Requiere clave SSH temporal.
@@ -105,6 +111,6 @@ Cada paso se cierra entero: tests, instalado, docs al día, Lares informado y el
 | B | **Fase 2, migración** por la API, desde dentro de la Pi: pisos del mapa (con todos sus datos y su estado), descartados y propuestos actuales | — |
 | C | **Vigilante por la API**: entrega cada anuncio (`POST /api/v2/anuncios`) y el comprobador marca retirados (`/comprobacion`); el backend decide | lógica duplicada de Lares (`evaluar`, `zona_de`, `ZONA_ALIAS`, `detalle*`), `candidatos.json`, `rechazados.json`, `retirados.json`, `aplicar_retirados` |
 | D | **Fase 3, web** lee `/api/v2/anuncios` (propuestos, mapa y descartados) y escribe estados por `/api/v2` | `puente.py`, `/api/candidatos`, `/api/estado(s)`, tabla `estado` (sus datos ya migrados), `PISOS`/`OUT` como fuente (queda la copia estática de respaldo) |
-| E | **Fase 5**: pruebas de abuso, panel con contadores e historial desde la base, docs y Lares al día | lo que quede viejo |
+| E | **Fase 5**: pruebas de abuso, copia diaria de la base (7 últimas), panel con contadores e historial desde la base, docs y Lares al día | lo que quede viejo |
 
 Lo que no cambia: las rutas precalculadas (`RUTAS`, por id de piso) siguen en la web; el id del piso es el `pid` del anuncio.
