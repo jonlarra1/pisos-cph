@@ -21,3 +21,11 @@ depósito y prepago por separado, aconto, lejeperiode y «Rum/værelser 4/3» (d
 Filtros en código: ≥4 værelser, ≤23.000 kr, zona permitida, entrada 2026-12-18..2027-01-15, contrato no corto,
 sin «no compartir». Lo que ya está en el mapa/descartados no se propone; lo decidido en la web se oculta y
 reaparece si se vuelve a «nuevo».
+
+## Limpieza del 27-oct-2026
+- Lares usa SOLO la base única (backend de la Pi) con `pisos.py`. Su `SOUL.md` y la skill `piso-watch-cph` se reescribieron
+  (copias `.bak-20261027` en la Pi); el texto viene de `lares/instrucciones-pisos.md`.
+- Archivado (sin borrar) en `Vivienda/archivo-2026-10-26/`: `pisos_cph.csv`, `pisos_validos.md`, `pisos_no_validos.md`,
+  `nuevos_desde_14oct.md` y los scripts viejos (`generar_listas`, `marcar_caidos`, `check_availability`…). De ahí solo se importó
+  lo que pasaba los filtros de la web (Boligportal 5390028).
+- Tarea `piso-check-links` en pausa (`hermes -p lares cron pause 9a4dc0bb9868`): lo cubre el comprobador del vigilante.

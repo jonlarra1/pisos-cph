@@ -111,8 +111,13 @@ The user is Jon. He works at Nordic Solar (Hellerup). He prefers short, simple, 
   Mapa: Gyngemose 102 m² → Boligportal 5193904 (punto sin mover, ~250 m: recalcular rutas si se quiere el punto exacto).
   Avisos «solo en Lejebolig»: Vasekær, Rosendal, Gyngemose 6. th y 4. th. Retirados (los descarta el comprobador): Mortonsvej,
   Molestien, Glostrup 104 m².
-  PENDIENTE del bloque de Lares: importar el CSV viejo (117) + archivar ficheros en Vivienda/archivo-2026-10-26/ (sus instrucciones ya
-  dicen que están archivados), apagar `piso-check-links`, probar por el chat que el hook deja usar pisos.py.
+  27-oct 08:20 BLOQUE DE LARES CERRADO: CSV + listas .md evaluados con los filtros de la web (46 de Boligportal: solo pasan 5484666, ya
+  metido, y 5390028 Dantes Plads, importado con nota; Lejebolig y caídos no se importan). Archivado (sin borrar) en
+  `Vivienda/archivo-2026-10-26/` (+ LEEME.txt): pisos_cph.csv, pisos_validos/no_validos.md, nuevos_desde_14oct.md, pisos.db vacío y los
+  scripts viejos. `piso-check-links` PAUSADA con `hermes -p lares cron pause 9a4dc0bb9868` (se reanuda con `resume`); ACL de jobs.json
+  igual. `pisos.py consultar` probado dentro de hermes-gateway (ve los 9 propuestos).
+  Pendiente: probar por el CHAT de Lares que el hook (skill-governance-hook, fail_closed) deja usar pisos.py — necesita su modelo (Fireworks);
+  pisos.py: el historial enseña la hora en segundos y «propuesto → propuesto» en las notas (arreglar formato).
 - Pendiente:
   1. Fireworks (proveedor del modelo de Lares) suspendido → avisos de Lares al Bot Chat fallan (check `lares_cron` en rojo). Lo arregla Jon.
   2. Tarea IA de Lares que mire los planos y escriba `pisos-bridge/planos.json` (`{"<id>": {"dorm": 3}}`) — cuando Lares tenga modelo.
