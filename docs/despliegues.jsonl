@@ -12,3 +12,5 @@
 {"ts": "2026-10-26T20:06:18Z", "pieza": "lares", "commit": "347f837fd4f0f368039afafc4fa2de0fed2f6977", "resultado": "ok", "nota": "v5 refactor de main, pasada de prueba 41 s, 22 candidatos"}
 {"ts": "2026-10-26T21:44:29Z", "pieza": "backend", "commit": "ad0217cee8fac1d9b062d19cdc78e0dd45e8dc10", "resultado": "ok", "nota": "backup-20261026-224401"}
 {"ts": "2026-10-26T22:17:23Z", "pieza": "backend", "commit": "5a99900a1285cb181112c25b219b7342e6517be5", "resultado": "ok", "nota": "backup-20261026-231657"}
+{"ts": "2026-10-27T06:57:30Z", "pieza": "backend", "commit": "cecd7b0ce0b7e7c1d991ab63e05d1981c03d565c", "resultado": "ok", "nota": "backup-20261027-075658"}
+{"ts": "2026-10-27T07:00:29Z", "pieza": "lares", "commit": "cecd7b0ce0b7e7c1d991ab63e05d1981c03d565c", "resultado": "ok", "nota": "sin Lejebolig; SOUL.md + skill piso-watch-cph al día; pasada de prueba 34 s, Boligportal 158 + EDC 11, 0 errores"}
