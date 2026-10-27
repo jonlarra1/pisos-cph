@@ -94,3 +94,17 @@ copia estática de la web. Si Jon quiere verlo en Obsidian: una nota de solo lec
 4. **Lares:** vigilante y comprobador por la API; herramienta del chat (`pisos añadir/consultar/estado`); instrucciones
    de Lares actualizadas. Requiere clave SSH temporal.
 5. **Pruebas** de funcionamiento y de abuso; retirar lo viejo; panel con contadores e historial desde la base.
+
+## Plan de las fases 2–5 (27-oct, aprobado por Jon: «hacer las fases 3–5» + conectar «unir»)
+
+Cada paso se cierra entero: tests, instalado, docs al día, Lares informado y el código que sobra, borrado.
+
+| Paso | Qué | Quita |
+|---|---|---|
+| A | **Unir duplicados**: `POST /api/v2/anuncios/<uid>/unir {con}` (web, lares), `pisos.py unir`, botón «es el mismo piso que…» | — |
+| B | **Fase 2, migración** por la API, desde dentro de la Pi: pisos del mapa (con todos sus datos y su estado), descartados y propuestos actuales | — |
+| C | **Vigilante por la API**: entrega cada anuncio (`POST /api/v2/anuncios`) y el comprobador marca retirados (`/comprobacion`); el backend decide | lógica duplicada de Lares (`evaluar`, `zona_de`, `ZONA_ALIAS`, `detalle*`), `candidatos.json`, `rechazados.json`, `retirados.json`, `aplicar_retirados` |
+| D | **Fase 3, web** lee `/api/v2/anuncios` (propuestos, mapa y descartados) y escribe estados por `/api/v2` | `puente.py`, `/api/candidatos`, `/api/estado(s)`, tabla `estado` (sus datos ya migrados), `PISOS`/`OUT` como fuente (queda la copia estática de respaldo) |
+| E | **Fase 5**: pruebas de abuso, panel con contadores e historial desde la base, docs y Lares al día | lo que quede viejo |
+
+Lo que no cambia: las rutas precalculadas (`RUTAS`, por id de piso) siguen en la web; el id del piso es el `pid` del anuncio.
