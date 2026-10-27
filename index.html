@@ -1641,7 +1641,8 @@ document.getElementById("cfg-b").addEventListener("change",e=>{const t=e.target;
 async function quitarDestino(id){const d=EXTRA.find(x=>x.id===id); if(!d)return;
   if(d.pend){EXTRA=EXTRA.filter(x=>x.id!==id); saveExtra(); tripChanged(); return;}   /* nunca llegó a la Pi */
   if(!confirm(`¿Quitar «${d.n}» para Jon y Unai?`))return; if(!YO&&!(await quienSoy()))return;
-  try{setExtra(await destinoApi({accion:"quitar",id}));}catch(err){toast("⚠️ No se ha podido quitar: "+(err instanceof TypeError?"sin conexión con la Pi":err.message));}}
+  try{setExtra(await destinoApi({accion:"quitar",id}));}catch(err){toast("⚠️ No se ha podido quitar: "+(err instanceof TypeError?"sin conexión con la Pi":err.message));
+    if(!(err instanceof TypeError))clientLog(`quitar destino: ${err.message}`,"destinos","warn");}}
 document.getElementById("cfg-b").addEventListener("click",e=>{
   const del=e.target.closest("[data-deldest]"); if(del){quitarDestino(del.dataset.deldest); return;}
   const b=e.target.closest("[data-pfmode]"); if(!b)return; const [w,m]=b.dataset.pfmode.split("|"); PERF[w].mode=m; tripChanged();});
@@ -1651,7 +1652,7 @@ document.getElementById("cfg-b").addEventListener("submit",async e=>{e.preventDe
     const j=await r.json(); if(!j.length){msg.textContent="No encuentro esa dirección. Prueba con calle, número y código postal."; return;}
     const d={id:"x"+Date.now().toString(36),n,addr:a,ll:[+(+j[0].lat).toFixed(6),+(+j[0].lon).toFixed(6)]};
     try{setExtra(await destinoApi({accion:"anadir",...d})); toast(`✅ «${n}» añadido para Jon y Unai`);}
-    catch(err){if(!(err instanceof TypeError)){msg.textContent="⚠️ "+err.message; return;}
+    catch(err){if(!(err instanceof TypeError)){msg.textContent="⚠️ "+err.message; clientLog(`añadir destino: ${err.message}`,"destinos","warn"); return;}
       EXTRA.push({...d,pend:true}); saveExtra(); tripChanged(); toast("Sin conexión con la Pi: guardado en este navegador, se compartirá al volver");}
   }catch(err){msg.textContent="No se pudo buscar la dirección (sin conexión).";}});
 document.getElementById("mom").addEventListener("click",e=>{const b=e.target.closest("[data-mom]"); if(!b||b.dataset.mom===MOMENTO)return;
@@ -2096,7 +2097,8 @@ document.getElementById("addbar")?.addEventListener("submit",async e=>{e.prevent
       toast(`${a.ya_estaba?"Ya estaba":"✅ Añadido"} a «Propuestos»: ${a.zona||d.ciudad||""}${total?` · ${kr0(total)} kr/mes`:""}`);
       (a.avisos||[]).slice(0,2).forEach(x=>toast("⚠️ "+x));
       candSig=""; await pullCandidatos(); if(CANDS.some(c=>String(c.id)===pid))openCand(pid);}
-  }catch(err){toast("⚠️ No se ha podido añadir: "+(err.message||"sin conexión con la Pi"));}
+  }catch(err){toast("⚠️ No se ha podido añadir: "+(err.message||"sin conexión con la Pi"));
+    if(!(err instanceof TypeError))clientLog(`añadir enlace: ${err.message}`,"barra de abajo","warn");}
   finally{btn.disabled=false; btn.textContent="➕ Añadir";}});
 let candSig="", candSig0=false;
 async function pullCandidatos(){try{const r=await fetch(API+"/api/candidatos",{cache:"no-cache"}); if(!r.ok)throw 0; const d=await r.json(); const sig=JSON.stringify(d.pisos||[]); if(sig!==candSig){candSig=sig;
@@ -2145,7 +2147,7 @@ document.getElementById("fbusq").addEventListener("submit",async e=>{e.preventDe
   catch(err){m.textContent="No se pudo guardar: "+err.message;}});
 pullBusq();
 /* errores de la página -> log del backend (panel de estado) */
-let _errN=0; function clientLog(msg,where){if(_errN++>20)return; try{fetch(API+"/api/clientlog",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({level:"error",msg:String(msg).slice(0,400),where:String(where||location.pathname).slice(0,150)})}).catch(()=>{});}catch(e){}}
+let _errN=0; function clientLog(msg,where,level){if(_errN++>20)return; try{fetch(API+"/api/clientlog",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({level:level||"error",msg:String(msg).slice(0,400),where:String(where||location.pathname).slice(0,150)})}).catch(()=>{});}catch(e){}}
 addEventListener("error",e=>clientLog(e.message,(e.filename||"")+":"+(e.lineno||"")));
 document.addEventListener("securitypolicyviolation",e=>clientLog("CSP bloqueó "+e.violatedDirective+": "+String(e.blockedURI).slice(0,120)));
 liveStart();

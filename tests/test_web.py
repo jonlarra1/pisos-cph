@@ -327,6 +327,8 @@ class TestAnadirEnlace(Web):
         self.esperar("document.getElementById('add-btn').disabled===false&&document.getElementById('toasts')")
         self.assertIn("el portal no responde", self.page.inner_text("#toasts"))
         self.assertEqual(self.js("document.getElementById('add-url').value"), self.URL)   # el enlace no se pierde
+        self.esperar("_errN>0")
+        self.assertTrue(any(p == "/api/clientlog" and "el portal no responde" in d["msg"] for p, d in self.posts))   # llega al panel
 
 
 class TestDestinosCompartidos(Web):
