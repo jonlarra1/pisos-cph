@@ -198,18 +198,6 @@ def tail(kind, n=50):
     return out[-n:]
 
 
-def migrate_old_logs():
-    """Una vez: api.jsonl, checks.jsonl… del formato anterior pasan a logs/<tipo>/legacy-<fecha>.jsonl.gz."""
-    for f in glob.glob(os.path.join(LOGDIR, "*.jsonl")) + glob.glob(os.path.join(LOGDIR, "*.jsonl.1")):
-        kind = os.path.basename(f).split(".")[0]
-        d = os.path.join(LOGDIR, kind)
-        os.makedirs(d, exist_ok=True)
-        dst = os.path.join(d, f"legacy-{time.strftime('%Y%m%d')}-{os.path.basename(f).replace('.', '_')}.jsonl.gz")
-        with open(f, "rb") as src, gzip.open(dst, "wb") as out:
-            shutil.copyfileobj(src, out)
-        os.remove(f)
-
-
 def daily_summary(day):
     """Resumen de un día (a partir del detalle de api/client y de los eventos)."""
 
@@ -257,7 +245,7 @@ def housekeeping():
             continue
         for f in glob.glob(os.path.join(d, "*.jsonl")):
             name = os.path.basename(f)[:-6]
-            if name >= today or name.startswith("legacy"):
+            if name >= today:
                 continue
             if kind == "api":  # antes de comprimir el detalle de ayer, guardar su resumen
                 sp = os.path.join(LOGDIR, "summary")
@@ -1650,7 +1638,6 @@ CTX = api_v2.Contexto(
 api_v2.configurar()
 
 if __name__ == "__main__":
-    migrate_old_logs()
     try:
         for k, v in json.loads(_txt(os.path.join(LOGDIR, "checks_recientes.json"))).items():
             CHECK_HIST[k].extend(v[-10:])
