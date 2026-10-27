@@ -901,12 +901,6 @@ html,body{overflow-x:hidden}
 .lares{padding:4px 14px 6px;font-size:12.5px;border-top:1px solid var(--line)}
 .lares summary{cursor:pointer;font-weight:600;padding:6px 0;color:var(--fg)}
 .lares .out-s{max-height:40vh}
-.cand{display:grid;gap:3px;padding:8px 0;border-top:1px solid color-mix(in srgb,var(--fg) 10%,transparent)}
-.cand a.t{color:var(--fg);font-weight:600;text-decoration:none}
-.cand .m{color:var(--muted)}
-.cand .w{color:#b86b00;font-size:11.5px}
-.cand .b{display:flex;flex-wrap:wrap;gap:4px;margin-top:2px}
-.cand .b button,.cand .b a{border:1px solid var(--line);background:var(--panel);color:var(--fg);border-radius:999px;padding:2px 8px;font:600 11.5px var(--f-body);cursor:pointer;text-decoration:none}
 .cpin{width:22px;height:22px;border-radius:6px;transform:rotate(45deg);display:grid;place-items:center;border:2px solid #fff;box-shadow:0 2px 5px rgba(0,0,0,.35);color:#fff;font:700 10px var(--f-body)}
 .cpin span{transform:rotate(-45deg)}
 .zchip[aria-pressed="true"]{background:#2e9e4f;border-color:#2e9e4f;color:#fff}
@@ -2020,15 +2014,6 @@ const kr0=n=>n==null?"?":fmt(n);
 /* datos sí/no del portal (Boligportal los da casi todos; EDC balcón y ascensor; amueblado también del texto) */
 const RASGOS=[["amueblado","🛋️ Amueblado","Sin amueblar"],["compartible","👥 Se puede compartir","No se puede compartir"],["balcon","Balcón",null],["ascensor","Ascensor",null],["mascotas","Mascotas sí",null],["lavadora","Lavadora",null],["parking","Parking",null]];
 const rasgosTxt=c=>RASGOS.map(([k,si,no])=>c[k]===true?si:c[k]===false&&no?no:"").filter(Boolean).map(esc).join(" · ");
-function candItem(c){const st=ESTADOS[c.st]?c.st:"nuevo", cid=esc(c.id);
-  return `<div class="cand"><a class="t" href="${safeUrl(c.link)}" target="_blank" rel="noopener">${esc(c.zona||"")} · ${esc(c.titulo||c.lugar||"Anuncio")} ↗</a>
-   ${quien(c)?`<span class="m"><b>${quien(c)}</b></span>`:""}
-   <span class="m">${kr0(c.precio)} kr/mes · ${esc(c.m2||"?")} m² · ${esc(c.vaer||"?")} vær. · libre ${esc(c.disp||"?")} · ${esc(c.portal||"")}</span>
-   ${c.dep!=null||c.pre!=null?`<span class="m">Depósito ${kr0(c.dep)} kr · Prepago ${kr0(c.pre)} kr</span>`:""}
-   ${rasgosTxt(c)?`<span class="m">${rasgosTxt(c)}</span>`:""}
-   ${Array.isArray(c.avisos)&&c.avisos.length?`<span class="w">⚠ ${c.avisos.map(esc).join(" · ")}</span>`:""}
-   <span class="b">${candConUbic(c)?`<button data-cand="${cid}">📋 Ver ficha y rutas</button>`:""}${c.plano?`<a href="${safeUrl(c.plano)}" target="_blank" rel="noopener">Plano ↗</a>`:""}
-    ${st!=="gusta"?`<button data-cst="${cid}|gusta">🔵 Me gusta</button>`:""}${st!=="descartado"?`<button data-cst="${cid}|descartado">🔴 Descartar</button>`:""}${st!=="nuevo"?`<button data-cst="${cid}|nuevo">🟠 Volver a sin decidir</button>`:""}</span></div>`;}
 /* Propuesto -> «piso provisional» para abrirlo en la misma ficha que los del mapa (rutas con el motor de la Pi). */
 const sino=(v,si="Sí",no="No")=>v===true?si:v===false?no:"No indicado";
 const numOr=(v,o=null)=>v!=null&&v!==""&&Number.isFinite(+v)?+v:o;   /* datos de anuncios de fuera: solo números */
@@ -2060,7 +2045,6 @@ async function openCand(id){id=String(id); const c=CANDS.find(x=>String(x.id)===
   if(!candConUbic(c)&&!c._geo){c._geo=GEO[id]||null; if(!c._geo){candPiso(c); openSheet(id); toast("📍 Buscando la ubicación aproximada (el portal no la publica)…"); c._geo=await geoCand(c);}}
   const p=candPiso(c); openSheet(id);
   if(Number.isFinite(p.lat)){drawRoute(id,routeDest,false); map.flyTo([p.lat,p.lon],Math.max(map.getZoom(),13),{duration:.6});}}
-document.addEventListener("click",e=>{const b=e.target.closest("[data-cand]"); if(!b)return; e.preventDefault(); map.closePopup(); openCand(b.dataset.cand);});
 function renderCands(){const el=document.getElementById("lares"); if(!el)return;
   CANDS.forEach(c=>{if(!ESTADOS[c.st])c.st="nuevo";});   /* estado desconocido o vacío = sin decidir */
   const sin=CANDS.filter(c=>c.st==="nuevo"&&idOk(c)), gus=CANDS.filter(c=>(c.st==="gusta"||c.st==="contactado")&&idOk(c));
