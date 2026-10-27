@@ -71,14 +71,14 @@ const W=150,H=50;
 const N={
  gh:[95,330,"GitHub Pages","web estática"],      nav:[95,180,"Navegador","Jon · Unai · amigos"],
  funnel:[315,180,"Tailscale Funnel",":8443 público"], api:[535,180,"pisos-api","contenedor en la Pi"],
- db:[535,330,"SQLite","estados · zonas · filtros"], img:[755,180,"Caché de fotos","/api/img"],
+ db:[535,330,"SQLite","estados · anuncios · destinos"], img:[755,180,"Caché de fotos","/api/img"],
  portal:[975,180,"Portales","Boligportal · EDC"], bridge:[755,330,"Buzón compartido","vault/pisos-bridge"],
  lares:[975,330,"Lares","cron cada 3 h"]};
 const E=[ // [desde, hasta, etiqueta]
  ["gh","nav","descarga la web"],["nav","funnel","HTTPS"],["funnel","api","proxy"],["api","db","lee / guarda"],
  ["api","img","fotos"],["img","portal","si no está"],["lares","portal","lee anuncios"],["lares","bridge","deja pisos"],
  ["bridge","api","config / candidatos"]];
-const CHK={funnel:["funnel_publico"],gh:["web_github"],api:["api_errores","almacenamiento","aislamiento_red"],db:["api_errores"],img:["fotos"],bridge:["buzon_compartido"],lares:["lares_pasadas","lares_cron"]};
+const CHK={funnel:["funnel_publico"],gh:["web_github"],api:["api_errores","almacenamiento","aislamiento_red","motor_rutas"],db:["api_errores","anuncios","destinos"],img:["fotos"],bridge:["buzon_compartido"],lares:["lares_pasadas","lares_cron"]};
 const svg=document.getElementById("fsvg"), NS="http://www.w3.org/2000/svg";
 const el=(t,a,p)=>{const e=document.createElementNS(NS,t);for(const k in a)e.setAttribute(k,a[k]);(p||svg).appendChild(e);return e;};
 // carriles
@@ -98,9 +98,10 @@ Object.entries(N).forEach(([k,[x,y,t,sub]])=>{LOG[k]=[];
   const tt=el("text",{x:12,y:22,class:"t"},g); tt.textContent=t; const ss=el("text",{x:12,y:40,class:"s"},g); ss.textContent=sub;
   nodeEl[k]={g}; g.addEventListener("click",()=>showNode(k));});
 // barra del monitor: una ficha por comprobación
-const MONCHIPS=[["funnel_publico","Funnel"],["web_github","GitHub"],["api_errores","API"],["fotos","Fotos"],["buzon_compartido","Buzón"],["lares_pasadas","Lares búsquedas"],["lares_cron","Lares cron"],["almacenamiento","Disco y logs"],["aislamiento_red","Aislamiento"]];
-const monEl={}; MONCHIPS.forEach(([k,lab],i)=>{const x=8+i*119, g=el("g",{transform:`translate(${x},40)`},gM);
-  el("rect",{width:113,height:26,rx:13,fill:"none",stroke:"currentColor","stroke-opacity":".25"},g); const c=el("circle",{cx:15,cy:13,r:5,fill:"var(--warn)"},g);
+const MONCHIPS=[["funnel_publico","Funnel"],["web_github","GitHub"],["api_errores","API"],["fotos","Fotos"],["buzon_compartido","Buzón"],["lares_pasadas","Lares busca"],["lares_cron","Lares cron"],["almacenamiento","Disco"],["aislamiento_red","Aislam."],["motor_rutas","Rutas"],["anuncios","Anuncios"],["destinos","Destinos"]];
+const MONW=Math.floor(1064/MONCHIPS.length);   /* el ancho de cada ficha se reparte según cuántas haya */
+const monEl={}; MONCHIPS.forEach(([k,lab],i)=>{const x=8+i*MONW, g=el("g",{transform:`translate(${x},40)`},gM);
+  el("rect",{width:MONW-6,height:26,rx:13,fill:"none",stroke:"currentColor","stroke-opacity":".25"},g); const c=el("circle",{cx:15,cy:13,r:5,fill:"var(--warn)"},g);
   const t=el("text",{x:27,y:17,class:"chip",fill:"currentColor"},g); t.textContent=lab; monEl[k]=c;});
 
 let lastChecks={}, selNode=null;
@@ -130,7 +131,7 @@ function pathOf(it){
     return [...via,"api"];}
   if(it.k==="lares")return ["lares","portal","lares","bridge"];
   return [];}
-const CHKNODE={funnel_publico:"funnel",web_github:"gh",api_errores:"api",fotos:"img",buzon_compartido:"bridge",lares_pasadas:"lares",lares_cron:"lares",almacenamiento:"api",aislamiento_red:"api"};
+const CHKNODE={funnel_publico:"funnel",web_github:"gh",api_errores:"api",fotos:"img",buzon_compartido:"bridge",lares_pasadas:"lares",lares_cron:"lares",almacenamiento:"api",aislamiento_red:"api",motor_rutas:"api",anuncios:"db",destinos:"db"};
 function describe(it){
   if(it.k==="api")return `${hhmm(it.t)} ${it.m} ${it.path} → ${it.code} (${it.ms} ms)${it.note?" · "+it.note:""}${it.via?" · vía "+it.via:""}`;
   if(it.k==="check")return `${hhmm(it.t)} monitor · ${it.name}: ${it.ok?"OK":"FALLO"} — ${String(it.detail).slice(0,100)}`;

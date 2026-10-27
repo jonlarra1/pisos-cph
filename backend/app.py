@@ -762,6 +762,7 @@ class H(BaseHTTPRequestHandler):
         v = destinos.validar(d)
         if v is None:
             destinos.ESTADO["rechazados"] += 1
+            log("events", level="warn", src="destinos", msg=f"petición no válida ({str(d.get('accion'))[:10]})", by=by)
             return self.reply(400, {"error": "bad data"})
         accion, x = v
         try:
@@ -1089,6 +1090,14 @@ def ruta(qs, previo=False):
     if hit and time.time() - hit[0] < hit[2]:
         return 200, {**hit[1], "cache": True}
     if not previo and not FRENO.entrar():  # demasiadas esperando: «ocupado» al momento, sin ocupar un hilo
+        if time.time() - _FRENO_LOG["t"] > 60:  # al log como mucho una vez por minuto
+            _FRENO_LOG["t"] = time.time()
+            log(
+                "events",
+                level="warn",
+                src="rutas",
+                msg=f"motor ocupado: {FRENO.maximo} búsquedas esperando, se rechaza",
+            )
         return 503, {"error": "motor ocupado, prueba en unos segundos"}
     try:
         if not RUTA_LOCK.acquire(timeout=10):
@@ -1118,6 +1127,7 @@ def ruta(qs, previo=False):
 
 
 FRENO = precalculo.Freno()
+_FRENO_LOG = {"t": 0}
 _PISOS_MAPA = {"t": 0, "ll": []}
 
 
@@ -1131,7 +1141,12 @@ def pisos_mapa():
     return _PISOS_MAPA["ll"]
 
 
-COLA_RUTAS = precalculo.Cola(lambda qs: ruta(qs, previo=True), pisos_mapa, FRENO)
+COLA_RUTAS = precalculo.Cola(
+    lambda qs: ruta(qs, previo=True),
+    pisos_mapa,
+    FRENO,
+    aviso=lambda nivel, msg: log("events", level=nivel, src="rutas_previas", msg=msg),
+)
 
 
 def check_rutas():

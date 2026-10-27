@@ -200,6 +200,7 @@ class TestRutasPrevias(Base):
     def test_freno_lleno_da_ocupado_al_momento(self):
         app.FRENO.n = app.FRENO.maximo
         code, d = app.ruta(self.Q); self.assertEqual(code, 503); self.assertEqual(self.m.n, 0)
+        self.assertTrue(any(e.get("src") == "rutas" and "ocupado" in e.get("msg", "") for e in app.tail("events", 20)))   # queda en el log
         self.assertEqual(app.ruta(self.Q, previo=True)[0], 200)                       # la cola no pasa por el freno
     def test_el_freno_se_libera_aunque_falle(self):
         self.m.ruta = lambda *a: 1 / 0

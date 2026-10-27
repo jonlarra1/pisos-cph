@@ -48,6 +48,13 @@ class TestCola(unittest.TestCase):
         cola = PC.Cola(lambda qs: 1 / 0, lambda: PISOS, self.freno)
         cola.destino([55.69, 12.55], "A"); antes = PC.ESTADO["errores"]
         self.assertTrue(cola.uno()); self.assertEqual(PC.ESTADO["errores"], antes + 1)
+    def test_avisos_al_log(self):
+        avisos = []
+        cola = PC.Cola(lambda qs: (200, {}), lambda: PISOS, self.freno, maximo=10, aviso=lambda n, m: avisos.append((n, m)))
+        cola.destino([55.69, 12.55], "Gimnasio")                                          # 12 rutas, caben 10
+        self.assertIn("cola de rutas llena", avisos[-1][1])
+        while cola.uno(): pass
+        self.assertEqual(avisos[-1][0], "info"); self.assertIn("10 calculadas, 0 con error", avisos[-1][1])
     def test_sin_pisos_no_falla(self):
         cola = PC.Cola(lambda qs: (200, {}), lambda: 1 / 0, self.freno)
         self.assertEqual(cola.destino([55.69, 12.55], "A"), 0)

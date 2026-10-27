@@ -64,25 +64,33 @@ def peticiones(ll, nombre, pisos, hoy=None, dias=DIAS):
 class Cola:
     """Trabajos de cálculo previo, de uno en uno. `calcular(qs)` -> (código, respuesta); `pisos()` -> [(lat, lon)]."""
 
-    def __init__(self, calcular, pisos, freno, maximo=MAX_COLA):
+    def __init__(self, calcular, pisos, freno, maximo=MAX_COLA, aviso=None):
         self.calcular, self.pisos, self.freno, self.maximo = calcular, pisos, freno, maximo
         self.q, self._lock = collections.deque(), threading.Lock()
+        self.aviso = aviso or (lambda nivel, msg: None)  # (nivel, mensaje) -> log de eventos del backend
+        self.tanda = {"t0": 0.0, "ok": 0, "error": 0}
 
     def destino(self, ll, nombre, hoy=None):
         """Mete en la cola las rutas de un destino nuevo. Devuelve cuántas entraron (las que no caben, fuera)."""
         try:
             pisos = self.pisos()
-        except Exception:
+        except Exception as e:
+            self.aviso("warn", f"no se pudo leer la lista de pisos del mapa ({type(e).__name__}): sin rutas previas")
             pisos = []
         nuevas = peticiones(ll, nombre, pisos, hoy)
         with self._lock:
             if not self.q:
                 ESTADO["lote"] = 0  # tanda nueva (para la barra de progreso de la web)
+                self.tanda = {"t0": time.time(), "ok": 0, "error": 0}
             sitio = max(0, self.maximo - len(self.q))
             self.q.extend(nuevas[:sitio])
             ESTADO["sin_sitio"] += len(nuevas) - min(sitio, len(nuevas))
             ESTADO["en_cola"] = len(self.q)
             ESTADO["lote"] += min(sitio, len(nuevas))
+        if len(nuevas) > sitio:
+            self.aviso(
+                "warn", f"cola de rutas llena: {len(nuevas) - sitio} rutas de «{nombre}» se calcularán al abrir el piso"
+            )
         return min(sitio, len(nuevas))
 
     def uno(self):
@@ -96,10 +104,21 @@ class Cola:
             ESTADO["en_cola"] = len(self.q)
         try:
             code, _ = self.calcular(qs)
-            ESTADO["calculadas" if code == 200 else "errores"] += 1
+            ok = code == 200
         except Exception as e:  # el hilo no se cae por un trabajo malo
-            ESTADO["errores"] += 1
-            ESTADO["ultima"] = type(e).__name__
+            ok, code = False, type(e).__name__
+        ESTADO["calculadas" if ok else "errores"] += 1
+        self.tanda["ok" if ok else "error"] += 1
+        if not ok:
+            ESTADO["ultima"] = str(code)
+        if not self.q:  # tanda terminada: una línea en el log con lo que ha costado
+            t = self.tanda
+            self.aviso(
+                "warn" if t["error"] else "info",
+                f"rutas previas listas: {t['ok']} calculadas, {t['error']} con error"
+                + (f" (último: {ESTADO['ultima']})" if t["error"] else "")
+                + f", en {time.time() - (t['t0'] or time.time()):.0f} s",
+            )
         return True
 
     def trabajar(self):
