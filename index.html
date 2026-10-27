@@ -986,13 +986,13 @@ html,body{overflow-x:hidden}
 
 /* ---------- animaciones más fluidas y barras de desplazamiento (2026-10-23) ---------- */
 :root{interpolate-size:allow-keywords;--ease-out:cubic-bezier(.2,.8,.2,1)}
-/* menús de la derecha: la altura se anima al abrir/cerrar (Chrome/Edge 131+; en otros navegadores, como antes) */
+/* menús de la derecha: la altura se anima al abrir/cerrar (Chrome/Edge 131+; en otros navegadores se abre sin animación) */
 .lines-card::details-content{block-size:0;overflow:clip;transition:block-size .28s var(--ease-out),content-visibility .28s allow-discrete}
 .lines-card[open]::details-content{block-size:auto}
 @media (min-width:761px){.rcol .lines-card{transition:width .28s var(--ease-out),box-shadow .2s}}
 .lines-card summary::after,.lines-card[open] summary::after{content:"▾";transition:transform .28s var(--ease-out)}
 .lines-card[open] summary::after{transform:rotate(180deg)}
-/* barra de desplazamiento fina y con aire: el contenido ya no queda pegado a ella */
+/* barra de desplazamiento fina, con margen para que el contenido no quede pegado a ella */
 .lines-card,.sh-body,.out-s,.list,.rcol{scrollbar-width:thin;scrollbar-color:color-mix(in srgb,var(--fg) 28%,transparent) transparent}
 /* la columna derecha hace scroll entera (una sola barra, con hueco propio); las tarjetas no se aplastan */
 .rcol{overflow-y:auto;overflow-x:hidden;overscroll-behavior:contain;scrollbar-gutter:stable;padding:0 2px 10px 12px;margin-left:-12px}
@@ -1008,7 +1008,7 @@ html,body{overflow-x:hidden}
 #nuevaver,#quiensoy{animation:fadeIn .2s ease-out}
 .pin{transition:transform .2s var(--ease-out),box-shadow .2s}
 .chip,.rt-i,.lall button{transition:background-color .15s,border-color .15s,color .15s}
-/* rutas animadas: cada patrón con su ciclo exacto (antes andar y bici daban un salto en cada vuelta) */
+/* rutas animadas: cada patrón con su ciclo exacto (así andar y bici no dan un salto en cada vuelta) */
 .route-ant{animation:ant .9s linear infinite}                 /* transporte: guiones 10+8 = 18 px */
 .route-ant.walk{animation:ant-walk 1.4s linear infinite}      /* andar: 1+7 = 8 px (2 ciclos) */
 .route-ant.bike{animation:ant-bike .93s linear infinite}      /* bici: 6+6 = 12 px (2 ciclos) */
@@ -1377,9 +1377,10 @@ const precalc=row=>!row.extra&&row.k!=="centro"&&MOMENTO==="manana"&&RUTAS.days.
 const usaMotor=(row,p)=>!precalc(row)||!!(p&&p.cand);   /* los propuestos no tienen rutas precalculadas */
 /* Destinos compartidos: viven en la Pi (/api/destinos) y salen para Jon y Unai, con rutas para los dos perfiles.
    El navegador guarda una copia para cuando no hay conexión; lo añadido sin conexión (pend) se sube al volver.
-   SOLO_YO (por navegador): ocultar las rutas del otro perfil. Rutas: bici/andando por calle al momento + Rejseplanen. */
+   SOLO_YO (por navegador): ocultar las rutas del otro perfil. Rutas: motor de la Pi (/api/ruta, cola TPQ), que las
+   precalcula al añadir el destino (barra «La Pi está preparando las rutas»). */
 let EXTRA=[]; try{EXTRA=JSON.parse(localStorage.getItem("destinos")||"[]").filter(d=>d&&d.id&&Array.isArray(d.ll));
-  if(!localStorage.getItem("destinos_v2")){EXTRA.forEach(d=>{d.pend=true;}); localStorage.setItem("destinos_v2","1");}}catch(e){}   /* los de antes se suben una vez */
+  if(!localStorage.getItem("destinos_v2")){EXTRA.forEach(d=>{d.pend=true;}); localStorage.setItem("destinos_v2","1");}}catch(e){}   /* destinos guardados solo en este navegador: se suben a la Pi una vez */
 let SOLO_YO=false; try{SOLO_YO=!!JSON.parse(localStorage.getItem("ui")||"{}").soloYo;}catch(e){}
 const extraLayer=L.layerGroup().addTo(map);
 function allRows(){const rows=MOM().rows.concat(EXTRA.flatMap(d=>["jon","unai"].map(w=>({key:d.id+"-"+w,k:d.id,who:w,extra:d}))));
@@ -1406,7 +1407,7 @@ function setExtra(lista){const ok=lista.filter(d=>d&&typeof d.id==="string"&&/^x
   const nuevo=[...ok,...EXTRA.filter(d=>d.pend&&!ok.some(x=>x.id===d.id))];
   if(JSON.stringify(nuevo)===JSON.stringify(EXTRA))return; EXTRA=nuevo; saveExtra(); if(!rowOf(routeDest))routeDest=allRows()[0].key; tripChanged();}
 async function pullDestinos(){try{const r=await fetch(API+"/api/destinos",{cache:"no-cache"}); if(!r.ok)throw 0; const j=await r.json(); let lista=j.destinos||[]; setPrep(j.preparando);
-    for(const d of EXTRA.filter(x=>x.pend)){   /* subir lo que se añadió sin conexión (y los de antes, una vez) */
+    for(const d of EXTRA.filter(x=>x.pend)){   /* subir lo que se añadió sin conexión (y los guardados solo en este navegador, una vez) */
       try{lista=await destinoApi({accion:"anadir",id:d.id,n:d.n,addr:d.addr||"",ll:d.ll}); d.pend=false;}catch(e){if(!(e instanceof TypeError))d.pend=false;}}
     setExtra(lista);}catch(e){}}
 drawExtraMarkers();

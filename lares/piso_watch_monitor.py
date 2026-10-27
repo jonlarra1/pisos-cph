@@ -37,7 +37,7 @@ MAP_URLS = [
 # Los portales ordenan por más nuevo. Páginas adaptativas: como mínimo MIN_PAGES (lo de siempre) y se sigue
 # mientras salgan anuncios que Lares no ha visto nunca, hasta MAX_PAGES. Con pasadas cada 3 h casi siempre
 # se para en el mínimo; si un día entran muchos anuncios, no se pierden los que bajan de página.
-# Lejebolig ya NO se busca (decisión de Jon, 27-oct): sus enlaces solo entran a mano (chat o barra de la web).
+# Lejebolig no se busca (decisión de Jon): sus enlaces solo entran a mano (chat o barra de la web).
 PAGINAS = {  # portal: (url de la página i, mínimo, máximo)
     "boligportal": (
         lambda i: f"https://www.boligportal.dk/lejligheder/k%C3%B8benhavn/?max_monthly_rent=23000&offset={18 * i}",
@@ -813,9 +813,7 @@ def candidatos_recordados(con, listings, known):
         if lid in listings or lid in known:
             continue
         try:
-            if (
-                json.loads(item).get("portal") == "Lejebolig"
-            ):  # ya no se busca ahí (27-oct): esos viven en la base única
+            if json.loads(item).get("portal") == "Lejebolig":  # Lejebolig no se busca: esos viven en la base única
                 continue
             if datetime.fromisoformat(last).timestamp() < limite:
                 continue

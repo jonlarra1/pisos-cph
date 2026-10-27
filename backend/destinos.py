@@ -1,7 +1,7 @@
 """Destinos compartidos (web: Configuración → Destinos): casa de amigos, gimnasio, clase…
 
-Antes vivían en el navegador de cada uno; ahora están en la base de la Pi y Jon y Unai ven los mismos,
-con rutas para los dos perfiles. Nada se borra: «quitar» lo oculta y queda apuntado quién y cuándo.
+Están en la base de la Pi: Jon y Unai ven los mismos, con rutas para los dos perfiles. El navegador guarda
+solo una copia para cuando no hay conexión. Nada se borra: «quitar» lo oculta y queda apuntado quién y cuándo.
 """
 
 import re
