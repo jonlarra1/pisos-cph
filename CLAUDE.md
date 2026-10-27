@@ -30,8 +30,9 @@ The user is Jon. He works at Nordic Solar (Hellerup). He prefers short, simple, 
 - `data/pisos.json` — flat data (id, zona, barrio, calle, m2, vaer, dorm, alq, aconto, dep, pre, disp, link, lat, lon, ubic = location precision, estado/aviso = warnings).
 
 ## Rules
-- Informar a Lares (regla de Jon, 27-oct): si un cambio afecta de alguna manera a Lares, actualizar en el mismo commit
-  `lares/instrucciones-pisos.md` (se copia a su SOUL.md en la Pi en la siguiente instalación) y decírselo a Jon.
+- Cambios completos (regla de Jon, 27-oct): actualizar el backend NO es dejar convivir lo viejo. Un cambio está hecho cuando, en el
+  mismo bloque: (1) está desplegado, (2) la documentación está al día, (3) Lares lo sabe (`lares/instrucciones-pisos.md` → su SOUL.md
+  y su skill en la Pi) y (4) lo que queda sustituido se archiva o pausa (nada se borra). Si falta algo, decirlo como pendiente.
 - Forma de trabajar: contar cada paso y cada test en una línea, y actuar como asistente (preguntar antes de cambios grandes o en la Pi), salvo que Jon pida lo contrario.
 - Layout: left rail = flat list, or the selected flat's ficha (desktop); right column = Viaje, Ver y filtrar, Líneas, Configuración. Mobile: floating card under the map.
 - Keep the UI, barrio grouping, colours, light/dark theme and Spanish UI text. Score was removed from the UI on request (list sorted by monthly cost); no barrio circles on the map.
