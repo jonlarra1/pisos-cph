@@ -7,8 +7,9 @@
 #
 # Pasos con --aplicar:
 #   1. tests locales (./tests/run.sh) — si fallan, no se instala nada
-#   2. copia de seguridad en la Pi: /home/docker/pisos-backend/backup-AAAAMMDD-HHMMSS/
-#   3. copia app.py, routing.py, admin.html, Dockerfile (y compose.yml con --con-compose)
+#   2. copia de seguridad en la Pi: /home/docker/pisos-backend/backup-AAAAMMDD-HHMMSS/ (código) y
+#      data/copias/pisos-backup-AAAAMMDD-HHMMSS.db (base de datos, copia en caliente; quedan las 3 últimas)
+#   3. copia los ficheros de FILES (y compose.yml con --con-compose)
 #   4. docker compose up -d --build y espera a /api/health
 #   5. smoke_test.py contra la URL pública (Funnel); si falla -> restaura la copia y reconstruye
 # Solo toca /home/docker/pisos-backend (regla del proyecto). Necesita la clave SSH temporal: PI_KEY=/ruta/clave backend/deploy.sh ...
@@ -19,7 +20,7 @@ APLICAR=0; COMPOSE=0
 for a in "$@"; do case "$a" in --aplicar) APLICAR=1;; --con-compose) COMPOSE=1;; *) echo "opción desconocida: $a"; exit 2;; esac; done
 DIR=/home/docker/pisos-backend
 URL="${PISOS_URL:-https://raspberrypi.tail9f1069.ts.net:8443}"   # PISOS_URL: otra URL para la prueba (p. ej. un túnel SSH si el Funnel está caído)
-FILES=(app.py routing.py portales.py anuncios.py api_v2.py puente.py destinos.py precalculo.py admin.html Dockerfile)
+FILES=(app.py routing.py portales.py anuncios.py api_v2.py puente.py destinos.py precalculo.py migrar.py admin.html Dockerfile)
 [ "$COMPOSE" = 1 ] && FILES+=(compose.yml)
 KEYOPT=(); [ -n "${PI_KEY:-}" ] && KEYOPT=(-i "$PI_KEY" -o IdentitiesOnly=yes)   # PI_KEY=ruta de la clave temporal
 SSH=(ssh "${KEYOPT[@]}" -o BatchMode=yes -o ConnectTimeout=10 "$HOST")
@@ -40,6 +41,12 @@ echo "== 1. Tests locales"
 B="backup-$(date +%Y%m%d-%H%M%S)"
 echo "== 2. Copia de seguridad en la Pi: $DIR/$B"
 "${SSH[@]}" "cd $DIR && mkdir $B && for f in ${FILES[*]} compose.yml; do if [ -e \$f ]; then cp -a \$f $B/; fi; done && ls $B"
+# La base de datos: copia en caliente de SQLite (segura con WAL) dentro del contenedor, en data/copias/ (quedan las 3 últimas).
+# La vuelta atrás automática NO la restaura (se perderían los cambios hechos después): se usa a mano si hace falta.
+"${SSH[@]}" "docker exec pisos-api python3 -c \"import os,sqlite3; os.makedirs('/data/copias',exist_ok=True); \
+d=sqlite3.connect('/data/copias/pisos-$B.db'); sqlite3.connect('/data/pisos.db').backup(d); d.close(); \
+v=sorted(f for f in os.listdir('/data/copias') if f.startswith('pisos-backup-')); [os.remove('/data/copias/'+f) for f in v[:-3]]; \
+print('base copiada en data/copias/pisos-$B.db')\"" || { echo "!! no se pudo copiar la base: no instalo"; exit 1; }
 
 volver() {
   echo "!! Algo falló: restaurando $B y reconstruyendo"
