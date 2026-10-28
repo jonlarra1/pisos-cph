@@ -210,6 +210,33 @@ class TestPuenteConLaWeb(BaseV2):
         self.assertEqual((code, a["estado"]), (200, "descartado"))
 
 
+class TestPuenteTrasLaMigracion(BaseV2):
+    """Entre la 1.ª y la 2.ª instalación: la web vieja convive con lo migrado (migrar.py)."""
+    ORIGEN = "https://jonlarra1.github.io"
+    MAPA = {"portal": "Boligportal", "pid": "5193904", "link": "https://www.boligportal.dk/x-id-5193904",
+            "titulo": "Gyngemose", "zona": "Valby", "mapa": True, "mapa_id": "1917125"}
+
+    def setUp(self):
+        super().setUp()
+        with app._db_filas() as con:
+            app.anuncios.entregar(con, dict(self.MAPA), "import", "import", app.filtros(), app.zonas_permitidas())
+            app.anuncios.entregar(con, {"portal": "Lejebolig", "pid": "1913588", "titulo": "descartado fijo",
+                                        "link": "https://en.lejebolig.dk/lejebolig/1913588"}, "import", "import",
+                                  app.filtros(), app.zonas_permitidas())
+
+    def test_lo_migrado_no_sale_repetido_en_propuestos(self):
+        ids = {str(p["id"]) for p in pedir("/api/candidatos")[2]["pisos"]}
+        self.assertFalse({"5193904", "1917125", "1913588"} & ids)
+
+    def test_la_web_cambia_un_piso_del_mapa_por_su_id_del_mapa(self):
+        post("/api/estado", {"id": "1917125", "st": "contactado", "by": "jon"}, WEB, self.ORIGEN)
+        self.assertEqual(pedir(uid_url("Boligportal:5193904"))[2]["estado"], "contactado")
+
+    def test_lares_cambia_un_piso_del_mapa_y_la_web_lo_ve_con_su_id(self):
+        post(uid_url("Boligportal:5193904") + "/estado", {"estado": "gusta"}, LARES)
+        self.assertEqual(pedir("/api/estados")[2]["1917125"]["st"], "gusta")
+
+
 class TestRetiradoPorElVigilante(BaseV2):
     def test_retirados_json_llega_a_la_base_unica_sin_pisar_decisiones(self):
         import json as _json

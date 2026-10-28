@@ -12,13 +12,24 @@ import time
 
 import anuncios as A
 
-MANUALES = ("lares", "jon", "unai", "web", "import")  # orígenes que no son el vigilante
+MANUALES = (
+    "lares",
+    "jon",
+    "unai",
+    "web",
+)  # añadidos a mano; los de «import» (mapa, descartados fijos) ya los enseña la web
 V2_A_WEB = {"propuesto": "nuevo", "gusta": "gusta", "contactado": "contactado", "descartado": "descartado"}
 WEB_A_V2 = {v: k for k, v in V2_A_WEB.items()}
 CAMPOS_CANDIDATO = (
     "portal", "link", "titulo", "precio", "aconto", "dep", "pre", "m2", "vaer", "dorm", "disp", "contrato_meses",
     "amueblado", "compartible", "ascensor", "balcon", "mascotas", "plano",
 )  # fmt: skip
+
+
+def _uids(con, pid):
+    """Anuncios con ese id de la web: su id del portal o, en los pisos del mapa, su `mapa_id`."""
+    q = "SELECT uid FROM anuncio WHERE pid=? OR json_extract(datos, '$.mapa_id')=?"
+    return [r[0] for r in con.execute(q, (str(pid), str(pid))).fetchall()]
 
 
 def candidatos(con, ya, limite=200):
@@ -58,7 +69,7 @@ def desde_web(con, pid, st, by):
     """La web puso `st` (nuevo/gusta/contactado/descartado) al piso `pid`. Devuelve los uid cambiados."""
     nuevo = WEB_A_V2.get(st)
     cambiados = []
-    for (uid,) in con.execute("SELECT uid FROM anuncio WHERE pid=?", (str(pid),)).fetchall():
+    for uid in _uids(con, pid):
         a = A.cambiar_estado(con, uid, nuevo, "web", by or "web", "desde la web")
         cambiados.append(a["uid"])
     return cambiados
@@ -70,7 +81,7 @@ def a_web(a, cliente, quien):
     if st is None:
         return None
     by = "lares" if cliente == "lares" else (quien if quien in ("jon", "unai") else "")
-    return str(a["pid"]), st, by
+    return str(a["datos"].get("mapa_id") or a["pid"]), st, by
 
 
 def al_anadir(con, a, estado_web):
@@ -83,5 +94,4 @@ def al_anadir(con, a, estado_web):
 
 def retirado(con, pid, motivo):
     """El vigilante vio que el portal retiró el piso `pid`: se apunta en la base única (sin pisar decisiones)."""
-    uids = [r[0] for r in con.execute("SELECT uid FROM anuncio WHERE pid=?", (str(pid),)).fetchall()]
-    return [A.comprobar(con, uid, "retirado", motivo)["uid"] for uid in uids]
+    return [A.comprobar(con, uid, "retirado", motivo)["uid"] for uid in _uids(con, pid)]
