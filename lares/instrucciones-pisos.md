@@ -42,7 +42,7 @@ Hay UNA sola base de datos de pisos: la del backend en la Pi, la misma que usa e
 
 ### Si algo falla
 - Si `pisos.py` da `ERROR: …`, díselo a Jon tal cual y para. No busques otro camino (ni archivos ni scripts).
-- «la API respondió 429»: has hecho demasiados cambios seguidos (máximo 60 por minuto); espera un minuto.
+- «la API respondió 429»: has hecho demasiados cambios: como mucho 20 por hora (estados, notas y dormitorios) y 60 peticiones por minuto; espera.
 
 ### Lo que NO tienes que hacer tú
 - Buscar pisos nuevos en los portales y comprobar si siguen publicados (también los que añades por el chat):

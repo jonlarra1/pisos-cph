@@ -67,8 +67,9 @@ del panel.
 | web (Jon, Unai) | todo lo anterior + filtros y zonas (con confirmación de búsqueda) | — |
 | todas | — | **borrar** (no existe la operación) |
 
-Topes de escrituras por minuto (`ESCRITURAS_MIN` en `api_v2.py`): web 30, lares 60, vigilante y comprobador 600; todos
-juntos 1500. Si se superan: 429 y evento en el log.
+Dos topes, los dos con 429 y evento en el log: peticiones de escritura por minuto (`ESCRITURAS_MIN` en `api_v2.py`: web 30,
+lares 60, vigilante y comprobador 600; todos juntos 1500) y cambios por hora (`TOPE_CAMBIOS_HORA` en `anuncios.py`: lares 20,
+web 300; cuentan estados, notas y dormitorios).
 Copia de seguridad de la base: hoy solo la que hace `deploy.sh` antes de cada instalación. La copia diaria (7 últimas) está
 SIN HACER (paso E).
 
