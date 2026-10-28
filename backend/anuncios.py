@@ -195,19 +195,34 @@ def _registrar(con, uid, de, a, motivo, quien, ahora):
     )
 
 
-def _estado_sistema(motivos, origen):
-    """Estado que decide el sistema. Si lo añade una persona o Lares, se propone aunque no pase (los motivos van de "
-    "aviso)."""
-    if not motivos or origen != "vigilante":
-        return "propuesto", None
-    return "rechazado", "; ".join(motivos)
+REEVALUAR_DIAS = 14  # al cambiar filtros o zonas, los rechazados vistos en estos días se vuelven a considerar
+
+
+def decidir(previo, datos, origen, filtros, zonas):
+    """(estado, motivo, avisos) de un anuncio con los filtros y zonas de ahora. Reglas (Jon, 28-oct):
+    - gusta / contactado / descartado los decidís vosotros: el sistema no los cambia nunca.
+    - Un propuesto sigue propuesto aunque un filtro más estricto ya no lo deje pasar; solo lleva el aviso
+      «no pasa: …».
+    - Un rechazado que ahora pasa (habéis aflojado un filtro) vuelve a «propuesto».
+    - Lo añadido a mano (chat de Lares, web) se propone aunque no pase, con los avisos «no pasa: …».
+    - Lo que entrega el vigilante y no pasa (y no estaba propuesto) queda «rechazado», con el motivo."""
+    motivos, avisos = evaluar(datos, filtros, zonas)
+    estado_previo = previo["estado"] if previo else None
+    if estado_previo in PERSONA:
+        estado, motivo = estado_previo, previo["motivo"]
+    elif not motivos or origen != "vigilante" or estado_previo == "propuesto":
+        estado, motivo = "propuesto", None
+    else:
+        estado, motivo = "rechazado", "; ".join(motivos)
+    if motivos and estado != "rechazado":
+        avisos = [f"no pasa: {m}" for m in motivos] + avisos
+    return estado, motivo, avisos
 
 
 def entregar(con, datos, origen, quien, filtros, zonas, ubicacion=None, ahora=None):
     """Guarda (o actualiza) un anuncio leído de un portal. Devuelve el anuncio.
     - Nuevo: se evalúa con los filtros → propuesto / rechazado.
-    - Ya existente: se refrescan sus datos; si estaba en un estado del sistema se vuelve a evaluar
-      (p. ej. cambiaron los filtros); si lo decidisteis vosotros, la decisión NO se toca.
+    - Ya existente: se refrescan sus datos y se vuelve a decidir con `decidir` (vuestras decisiones no se tocan).
     ubicacion: (lat, lon, precision) si se conoce."""
     if origen not in ORIGENES:
         raise NoValido("origen no válido")
@@ -218,16 +233,10 @@ def entregar(con, datos, origen, quien, filtros, zonas, ubicacion=None, ahora=No
     previo = obtener(con, uid)
     if previo:  # los datos nuevos completan a los viejos, no borran lo que ya se sabía
         datos = {**previo["datos"], **{k: v for k, v in datos.items() if v not in (None, "", [])}}
-    motivos, avisos = evaluar(datos, filtros, zonas)
     # un anuncio que añadió una persona o Lares sigue siendo «manual» aunque luego lo vea el vigilante
     origen_efectivo = previo["origen"] if previo and previo["origen"] != "vigilante" else origen
-    if origen_efectivo != "vigilante" and motivos:
-        avisos = [f"no pasa: {m}" for m in motivos] + avisos
+    estado, motivo, avisos = decidir(previo, datos, origen_efectivo, filtros, zonas)
     lat, lon, prec = ubicacion or (datos.get("lat"), datos.get("lon"), "exacta" if datos.get("lat") else None)
-    if previo and previo["estado"] in PERSONA:
-        estado, motivo = previo["estado"], previo["motivo"]
-    else:
-        estado, motivo = _estado_sistema(motivos, origen_efectivo)
     if previo:
         lat, lon, prec = (lat, lon, prec) if lat is not None else (previo["lat"], previo["lon"], previo["precision"])
         con.execute(
@@ -273,6 +282,31 @@ def entregar(con, datos, origen, quien, filtros, zonas, ubicacion=None, ahora=No
         )
         _registrar(con, uid, None, estado, motivo or f"añadido por {quien}", quien, ahora)
     return {**obtener(con, uid), "nuevo": not previo}
+
+
+def reevaluar(con, filtros, zonas, quien, ahora=None, dias=REEVALUAR_DIAS):
+    """Tras cambiar filtros o zonas: vuelve a decidir los propuestos y los rechazados vistos en los últimos `dias`.
+    Solo escribe los que cambian (estado, motivo o avisos). Devuelve {"revisados", "cambiados", "a_propuesto"}."""
+    ahora = int(ahora or time.time())
+    filas = con.execute(
+        "SELECT uid FROM anuncio WHERE estado='propuesto' OR (estado='rechazado' AND actualizado > ?)",
+        (ahora - dias * 86400,),
+    ).fetchall()
+    out = {"revisados": len(filas), "cambiados": 0, "a_propuesto": 0}
+    for (uid,) in filas:
+        a = obtener(con, uid)
+        estado, motivo, avisos = decidir(a, a["datos"], a["origen"], filtros, zonas)
+        if (estado, motivo, avisos) == (a["estado"], a["motivo"], a["avisos"]):
+            continue
+        con.execute(
+            "UPDATE anuncio SET estado=?, motivo=?, avisos=?, actualizado=? WHERE uid=?",
+            (estado, motivo, json.dumps(avisos, ensure_ascii=False), ahora, uid),
+        )
+        out["cambiados"] += 1
+        if estado != a["estado"]:
+            out["a_propuesto"] += estado == "propuesto"
+            _registrar(con, uid, a["estado"], estado, motivo or "cambiaron los filtros", quien, ahora)
+    return out
 
 
 def cambiar_estado(con, uid, nuevo, cliente, quien, motivo=None, ahora=None):

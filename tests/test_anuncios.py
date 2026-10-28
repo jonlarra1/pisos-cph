@@ -2,7 +2,7 @@
 Sin internet: las fichas son copias reales guardadas en tests/fixtures/.
     python3 -m unittest tests.test_anuncios -v
 """
-import os, sqlite3, sys, unittest
+import os, sqlite3, sys, time, unittest
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(ROOT, "backend"))
@@ -145,6 +145,52 @@ class TestEntregar(unittest.TestCase):
 
     def test_debe_fallar_origen_desconocido(self):
         with self.assertRaises(A.NoValido): A.entregar(self.con, piso(), "hacker", "x", FILTROS, ZONAS)
+
+
+class TestReevaluar(unittest.TestCase):
+    """Regla de Jon (28-oct) al cambiar filtros o zonas."""
+    def setUp(self): self.con = con_nueva()
+    SIN_GLOSTRUP = {**ZONAS, "Glostrup": False}
+
+    def test_filtro_mas_estricto_no_quita_un_propuesto_solo_le_pone_aviso(self):
+        A.entregar(self.con, piso(zona="Glostrup"), "vigilante", "vigilante", FILTROS, ZONAS)
+        r = A.reevaluar(self.con, FILTROS, self.SIN_GLOSTRUP, "filtros:jon")
+        a = A.obtener(self.con, "Boligportal:1")
+        self.assertEqual(a["estado"], "propuesto")
+        self.assertIn("no pasa: zona excluida: Glostrup", a["avisos"])
+        self.assertEqual((r["cambiados"], r["a_propuesto"]), (1, 0))
+
+    def test_el_vigilante_tampoco_lo_quita_al_volver_a_verlo(self):
+        A.entregar(self.con, piso(zona="Glostrup"), "vigilante", "vigilante", FILTROS, ZONAS)
+        a = A.entregar(self.con, piso(zona="Glostrup"), "vigilante", "vigilante", FILTROS, self.SIN_GLOSTRUP)
+        self.assertEqual(a["estado"], "propuesto")
+
+    def test_uno_nuevo_de_una_zona_excluida_se_rechaza(self):
+        a = A.entregar(self.con, piso(zona="Glostrup"), "vigilante", "vigilante", FILTROS, self.SIN_GLOSTRUP)
+        self.assertEqual((a["estado"], a["motivo"]), ("rechazado", "zona excluida: Glostrup"))
+
+    def test_filtro_mas_flojo_recupera_un_rechazado(self):
+        A.entregar(self.con, piso(precio=24000), "vigilante", "vigilante", FILTROS, ZONAS)
+        r = A.reevaluar(self.con, {**FILTROS, "precio_max": 25000}, ZONAS, "filtros:jon")
+        a = A.obtener(self.con, "Boligportal:1")
+        self.assertEqual((a["estado"], r["a_propuesto"]), ("propuesto", 1))
+        self.assertEqual(A.historial(self.con, a["uid"])[0]["motivo"], "cambiaron los filtros")
+
+    def test_vuestras_decisiones_no_se_tocan(self):
+        A.entregar(self.con, piso(), "vigilante", "vigilante", FILTROS, ZONAS)
+        A.cambiar_estado(self.con, "Boligportal:1", "descartado", "web", "jon", "no nos gusta")
+        A.reevaluar(self.con, {**FILTROS, "precio_max": 10000}, ZONAS, "filtros:jon")
+        self.assertEqual(A.obtener(self.con, "Boligportal:1")["estado"], "descartado")
+
+    def test_rechazados_viejos_no_vuelven(self):
+        viejo = time.time() - (A.REEVALUAR_DIAS + 1) * 86400
+        A.entregar(self.con, piso(precio=24000), "vigilante", "vigilante", FILTROS, ZONAS, ahora=viejo)
+        self.assertEqual(A.reevaluar(self.con, {**FILTROS, "precio_max": 25000}, ZONAS, "x")["revisados"], 0)
+
+    def test_sin_cambios_no_escribe_nada(self):
+        A.entregar(self.con, piso(), "vigilante", "vigilante", FILTROS, ZONAS, ahora=1000)
+        self.assertEqual(A.reevaluar(self.con, FILTROS, ZONAS, "x", ahora=2000)["cambiados"], 0)
+        self.assertEqual(A.obtener(self.con, "Boligportal:1")["actualizado"], 1000)
 
 
 class TestPermisos(unittest.TestCase):

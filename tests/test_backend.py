@@ -147,6 +147,31 @@ class TestZonasYFiltros(Base):
         self.assertEqual(pedir("/api/filtros")[2]["precio_max"], 21000)
 
 
+class TestReevaluarAlCambiarBusqueda(Base):
+    """Cambiar zonas o filtros en «Búsqueda» re-evalúa la base única (anuncios.decidir)."""
+    def entregar(self, **d):
+        datos = {"portal": "Boligportal", "pid": "7700001", "link": "https://www.boligportal.dk/x-id-7700001",
+                 "titulo": "t", "precio": 15000, "vaer": 4, "dorm": 3, "disp": "2027-01-01", "zona": "Glostrup",
+                 "compartible": True, **d}
+        with app._db_filas() as con:
+            return app.anuncios.entregar(con, datos, "vigilante", "vigilante", app.filtros(), app.zonas_permitidas())
+    def anuncio(self, pid="7700001"):
+        with app._db_filas() as con:
+            return app.anuncios.obtener(con, "Boligportal:" + pid)
+    def test_excluir_zona_deja_el_propuesto_con_aviso(self):
+        escribir("/api/zona", {"zona": "Glostrup", "permitida": True, "by": "jon"})
+        self.assertEqual(self.entregar()["estado"], "propuesto")
+        self.assertEqual(escribir("/api/zona", {"zona": "Glostrup", "permitida": False, "by": "jon"})[0], 200)
+        a = self.anuncio()
+        self.assertEqual(a["estado"], "propuesto")
+        self.assertIn("no pasa: zona excluida: Glostrup", a["avisos"])
+    def test_permitir_zona_recupera_un_rechazado(self):
+        escribir("/api/zona", {"zona": "Glostrup", "permitida": False, "by": "jon"})
+        self.assertEqual(self.entregar(pid="7700002")["estado"], "rechazado")
+        escribir("/api/zona", {"zona": "Glostrup", "permitida": True, "by": "jon"})
+        self.assertEqual(self.anuncio("7700002")["estado"], "propuesto")
+
+
 class TestCandidatos(Base):
     def escribe(self, obj):
         with open(os.path.join(os.environ["BRIDGE_DIR"], "candidatos.json"), "w") as f:

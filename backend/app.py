@@ -908,6 +908,7 @@ class H(BaseHTTPRequestHandler):
             write_config()
             log("events", level="info", src="filtros", msg=json.dumps(f, ensure_ascii=False), by=by)
             avisar("ajustes", {})
+            reevaluar_anuncios(by, "filtros")
             return self.reply(200, filtros())
         if self.path == "/api/destino":
             return self.destino(d, by)
@@ -924,6 +925,7 @@ class H(BaseHTTPRequestHandler):
             write_config()
             log("events", level="info", src="zonas", msg=f"{z} -> {'permitida' if ok else 'excluida'}", by=by)
             avisar("ajustes", {})
+            reevaluar_anuncios(by, f"zona {z}")
             return self.reply(200, all_zonas())
         pid, st = str(d.get("id", "")), d.get("st")
         stF = time.strftime("%Y-%m-%d")
@@ -1588,6 +1590,26 @@ def _db_filas():
             yield c
 
     return cm()
+
+
+def reevaluar_anuncios(by, que):
+    """Han cambiado filtros o zonas: la base única vuelve a decidir sus anuncios (regla en anuncios.decidir)."""
+    try:
+        with lock, _db_filas() as con:
+            r = anuncios.reevaluar(con, filtros(), zonas_permitidas(), f"filtros:{by}")
+    except Exception as e:
+        log("events", level="error", src="reevaluar", msg=f"{que}: {type(e).__name__}: {e}", by=by)
+        return
+    log(
+        "events",
+        level="info",
+        src="reevaluar",
+        msg=f"{que}: {r['revisados']} revisados, {r['cambiados']} cambiados, {r['a_propuesto']} vuelven a propuesto",
+        by=by,
+    )
+    if r["cambiados"]:
+        avisar("anuncios", {"reevaluados": r["cambiados"]})
+        avisar("candidatos", {"reevaluados": r["cambiados"]})
 
 
 def _estado_a_v2(pid, st, by):
