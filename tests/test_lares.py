@@ -130,6 +130,27 @@ class Respuesta:
     def __exit__(self, *a): pass
 
 
+class TestFichaBoligportal(unittest.TestCase):
+    """detalle(): la ficha real de Boligportal (vista el 1-nov-2026)."""
+    BP = "https://www.boligportal.dk/lejligheder/k%C3%B8benhavn/97m2-4-vaer-id-5684307"
+    def setUp(self): self.m = cargar_modulo()
+    def ficha(self, resp):
+        with mock.patch("urllib.request.urlopen", lambda req, timeout=20: resp):
+            return self.m.detalle({"portal": "Boligportal", "id": "5684307", "link": self.BP})
+    def test_alquilado_no_lee_los_datos_de_otro_piso(self):
+        listado = '<html>441 ledige 4-værelses {"available_from": "2026-12-01", "rental_period": 4}</html>'
+        d = self.ficha(Respuesta(200, self.BP.rsplit("/", 1)[0] + "/4-v%C3%A6relser/?ad_rented_out_redirect=RENTED_OUT_APPROVED", listado))
+        self.assertEqual(d, {"alquilado": True})
+        ok, motivo, _ = self.m.evaluar({"titulo": "x", "precio": 15000, "vaer": 4, **d}, self.m.DEFAULT_FILTROS, {})
+        self.assertEqual((ok, motivo), (False, "alquilado: el portal ya no lo publica"))
+    def test_contrato_ilimitado_aunque_despues_ponga_4_vaerelser(self):
+        html = "<div>16. december 2026 Ledig fra</div><div>Ubegrænset Lejeperiode</div><div>4 Værelser</div>"
+        self.assertEqual(self.ficha(Respuesta(200, self.BP, html))["contrato_meses"], 0)
+    def test_contrato_limitado(self):
+        html = "<div>24 måneder Lejeperiode</div><div>4 Værelser</div>"
+        self.assertEqual(self.ficha(Respuesta(200, self.BP, html))["contrato_meses"], 24)
+
+
 class TestEstadoAnuncio(unittest.TestCase):
     """Reconoce las respuestas reales de los portales (vistas el 23-oct-2026)."""
     def setUp(self): self.m = cargar_modulo()

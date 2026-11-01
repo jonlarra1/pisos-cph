@@ -466,7 +466,11 @@ def detalle(item):
     """Abre la ficha para sacar contrato y texto (y fecha si la hay)."""
     if item.get("portal") == "EDC":
         return detalle_edc(item)
-    h = fetch(item["link"], timeout=15)
+    req = urllib.request.Request(item["link"], headers={"User-Agent": UA, "Accept-Language": "da,en;q=0.8"})
+    with urllib.request.urlopen(req, timeout=15) as r:
+        final, h = r.geturl(), r.read().decode("utf-8", "replace")
+    if "ad_rented_out_redirect" in final:  # alquilado: Boligportal manda a un listado con datos de OTROS pisos
+        return {"alquilado": True}
     t = unescape(re.sub(r"<script.*?</script>|<style.*?</style>", " ", h, flags=re.S))
     t = re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", t))
     d = {"texto": t[:6000]}
@@ -487,12 +491,13 @@ def detalle(item):
     d["dep"] = kr(re.search(r"\bDeposit:\s*([\d,.]+)|[Dd]epositum:?\s*(?:DKK|kr\.?)?\s*([\d.,]+)", t)) or kr(
         re.search(r"security deposit of DKK ([\d,.]+)", t)
     )
-    mp = re.search(r"Rental period\s+(\w+)|Lejeperiode\s+(\w+)", t)
+    # en la ficha el valor va ANTES de la etiqueta: «Ubegrænset Lejeperiode 4 Værelser», «24 måneder Lejeperiode»
+    mp = re.search(
+        r"(Ubegrænset|Unlimited|\d+)(?: (?:måneder|months|mdr\.?))? (?:Lejeperiode|Rental period)\b", t, re.I
+    )
     if mp:
-        v = (mp.group(1) or mp.group(2)).lower()
-        d["contrato_meses"] = (
-            0 if v in ("unlimited", "ubegrænset") else (int(re.sub(r"\D", "", v)) if re.search(r"\d", v) else None)
-        )
+        v = mp.group(1).lower()
+        d["contrato_meses"] = 0 if v in ("unlimited", "ubegrænset") else int(v)
     d["amueblado"] = amueblado_de(t)
     md = re.search(r'"available_from"\s*:\s*"(\d{4}-\d{2}-\d{2})', h) or re.search(
         r"(?:Available from|Ledig fra|Overtagelse)\s*:?\s*(\d{1,2})[./-](\d{1,2})[./-](\d{4})", t
@@ -516,6 +521,8 @@ def zona_de(item):
 def evaluar(item, F, zonas):
     """(ok, motivo_o_None, avisos)"""
     avisos = []
+    if item.get("alquilado"):  # la ficha redirige a «alquilado» (ver detalle)
+        return False, "alquilado: el portal ya no lo publica", avisos
     if BAD_TITLE.search(item.get("titulo", "")):
         return False, "es una habitación / residencia", avisos
     if item["precio"] > F["precio_max"]:
