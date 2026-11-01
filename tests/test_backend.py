@@ -172,6 +172,24 @@ class TestReevaluarAlCambiarBusqueda(Base):
         self.assertEqual(self.anuncio("7700002")["estado"], "propuesto")
 
 
+class TestCheckLaresCron(Base):
+    def escribe(self, jobs):
+        with open(os.path.join(os.environ["BRIDGE_DIR"], "lares_cron.json"), "w") as f:
+            json.dump({"jobs": jobs}, f)
+    def test_tarea_en_pausa_a_proposito_no_es_fallo(self):
+        self.escribe([{"name": "piso-watch-cph", "enabled": True, "last_status": "ok"},
+                      {"name": "piso-check-links", "enabled": False, "last_status": "delivery_failed",
+                       "last_delivery_error": "Hermes"}])
+        ok, msg = app.check_lares_cron()
+        self.assertTrue(ok); self.assertIn("piso-check-links: en pausa", msg)
+    def test_el_vigilante_en_pausa_si_es_fallo(self):
+        self.escribe([{"name": "piso-watch-cph", "enabled": False, "last_status": "ok"}])
+        self.assertFalse(app.check_lares_cron()[0])
+    def test_el_vigilante_fallando_es_fallo(self):
+        self.escribe([{"name": "piso-watch-cph", "enabled": True, "last_status": "error"}])
+        self.assertFalse(app.check_lares_cron()[0])
+
+
 class TestCandidatos(Base):
     def escribe(self, obj):
         with open(os.path.join(os.environ["BRIDGE_DIR"], "candidatos.json"), "w") as f:

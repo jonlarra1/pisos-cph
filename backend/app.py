@@ -1334,6 +1334,9 @@ def check_lares_runs():
     )
 
 
+LARES_TAREA = "piso-watch-cph"  # la tarea del vigilante: si está en pausa, es un fallo
+
+
 def check_lares_cron():
     """Estado de las tareas de pisos de Lares, que Lares copia al buzón en cada pasada (lares_cron.json)."""
     d = json.loads(_txt(os.path.join(BRIDGE, "lares_cron.json")))
@@ -1343,6 +1346,11 @@ def check_lares_cron():
         if not str(j.get("name", "")).startswith("piso"):
             continue
         st, derr = j.get("last_status"), j.get("last_delivery_error")
+        if (
+            not j.get("enabled", True) and j.get("name") != LARES_TAREA
+        ):  # en pausa a propósito: su último fallo no cuenta
+            out.append(f"{j.get('name')}: en pausa")
+            continue
         bad = (st not in ("ok", None)) or not j.get("enabled", True)
         ok = ok and not bad
         out.append(
