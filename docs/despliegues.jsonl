@@ -15,3 +15,5 @@
 {"ts": "2026-10-27T06:57:30Z", "pieza": "backend", "commit": "cecd7b0ce0b7e7c1d991ab63e05d1981c03d565c", "resultado": "ok", "nota": "backup-20261027-075658"}
 {"ts": "2026-10-27T07:00:29Z", "pieza": "lares", "commit": "cecd7b0ce0b7e7c1d991ab63e05d1981c03d565c", "resultado": "ok", "nota": "sin Lejebolig; SOUL.md + skill piso-watch-cph al día; pasada de prueba 34 s, Boligportal 158 + EDC 11, 0 errores"}
 {"ts": "2026-10-27T07:17:27Z", "pieza": "lares", "commit": "1f4714985bdd8bb4d88a0b89d33c1821cb1974a4", "resultado": "ok", "nota": "bloque Lares: CSV evaluado (1 importado), archivo-2026-10-26, piso-check-links en pausa"}
+{"ts": "2026-11-01T18:30:04Z", "pieza": "backend", "commit": "2d9a26b32fede8afff8a9457221c910ea15e72e5", "resultado": "ok", "nota": "backup-20261101-192924"}
+{"ts": "2026-11-01T18:39:02Z", "pieza": "lares", "commit": "c213eff1234390f76f3c099c1d75096787ad32e0", "resultado": "ok", "nota": "vigilante: alquilados, contrato y copias de EDC; SOUL.md límites"}

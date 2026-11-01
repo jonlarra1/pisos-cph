@@ -11,7 +11,8 @@ idea, la actual. Al cambiar algo, se reescribe lo que ya no es cierto; no se añ
 ## Arquitectura
 - Diseño al que vamos: `docs/arquitectura.md` (una base de datos, una puerta = la API v2, una entidad = el anuncio con estados,
   los datos no se borran, permisos por clave). **Leerlo antes de tocar datos, backend o Lares.**
-- Estado real (auditoría del 27-oct): la base única (`anuncio`, API v2) existe y funciona, pero solo la usan del todo `pisos.py`
+- Estado real (auditoría del 27-oct; desde el 1-nov la base ya tiene TODO migrado: mapa, descartados, propuestos y estados): la
+  base única (`anuncio`, API v2) existe y funciona, pero solo la usan del todo `pisos.py`
   (Lares en el chat) y la barra «añadir enlace» de la web. El resto sigue por el camino anterior, unido a la base por `backend/puente.py`:
 
 | Pieza | Lee | Escribe |
@@ -130,29 +131,28 @@ idea, la actual. Al cambiar algo, se reescribe lo que ya no es cierto; no se añ
 
 ## Pendientes (1-nov)
 1. Plan de `docs/arquitectura.md` en DOS instalaciones (decisión de Jon, 28-oct):
-   - 1.ª — HECHA EN LOCAL, SIN INSTALAR (falta clave SSH): re-evaluación al cambiar filtros/zonas (`anuncios.decidir` +
-     `reevaluar`, regla de Jon: aflojar recupera rechazados de ≤14 días; endurecer NO quita propuestos, solo pone «no pasa: …»;
-     gusta/contactado/descartado no se tocan), `backend/migrar.py` (migración única: mapa con `mapa`/`mapa_id`, 67 descartados,
-     propuestos, estados e historial de la web; ensayada con datos reales: 0 errores, 24/24 estados iguales, repetible),
-     puente ajustado a lo migrado, copia en caliente de la base en cada `deploy.sh` (`data/copias/`, 3 últimas), check
-     `lares_cron` sin contar tareas en pausa. Orden en la Pi: `deploy.sh` → `docker exec pisos-api python3 migrar.py` (mira)
-     → `--aplicar` → comprobar `/api/candidatos` y `/api/estados` iguales → instalar `instrucciones-pisos.md` en Lares.
+   - 1.ª — INSTALADA el 1-nov 19:30 (backup-20261101-192924, base copiada en `data/copias/`):
+     · Re-evaluación al cambiar filtros/zonas (`anuncios.decidir` + `reevaluar`). Regla de Jon: aflojar un filtro recupera los
+       rechazados de ≤14 días; endurecerlo NO quita propuestos, solo les pone «no pasa: …»; gusta/contactado/descartado no se tocan.
+       OJO: solo actúa sobre la base única; los propuestos del vigilante siguen llegando por `candidatos.json` hasta la 2.ª.
+     · Migración aplicada (`migrar.py --aplicar`): 106 anuncios en la base (15 del mapa con `datos.mapa`/`mapa_id`, 67 descartados
+       fijos, 9 propuestos del vigilante, 5 estados sin datos con su enlace, 38 líneas del historial de la web). Comprobado: los 25
+       estados de la web = los de la base; la web sigue viendo lo mismo (22 propuestos).
+     · Puente ajustado a lo migrado; `deploy.sh` copia la base en caliente; check `lares_cron` ya no cuenta tareas en pausa.
+     · Lares: `SOUL.md` = `instrucciones-pisos.md` (los dos topes). Vigilante arreglado e instalado: un anuncio alquilado se
+       rechaza como «alquilado» (antes leía la fecha de otro piso), «Ubegrænset Lejeperiode» = ilimitado (antes «4 meses» del
+       «4 Værelser»), y lo que solo sale en la copia de EDC se comprueba. Se borraron de su caché las 44 fichas de propuestos de
+       Boligportal y una pasada única las releyó: 41 propuestos falsos (alquilados, «libre el 2026-12-01») salieron.
    - 2.ª: vigilante y comprobador por la API (claves `CLAVE_VIGILANTE` y `CLAVE_COMPROBADOR`, dos, decisión de Jon), web desde
-     `/api/v2`, panel desde la base, borrar `puente.py`, `/api/candidatos`, `/api/estado(s)`, `migrar.py` y los JSON del buzón.
-     Al acabar, reescribir la tabla «Estado real» de arriba.
-   - Fallo del vigilante que se arregla en la 2.ª (usará `portales.py` del backend, que sí detecta «alquilado»): si un anuncio
-     de Boligportal está alquilado, la ficha redirige a un listado (`?ad_rented_out_redirect=RENTED_OUT_APPROVED`) y `detalle()`
-     lee la fecha/contrato de OTRO piso → se rechaza con un motivo falso («libre el 2026-12-01», «contrato corto (4 meses)»).
-   - Otro fallo del vigilante (mismo arreglo): en la ficha de Boligportal el valor va ANTES de la etiqueta («Ubegrænset
-     Lejeperiode 4 Værelser») y `detalle()` lee «4 meses» del «4 Værelser». Hoy no rechaza nada porque manda el dato del listado
-     (`rental_period`), pero sí en las copias que llegan por EDC sin ese dato. `portales.ficha` del backend lo lee bien (0).
-   - Diagnóstico del 1-nov «no salen pisos nuevos»: el vigilante funciona (cada 3 h, 0 errores). Lo nuevo cae sobre todo por
-     zona excluida, «Delevenlig» sin marcar y fecha; lo que viene por EDC suele estar ya alquilado. Lares no vuelve a mirar lo
-     rechazado si ya no sale en las 3 primeras páginas: tras ampliar la ventana, Jon añadió a mano los 3 que pasaban
-     (Boligportal 5456969 Herlev, 5679026 y 5246868 Sydhavnen). La 1.ª instalación (re-evaluar al cambiar filtros) evita esto.
+     `/api/v2`, panel desde la base, `/api/filtros` y zonas a la v2, borrar `puente.py`, `/api/candidatos`, `/api/estado(s)`,
+     `migrar.py` y los JSON del buzón. Al acabar, reescribir la tabla «Estado real» de arriba.
+   - Diagnóstico del 1-nov «no salen pisos nuevos»: el vigilante funciona. Lo nuevo cae sobre todo por zona excluida, «Delevenlig»
+     sin marcar (regla de Jon: se rechaza) y fecha. Lares no vuelve a mirar lo rechazado que ya no sale en sus 3 primeras páginas:
+     tras ampliar la ventana (1-dic..4-ene), Jon añadió a mano los 3 que pasaban (Boligportal 5456969 Herlev, 5679026 y 5246868
+     Sydhavnen). Hoy (19:30) Lares por el chat añadió 5363124 y el backend le rechazó 8 enlaces alquilados: el chat funciona.
 2. `pisos.py consultar`: el historial enseña la hora en segundos y «propuesto → propuesto» en las notas.
-3. Probar por el CHAT de Lares que el hook (skill-governance-hook, fail_closed) deja usar `pisos.py` — necesita su modelo (Fireworks,
-   suspendido: los avisos de Lares al Bot Chat fallan y el check `lares_cron` sale en rojo; lo arregla Jon).
+3. Avisos de Lares al Bot Chat: la última entrega fallida es del 26-oct (piso-check-links, ya en pausa). El chat de Lares sí
+   usa `pisos.py` (1-nov). Comprobar en el próximo aviso de piso nuevo que llega al Bot Chat.
 4. Tarea IA de Lares que mire los planos y escriba `pisos-bridge/planos.json` (`{"<id>": {"dorm": 3}}`) — cuando Lares tenga modelo.
 5. Pasar al mapa los propuestos que se marquen 🔵 (geocodificar + `tools/route.py` para esos ids y fusionar en `data/rutas.json`).
    Propuestos sin coordenadas no tienen ficha (geocodificar con Nominatim, 1 pet./s).
@@ -165,8 +165,10 @@ idea, la actual. Al cambiar algo, se reescribe lo que ya no es cierto; no se añ
 ## Copias de seguridad y acceso
 - Regla de Jon: guardar solo la vuelta atrás del último cambio de cada pieza y borrar las anteriores cuando lleve ~1 día bien;
   apuntar aquí lo que queda. Nunca dejar copias de authorized_keys. No tocar copias de otros agentes de Hermes.
-- QUEDAN en la Pi (27-oct): backend `backup-20261027-075658`; Lares `scripts/piso_watch_monitor.py.v7-20261027-preLejebolig.bak`,
-  `SOUL.md.bak-20261027`, `skills/…/piso-watch-cph/SKILL.md.bak-20261027` → borrar el 28-oct si todo va bien.
+- 1-nov: BORRADAS backend backup-20261027-075658; Lares .v7-20261027-preLejebolig.bak, SOUL.md.bak-20261027, SKILL.md.bak-20261027.
+  QUEDAN en la Pi: backend `backup-20261101-192924` y `data/copias/pisos-backup-20261101-192924.db` (base antes de migrar);
+  Lares `scripts/piso_watch_monitor.py.v8-20261101-preAlquilado.bak`, `SOUL.md.bak-20261101` → borrar el 2-nov si todo va bien
+  (la copia de la base, en la próxima instalación: `deploy.sh` deja las 3 últimas). Clave SSH quitada (sin copia).
   En el PC: ~/.claude/settings.json.bak, .bak-narrator, .bak-20261024-voz (narrador, 1–2 KB).
 - Puertos ya usados en la Pi (no tocar): Portainer 8000/9000/9443. Nuestro: 127.0.0.1:8787 (API, Funnel :8443), 127.0.0.1:8790 (panel: serve https :9444 por nombre, y serve TCP :9445 por IP). Comprobar siempre con `ss -ltnp | grep :PUERTO` antes de usar uno nuevo.
 - Acceso a la Pi: clave SSH temporal de 1 h (expiry-time en authorized_keys, comentario «claude-pisos-1h»); pedir una nueva a Jon.
