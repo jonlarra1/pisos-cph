@@ -27,7 +27,7 @@ copias de Boligportal (se guardan con su id de Boligportal). El listado de EDC n
 ficha (cupo `MAX_DETAIL_EDC` = 12 por pasada; lo que no cabe espera, `edc_pendientes` en lares_runs.jsonl). Fichas de Boligportal:
 `MAX_DETAIL` = 8 por pasada, con caché.
 
-Filtros: los de «Búsqueda (Lares)» en la web (`config.json`; por defecto ≤23.000 kr, ≥4 værelser, entrada 2026-12-18..2027-01-15),
+Filtros: los de «Búsqueda (Lares)» en la web (`config.json`; valores actuales en `/api/filtros`),
 zona permitida, contrato no corto, sin «no compartir». Lo que ya está en el mapa o en descartados no se propone; lo decidido en la
 web lo oculta el backend y reaparece si se vuelve a «propuesto». Un candidato que deja de salir en las páginas se sigue proponiendo
 7 días. Comprobador: ≤8 anuncios por pasada; si un portal dice que se alquiló, va a `retirados.json`.

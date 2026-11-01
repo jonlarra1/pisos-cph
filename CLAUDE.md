@@ -86,6 +86,10 @@ idea, la actual. Al cambiar algo, se reescribe lo que ya no es cierto; no se añ
   `pisos-bridge/retirados.json`; el backend (`aplicar_retirados`) lo pone UNA vez en «descartado» con by="lares" y `motivo` (si lo
   recuperáis, no se repite) y avisa por SSE. Web: aviso «Han retirado el anuncio…», 48 h en rojo y luego Descartados.
 - Lejebolig: Lares NO lo busca (decisión de Jon, 27-oct). Sus enlaces solo entran a mano (chat o barra de la web).
+- Compartir (decisión de Jon, 1-nov): si en Boligportal el casero no marca «Delevenlig» (`features.shareable` = false), el
+  anuncio se RECHAZA («no permite compartir (dato del portal)»), aunque sea el motivo nº 1 de rechazo (84 de 150 anuncios de 4 vær.).
+- Los valores de «Búsqueda» viven en la Pi (`/api/filtros`), no en el código: el 1-nov Jon puso la entrada del 2026-12-01 al
+  2027-01-04 (antes 18-dic..15-ene). `DEFAULT_FILTROS` del vigilante solo se usa si no hay config.json.
 - Photos: `fotos` (list, floor plan first when `fotoPlano`) per flat, shown through the backend image proxy `/api/img?u=` (allow-listed hosts, disk cache 300 MB).
 - Right column «🔎 Búsqueda (Lares)» = search params stored on the Pi (`/api/filtros`, zones) → config.json → Lares. Any change to «Búsqueda» (filters, zones) MUST ask for confirmation with a pop-up whose first line is «⚠️ ESTE CAMBIO ES DE BÚSQUEDA, NO DE VISUALIZACIÓN» (it changes what Lares searches for everyone). «👁 Visualización» = map-only view settings (states shown, «Barrios y municipios» layer, colour by Estado/Coste/Barrios), per browser.
 - UI settings per browser in localStorage: `ui` (day, colour mode, barrio filter, lines off, route option, open panels, soloYo), `perfiles`, `tripTime`, `yo`, `destinos`, `cardPos`.
@@ -139,8 +143,13 @@ idea, la actual. Al cambiar algo, se reescribe lo que ya no es cierto; no se añ
    - Fallo del vigilante que se arregla en la 2.ª (usará `portales.py` del backend, que sí detecta «alquilado»): si un anuncio
      de Boligportal está alquilado, la ficha redirige a un listado (`?ad_rented_out_redirect=RENTED_OUT_APPROVED`) y `detalle()`
      lee la fecha/contrato de OTRO piso → se rechaza con un motivo falso («libre el 2026-12-01», «contrato corto (4 meses)»).
-   - Diagnóstico del 1-nov «no salen pisos nuevos»: el vigilante funciona (cada 3 h, 0 errores); lo que pasa lo barato está
-     alquilado (20/20 comprobados) o cae por fecha (15 libres el 16-dic, 2 días antes de la ventana 18-dic..15-ene).
+   - Otro fallo del vigilante (mismo arreglo): en la ficha de Boligportal el valor va ANTES de la etiqueta («Ubegrænset
+     Lejeperiode 4 Værelser») y `detalle()` lee «4 meses» del «4 Værelser». Hoy no rechaza nada porque manda el dato del listado
+     (`rental_period`), pero sí en las copias que llegan por EDC sin ese dato. `portales.ficha` del backend lo lee bien (0).
+   - Diagnóstico del 1-nov «no salen pisos nuevos»: el vigilante funciona (cada 3 h, 0 errores). Lo nuevo cae sobre todo por
+     zona excluida, «Delevenlig» sin marcar y fecha; lo que viene por EDC suele estar ya alquilado. Lares no vuelve a mirar lo
+     rechazado si ya no sale en las 3 primeras páginas: tras ampliar la ventana, Jon añadió a mano los 3 que pasaban
+     (Boligportal 5456969 Herlev, 5679026 y 5246868 Sydhavnen). La 1.ª instalación (re-evaluar al cambiar filtros) evita esto.
 2. `pisos.py consultar`: el historial enseña la hora en segundos y «propuesto → propuesto» en las notas.
 3. Probar por el CHAT de Lares que el hook (skill-governance-hook, fail_closed) deja usar `pisos.py` — necesita su modelo (Fireworks,
    suspendido: los avisos de Lares al Bot Chat fallan y el check `lares_cron` sale en rojo; lo arregla Jon).
