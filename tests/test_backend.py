@@ -182,6 +182,9 @@ class TestCheckLaresCron(Base):
                        "last_delivery_error": "Hermes"}])
         ok, msg = app.check_lares_cron()
         self.assertTrue(ok); self.assertIn("piso-check-links: en pausa", msg)
+    def test_pausa_por_state(self):
+        self.escribe([{"name": "piso-check-links", "enabled": True, "state": "paused", "last_status": "delivery_failed"}])
+        self.assertTrue(app.check_lares_cron()[0])
     def test_el_vigilante_en_pausa_si_es_fallo(self):
         self.escribe([{"name": "piso-watch-cph", "enabled": False, "last_status": "ok"}])
         self.assertFalse(app.check_lares_cron()[0])

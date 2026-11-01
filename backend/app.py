@@ -1346,12 +1346,11 @@ def check_lares_cron():
         if not str(j.get("name", "")).startswith("piso"):
             continue
         st, derr = j.get("last_status"), j.get("last_delivery_error")
-        if (
-            not j.get("enabled", True) and j.get("name") != LARES_TAREA
-        ):  # en pausa a propósito: su último fallo no cuenta
+        pausa = not j.get("enabled", True) or j.get("state") == "paused"
+        if pausa and j.get("name") != LARES_TAREA:  # en pausa a propósito: su último fallo no cuenta
             out.append(f"{j.get('name')}: en pausa")
             continue
-        bad = (st not in ("ok", None)) or not j.get("enabled", True)
+        bad = (st not in ("ok", None)) or pausa
         ok = ok and not bad
         out.append(
             f"{j.get('name')}: {st} (última {str(j.get('last_run_at'))[:16]}, próxima {str(j.get('next_run_at'))[:16]})"
