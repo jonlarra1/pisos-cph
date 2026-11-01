@@ -30,7 +30,8 @@ ficha (cupo `MAX_DETAIL_EDC` = 12 por pasada; lo que no cabe espera, `edc_pendie
 Filtros: los de «Búsqueda (Lares)» en la web (`config.json`; valores actuales en `/api/filtros`),
 zona permitida, contrato no corto, sin «no compartir». Lo que ya está en el mapa o en descartados no se propone; lo decidido en la
 web lo oculta el backend y reaparece si se vuelve a «propuesto». Un candidato que deja de salir en las páginas se sigue proponiendo
-7 días. Comprobador: ≤8 anuncios por pasada; si un portal dice que se alquiló, va a `retirados.json`.
+7 días. Comprobador: ≤8 anuncios por pasada (mapa + propuestos que no salen en su portal, también los que solo llegan por la copia de
+EDC); si un portal dice que se alquiló, va a `retirados.json`. Al abrir una ficha de Boligportal alquilada, se rechaza como «alquilado».
 
 ## Retirado en la Pi (27-oct-2026)
 - Archivados (datos, sin borrar) en `Vivienda/archivo-2026-10-26/`: `pisos_cph.csv`, `pisos_validos.md`, `pisos_no_validos.md`,
