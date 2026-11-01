@@ -151,6 +151,21 @@ class TestFichaBoligportal(unittest.TestCase):
         self.assertEqual(self.ficha(Respuesta(200, self.BP, html))["contrato_meses"], 24)
 
 
+class TestComprobarCopiasDeEdc(unittest.TestCase):
+    """Un propuesto que solo sale en la copia de EDC se comprueba (EDC copia anuncios ya alquilados)."""
+    def setUp(self): self.m = cargar_modulo()
+    def test_copia_de_edc_se_comprueba_y_el_del_portal_no(self):
+        import sqlite3
+        con = sqlite3.connect(":memory:")
+        cands = [{"id": "1", "link": "https://www.boligportal.dk/x-id-1"}, {"id": "2", "link": "https://www.boligportal.dk/x-id-2"}]
+        listings = {"1": {"_edc": True}, "2": {}}
+        mirados = []
+        with mock.patch.object(self.m, "estado_anuncio", lambda link: (mirados.append(link), ("retirado", "udlejet"))[1]), \
+             mock.patch.object(self.m, "anuncios_del_chat", dict), mock.patch.object(self.m.time, "sleep", lambda s: None):
+            n, ret = self.m.comprobar_publicados(con, [], cands, listings, "2026-11-01T00:00:00+00:00")
+        self.assertEqual((mirados, n, ret), (["https://www.boligportal.dk/x-id-1"], 1, 1))
+
+
 class TestEstadoAnuncio(unittest.TestCase):
     """Reconoce las respuestas reales de los portales (vistas el 23-oct-2026)."""
     def setUp(self): self.m = cargar_modulo()

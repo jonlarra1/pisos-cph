@@ -835,15 +835,17 @@ def candidatos_recordados(con, listings, known):
 
 
 def comprobar_publicados(con, mapa, cands, listings, now):
-    """¿Siguen publicados? Pisos del mapa + propuestos que ya no salen en las páginas leídas (los que salen, sí lo
-    están). Como mucho MAX_ACTIVO por pasada, los que hace más tiempo que no se miran primero.
+    """¿Siguen publicados? Pisos del mapa + propuestos que no salen en las páginas del propio portal (los que salen,
+    sí lo están; los que solo salen en la copia de EDC, no se sabe). Como mucho MAX_ACTIVO por pasada, los que hace
+    más tiempo que no se miran primero.
     Devuelve (comprobados, retirados nuevos)."""
     con.execute(
         "CREATE TABLE IF NOT EXISTS v2_activo (id TEXT PRIMARY KEY, link TEXT, estado TEXT, motivo TEXT, desde "
         "TEXT, ultimo TEXT)"
     )
     revisar = {num_id(p["link"]): p["link"] for p in mapa if num_id(p["link"])}
-    revisar.update({c["id"]: c["link"] for c in cands if c["id"] not in listings})
+    # salir en una copia de EDC no prueba que siga publicado (EDC copia anuncios de Boligportal ya alquilados)
+    revisar.update({c["id"]: c["link"] for c in cands if c["id"] not in listings or listings[c["id"]].get("_edc")})
     revisar.update({i: link for i, link in anuncios_del_chat().items() if i not in listings and i not in revisar})
     prev = {r[0]: (r[1], r[2]) for r in con.execute("SELECT id, estado, ultimo FROM v2_activo")}
     orden = sorted(
