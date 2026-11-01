@@ -124,9 +124,23 @@ idea, la actual. Al cambiar algo, se reescribe lo que ya no es cierto; no se añ
   listar todos los módulos que importa `app.py` (hay test).
 - Commits pequeños + push, estilo midudev: `type(scope): summary` en inglés, sin Co-Authored-By.
 
-## Pendientes (27-oct)
-1. Plan A–E de `docs/arquitectura.md` (unir duplicados, migración, vigilante por la API, web desde `/api/v2`, limpieza). Al acabar,
-   reescribir la tabla «Estado real» de arriba.
+## Pendientes (1-nov)
+1. Plan de `docs/arquitectura.md` en DOS instalaciones (decisión de Jon, 28-oct):
+   - 1.ª — HECHA EN LOCAL, SIN INSTALAR (falta clave SSH): re-evaluación al cambiar filtros/zonas (`anuncios.decidir` +
+     `reevaluar`, regla de Jon: aflojar recupera rechazados de ≤14 días; endurecer NO quita propuestos, solo pone «no pasa: …»;
+     gusta/contactado/descartado no se tocan), `backend/migrar.py` (migración única: mapa con `mapa`/`mapa_id`, 67 descartados,
+     propuestos, estados e historial de la web; ensayada con datos reales: 0 errores, 24/24 estados iguales, repetible),
+     puente ajustado a lo migrado, copia en caliente de la base en cada `deploy.sh` (`data/copias/`, 3 últimas), check
+     `lares_cron` sin contar tareas en pausa. Orden en la Pi: `deploy.sh` → `docker exec pisos-api python3 migrar.py` (mira)
+     → `--aplicar` → comprobar `/api/candidatos` y `/api/estados` iguales → instalar `instrucciones-pisos.md` en Lares.
+   - 2.ª: vigilante y comprobador por la API (claves `CLAVE_VIGILANTE` y `CLAVE_COMPROBADOR`, dos, decisión de Jon), web desde
+     `/api/v2`, panel desde la base, borrar `puente.py`, `/api/candidatos`, `/api/estado(s)`, `migrar.py` y los JSON del buzón.
+     Al acabar, reescribir la tabla «Estado real» de arriba.
+   - Fallo del vigilante que se arregla en la 2.ª (usará `portales.py` del backend, que sí detecta «alquilado»): si un anuncio
+     de Boligportal está alquilado, la ficha redirige a un listado (`?ad_rented_out_redirect=RENTED_OUT_APPROVED`) y `detalle()`
+     lee la fecha/contrato de OTRO piso → se rechaza con un motivo falso («libre el 2026-12-01», «contrato corto (4 meses)»).
+   - Diagnóstico del 1-nov «no salen pisos nuevos»: el vigilante funciona (cada 3 h, 0 errores); lo que pasa lo barato está
+     alquilado (20/20 comprobados) o cae por fecha (15 libres el 16-dic, 2 días antes de la ventana 18-dic..15-ene).
 2. `pisos.py consultar`: el historial enseña la hora en segundos y «propuesto → propuesto» en las notas.
 3. Probar por el CHAT de Lares que el hook (skill-governance-hook, fail_closed) deja usar `pisos.py` — necesita su modelo (Fireworks,
    suspendido: los avisos de Lares al Bot Chat fallan y el check `lares_cron` sale en rojo; lo arregla Jon).
