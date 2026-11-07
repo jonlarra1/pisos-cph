@@ -619,6 +619,11 @@ def main():
     con = abrir_db()
     vistos_antes = {r[0] for r in con.execute("SELECT id FROM v2_eval")} | known
     listings, errors, paginas = leer_portales(vistos_antes, zonas, F)
+    if not listings and errors:  # sin conexión con los portales: las listas del buzón se quedan como estaban
+        con.close()
+        STATS.update(leidos={}, paginas=paginas, errores=errors, sin_conexion=True)
+        print(f"[aviso] fuentes con error: {', '.join(errors)}")
+        return
     ev = evaluar_anuncios(con, listings, known, planos, F, zonas, decididos, now)
     ev.cands += candidatos_recordados(con, listings, known)
     comprobados, nuevos_ret = comprobar_publicados(con, mapa, ev.cands, listings, now)
@@ -739,12 +744,12 @@ class Evaluacion:
 
 def evaluar_anuncios(con, listings, known, planos, F, zonas, decididos, now):
     """Evalúa cada anuncio con los filtros; abre la ficha (con cupo) de los que pasan lo barato, y guarda en v2_eval."""
-    # fichas leídas antes de que Lares sacara amueblado/balcón/ascensor:
-    # se vuelven a abrir (con el mismo cupo por pasada)
+    # fichas leídas antes de que Lares sacara amueblado/balcón/ascensor: se vuelven a abrir (con el mismo cupo
+    # por pasada). Una ficha alquilada ya está leída: si se reabriera, gastaría el cupo en cada pasada.
     cache = {
         i: d
         for i, d in ((r[0], json.loads(r[1])) for r in con.execute("SELECT id, data FROM v2_detalle"))
-        if "amueblado" in d
+        if "amueblado" in d or d.get("alquilado")
     }
     ev = Evaluacion()
     orden_ids = sorted(

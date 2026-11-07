@@ -76,6 +76,14 @@ class TestPaginas(unittest.TestCase):
         pas = Pasada(self.m, {"boligportal": [[1], [2], [3], [4]]}); pas()
         pas2 = Pasada(self.m, {"boligportal": [[1], [2], [3], [4]]}); pas2()
         self.assertEqual(self.cuenta(pas2, "boligportal"), 3)
+    def test_sin_conexion_las_listas_se_quedan_como_estaban(self):
+        antes = Pasada(self.m, {"boligportal": [[1]]})()
+        caida = Pasada(self.m, {"boligportal": [[1]]})
+        def sin_red(url, timeout=20): raise OSError("sin red")
+        caida.fetch = sin_red
+        self.assertEqual(caida(), antes)                                 # no publica propuestos recordados ni viejos
+        self.assertTrue(self.m.STATS["sin_conexion"])
+        self.assertIn("boligportal: OSError", self.m.STATS["errores"])
     def test_no_recuerda_propuestos_de_lejebolig(self):
         con = self.m.abrir_db()
         hoy = self.m.datetime.now(self.m.timezone.utc).isoformat()
@@ -331,6 +339,20 @@ class TestAmuebladoYRasgos(unittest.TestCase):
         self.assertEqual(abiertas, ["1"])
         c = json.loads((self.m.BRIDGE / "candidatos.json").read_text(encoding="utf-8"))
         self.assertIs(c["pisos"][0]["amueblado"], True)
+    def test_ficha_alquilada_de_la_cache_no_se_reabre(self):
+        con = sqlite3.connect(self.m.DB)
+        con.execute("CREATE TABLE IF NOT EXISTS v2_detalle (id TEXT PRIMARY KEY, data TEXT, ts TEXT)")
+        con.execute("INSERT INTO v2_detalle VALUES ('1', ?, 'x')", (json.dumps({"alquilado": True}),)); con.commit(); con.close()
+        abiertas = []
+        pas = Pasada(self.m, {"boligportal": [[1]]})
+        with mock.patch.object(self.m, "fetch", pas.fetch), mock.patch.object(self.m, "parse_boligportal", pas.parser("boligportal")), \
+             mock.patch.object(self.m, "estado_anuncio", pas.estado), \
+             mock.patch.object(self.m, "detalle", lambda it: abiertas.append(it["id"]) or {"amueblado": True}), mock.patch("time.sleep"), \
+             contextlib.redirect_stdout(io.StringIO()):
+            self.m.main()
+        self.assertEqual(abiertas, [])                                   # no gasta el cupo de fichas en cada pasada
+        c = json.loads((self.m.BRIDGE / "candidatos.json").read_text(encoding="utf-8"))
+        self.assertEqual(c["pisos"], [])                                 # y sigue rechazado como alquilado
     def test_ficha_edc_balcon_ascensor_descripcion(self):
         html = TestEDC.FICHA.replace("<dt>Lejeperiode</dt>", "<dt>Altan/terrasse</dt><dd>Ja</dd><dt>Elevator</dt><dd>Nej</dd><dt>Lejeperiode</dt>") \
             .replace("<p>Boligen er delevenlig.</p>", "<a>Hent boligpræsentation</a><p>Bo ved vandet. Boligen er delevenlig og umøbleret.</p><a>Læs hele sagsbeskrivelsen</a>")
