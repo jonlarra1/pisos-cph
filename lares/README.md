@@ -7,8 +7,11 @@ Copias de lo que corre en el perfil `lares` de la Pi (`~/docker/hermes/profiles/
   a Lares (salida no vacía) cuando hay candidatos nuevos.
 - `pisos.py` → `scripts/`. La herramienta de Lares en el chat: añadir enlaces, consultar, cambiar estados, notas y dormitorios.
   Usa la API v2 con `CLAVE_LARES` (archivo `.pisos_api_key` en la carpeta del perfil). Es su ÚNICA forma de tocar pisos.
-- `instrucciones-pisos.md` → se copia en su `SOUL.md` y en la skill `piso-watch-cph/SKILL.md`. Es el contexto del agente:
-  si cambia algo que le afecte, se actualiza aquí y se reinstala en el mismo bloque.
+- `instrucciones-pisos.md` → va en su `SOUL.md` desde la sección «Pisos de Copenhague» (las líneas de antes son las reglas
+  generales de Lares, que no están aquí). Es el contexto del agente: si cambia algo que le afecte, se actualiza aquí y se
+  reinstala en el mismo bloque.
+- `skill-piso-watch-cph.md` → `skills/productivity/piso-watch-cph/SKILL.md`: resumen corto del vigilante (qué lee, cuándo,
+  qué avisa). Se actualiza a la vez que `instrucciones-pisos.md`.
 
 ## Buzón compartido con el backend
 `Vivienda/pisos-bridge/` del vault (Pi: `~/syncthing_media/jon_Vault/Jon/Vivienda/pisos-bridge`, Lares: `/opt/data/vault/Vivienda/pisos-bridge`).
@@ -26,6 +29,11 @@ zonas activas, ≥ værelser y ≤ precio, más nuevo primero, 1–3 páginas de
 copias de Boligportal (se guardan con su id de Boligportal). El listado de EDC no trae fecha: lo de EDC NO se propone hasta abrir su
 ficha (cupo `MAX_DETAIL_EDC` = 12 por pasada; lo que no cabe espera, `edc_pendientes` en lares_runs.jsonl). Fichas de Boligportal:
 `MAX_DETAIL` = 8 por pasada, con caché.
+
+Barrido completo: una vez al día (24 h desde el último) y en la primera pasada tras cambiar filtros o zonas, el vigilante lee
+TODAS las páginas de Boligportal con cada número de værelser desde el mínimo hasta 6 y ≤ precio (Boligportal no tiene «4 o más»):
+unas 25 páginas, ~2 min. Esa pasada abre hasta 30 fichas (`MAX_DETAIL_BARRIDO`). Si falla, se repite en la siguiente.
+Lo que ya está en la base única (añadido a mano, lo lee de `/api/v2/anuncios`) se sigue evaluando pero no se avisa como nuevo.
 
 Filtros: los de «Búsqueda (Lares)» en la web (`config.json`; valores actuales en `/api/filtros`),
 zona permitida, contrato no corto, sin «no compartir». Lo que ya está en el mapa o en descartados no se propone; lo decidido en la

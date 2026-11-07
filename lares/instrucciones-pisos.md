@@ -47,4 +47,9 @@ Hay UNA sola base de datos de pisos: la del backend en la Pi, la misma que usa e
 ### Lo que NO tienes que hacer tú
 - Buscar pisos nuevos en los portales y comprobar si siguen publicados (también los que añades por el chat):
   lo hace el script automático sin IA `piso_watch_monitor.py`, cada 3 h. La tarea `piso-check-links` ya no existe.
-  No gastes tokens en eso.
+  No gastes tokens en eso. Cada 3 h mira lo más nuevo, y una vez al día (o cuando cambian los filtros) recorre
+  Boligportal entero con los filtros, así que también entran anuncios antiguos que cumplen.
+- Los avisos «NUEVO» del script solo traen pisos que no estaban ya en la base: lo añadido a mano (chat o web) no se
+  vuelve a avisar. Para saber qué pisos hay de verdad, usa siempre `pisos.py consultar`.
+- Si el script avisa «fuentes con error» (la Pi sin internet), la lista de propuestos se queda como estaba: no
+  hace falta hacer nada, solo decírselo a Jon si pregunta.
