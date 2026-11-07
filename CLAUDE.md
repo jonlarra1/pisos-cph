@@ -156,9 +156,12 @@ idea, la actual. Al cambiar algo, se reescribe lo que ya no es cierto; no se añ
      temperatura alguna vez). Sin internet, el vigilante publicó 38 propuestos viejos: eran EDC copias alquiladas cuya ficha
      («alquilado») no contaba como leída, así que se reabrían las mismas 12 cada pasada y 29 se quedaban pendientes con datos del
      1-nov. Arreglado e instalado (7-nov): la ficha alquilada cuenta como leída y una pasada sin ningún portal no toca el buzón.
-   - Pendiente (decidir con Jon): los 13 pisos que pasan los filtros y Lares nunca vio (publicados antes del 21-oct, en páginas
-     profundas: 5675305 5461578 5110489 5280579 5672828 5470138 5671334 5041208 5670349 5668362 5522327 5587412 5638204) y un
-     barrido diario completo de 4–5 værelser en Boligportal para no perder lo antiguo ni lo que pasa al cambiar filtros.
+   - 7-nov (tarde): el Funnel dejó de responder 08:33–~17:00 UTC (saludo TLS cortado, como el 25-oct); el tailnet y el panel sí
+     iban. Instalado el barrido diario: una vez al día (o al cambiar filtros/zonas) el vigilante recorre Boligportal entero
+     (`-værelser/` de 4 a 6, ~25 páginas, hasta 30 fichas; si falla, repite en la siguiente pasada) y lo que ya está en la base
+     no se avisa como «NUEVO». Lares lo sabe (SOUL.md y skill). Jon añadió a mano 12 de 13 pisos antiguos que el vigilante no
+     había visto (5522327 estaba reservado). OJO: 4 de ellos no pasan al leer su ficha (5670349, 5587412, 5668362: contrato de
+     4 meses; 5638204: libre el 1-feb) y, por la regla de lo añadido a mano, siguen «propuesto»: pendiente de que Jon decida.
 2. `pisos.py consultar`: el historial enseña la hora en segundos y «propuesto → propuesto» en las notas.
 3. Avisos de Lares al Bot Chat: la última entrega fallida es del 26-oct (piso-check-links, ya en pausa). El chat de Lares sí
    usa `pisos.py` (1-nov). Comprobar en el próximo aviso de piso nuevo que llega al Bot Chat.
@@ -175,9 +178,10 @@ idea, la actual. Al cambiar algo, se reescribe lo que ya no es cierto; no se añ
 - Regla de Jon: guardar solo la vuelta atrás del último cambio de cada pieza y borrar las anteriores cuando lleve ~1 día bien;
   apuntar aquí lo que queda. Nunca dejar copias de authorized_keys. No tocar copias de otros agentes de Hermes.
 - 1-nov: BORRADAS backend backup-20261027-075658; Lares .v7-20261027-preLejebolig.bak, SOUL.md.bak-20261027, SKILL.md.bak-20261027.
-  7-nov: BORRADAS backend backup-20261101-192924 (código, está en git); Lares .v8-20261101-preAlquilado.bak y
-  SOUL.md.bak-20261101. QUEDAN en la Pi: `data/copias/pisos-backup-20261101-192924.db` (base antes de migrar; `deploy.sh` deja
-  las 3 últimas) y Lares `scripts/piso_watch_monitor.py.v9-20261107-preSinConexion.bak` → borrar ~8-nov si va bien.
+  7-nov: BORRADAS backend backup-20261101-192924 (código, está en git); Lares .v8-20261101-preAlquilado.bak,
+  .v9-20261107-preSinConexion.bak y SOUL.md.bak-20261101. QUEDAN en la Pi: `data/copias/pisos-backup-20261101-192924.db` (base
+  antes de migrar; `deploy.sh` deja las 3 últimas) y Lares `scripts/piso_watch_monitor.py.v10-20261107-preBarrido.bak`,
+  `SOUL.md.bak-20261107`, `skills/productivity/piso-watch-cph/SKILL.md.bak-20261107` → borrar ~9-nov si va bien.
   Clave SSH quitada al acabar (sin copia).
   En el PC: ~/.claude/settings.json.bak, .bak-narrator, .bak-20261024-voz (narrador, 1–2 KB).
 - Puertos ya usados en la Pi (no tocar): Portainer 8000/9000/9443. Nuestro: 127.0.0.1:8787 (API, Funnel :8443), 127.0.0.1:8790 (panel: serve https :9444 por nombre, y serve TCP :9445 por IP). Comprobar siempre con `ss -ltnp | grep :PUERTO` antes de usar uno nuevo.
