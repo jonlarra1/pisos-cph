@@ -209,7 +209,11 @@ def fetch(url, timeout=20):
 
 
 def url_ok(u):
-    """Enlaces con «ø» sin codificar (algunos de descartados.json): urllib no los abre tal cual."""
+    """Enlaces con «ø» sin codificar (algunos de descartados.json): urllib no los abre tal cual. El enlace viejo
+    en inglés de Boligportal (/en/rental-apartments/<id>, hoy una búsqueda) se pasa al danés, que abre el anuncio."""
+    m = re.match(r"^https://(?:www\.)?boligportal\.dk/en/rental-apartments/(\d{4,10})/?$", u)
+    if m:
+        u = f"https://www.boligportal.dk/lejligheder/id-{m.group(1)}"
     return urllib.parse.quote(u, safe=":/?=&%#")
 
 
@@ -497,7 +501,7 @@ def detalle(item):
         return detalle_edc(item)
     if item.get("portal") == "Juli":
         return detalle_juli(item)
-    req = urllib.request.Request(item["link"], headers={"User-Agent": UA, "Accept-Language": "da,en;q=0.8"})
+    req = urllib.request.Request(url_ok(item["link"]), headers={"User-Agent": UA, "Accept-Language": "da,en;q=0.8"})
     with urllib.request.urlopen(req, timeout=15) as r:
         final, h = r.geturl(), r.read().decode("utf-8", "replace")
     if "ad_rented_out_redirect" in final:  # alquilado: Boligportal manda a un listado con datos de OTROS pisos

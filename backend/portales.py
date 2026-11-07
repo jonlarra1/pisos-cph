@@ -87,6 +87,17 @@ _PATRONES = (
 )
 # Juli Living: toda su oferta (libres y reservadas; lo alquilado no sale) en un JSON de su web. Sus ids son cortos:
 # llevan «jl» delante para no chocar con los de otros portales.
+# Boligportal cambió sus enlaces en inglés: /en/rental-apartments/<id> es ahora una página de búsqueda, no el anuncio.
+# El enlace que vale es el danés corto (redirige al anuncio). Los viejos se reescriben al leer (ver enlace_bp).
+_BP_VIEJO = re.compile(r"^https://(?:www\.)?boligportal\.dk/en/rental-apartments/(\d{4,10})/?$")
+
+
+def enlace_bp(url):
+    """Enlace viejo en inglés de Boligportal -> el danés que lleva al anuncio. Los demás, igual."""
+    m = _BP_VIEJO.match(url or "")
+    return f"https://www.boligportal.dk/lejligheder/id-{m.group(1)}" if m else url
+
+
 JULI_API = "https://juliliving.dk/wp-admin/admin-ajax.php?wp_lang=da_DK&action=jlet_units&locale=da"
 JULI_MIN_LISTA = 50  # con menos viviendas en la lista, la respuesta es rara: no se retira nada
 
@@ -108,7 +119,7 @@ def enlace_canonico(portal, pid, url=""):
     if portal == "Lejebolig":
         return f"https://en.lejebolig.dk/lejebolig/{pid}"
     if portal == "Boligportal":
-        return f"https://www.boligportal.dk/en/rental-apartments/{pid}"
+        return f"https://www.boligportal.dk/lejligheder/id-{pid}"
     if portal == "Juli":  # la página del edificio + el número de la vivienda
         return f"{url.split('?')[0].replace('://www.', '://')}?boligID={pid[2:]}"
     return url.split("?")[0].split("#")[0]  # EDC: el id va dentro de una ruta larga
@@ -376,7 +387,7 @@ def amueblado_de(texto):
 def ficha(url):
     """Abre la ficha y devuelve el anuncio con todos los CAMPOS (None = no lo dice). AnuncioNoValido si no se puede."""
     portal, pid = identificar(url)
-    code, final, html = descargar(url)
+    code, final, html = descargar(enlace_bp(url))
     if code in (404, 410) or "ad_rented_out_redirect" in final:
         raise AnuncioNoValido("el anuncio ya no está publicado")
     if code != 200 or not html:
@@ -398,7 +409,7 @@ def estado(url):
     try:
         if portal == "Juli":  # su ficha sale «200» aunque la vivienda ya no exista: manda su lista
             return _estado_juli(pid)
-        code, final, html = descargar(url)
+        code, final, html = descargar(enlace_bp(url))
     except Exception as e:
         return "desconocido", type(e).__name__
     if code in (404, 410):

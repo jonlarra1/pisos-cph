@@ -10,6 +10,8 @@ import json
 import re
 import time
 
+import portales
+
 # ------------------------------------------------------------------ estados y permisos
 SISTEMA = ("rechazado", "propuesto", "retirado")  # los pone el sistema
 PERSONA = ("gusta", "contactado", "descartado")  # los decidís Jon y Unai (o Lares si se lo pedís)
@@ -71,6 +73,34 @@ def crear_tablas(con):
         CREATE INDEX IF NOT EXISTS cambio_uid ON cambio(uid);
         CREATE INDEX IF NOT EXISTS cambio_quien_ts ON cambio(quien, ts);
     """)
+
+
+def arreglar_enlaces(con):
+    """Pasa los enlaces viejos en inglés de Boligportal al danés (los viejos ya no llevan al anuncio).
+    Guarda el viejo en `link_viejo` y apunta el cambio en el historial. Se puede repetir: lo arreglado no se toca.
+    Devuelve cuántos."""
+    n, ahora = 0, int(time.time())
+    for uid, datos in con.execute("SELECT uid, datos FROM anuncio WHERE portal='Boligportal'").fetchall():
+        d = json.loads(datos)
+        nuevo = portales.enlace_bp(d.get("link") or "")
+        if nuevo == d.get("link"):
+            continue
+        d["link_viejo"], d["link"] = d["link"], nuevo
+        con.execute(
+            "UPDATE anuncio SET datos=?, actualizado=? WHERE uid=?", (json.dumps(d, ensure_ascii=False), ahora, uid)
+        )
+        estado = con.execute("SELECT estado FROM anuncio WHERE uid=?", (uid,)).fetchone()[0]
+        _registrar(
+            con,
+            uid,
+            estado,
+            estado,
+            "enlace de Boligportal pasado al danés (el inglés ya no abre el anuncio)",
+            "sistema",
+            ahora,
+        )
+        n += 1
+    return n
 
 
 # ------------------------------------------------------------------ filtros

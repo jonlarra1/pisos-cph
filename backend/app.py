@@ -303,9 +303,12 @@ def init():
         )
         c.execute("CREATE TABLE IF NOT EXISTS ajustes (k TEXT PRIMARY KEY, v TEXT NOT NULL, by TEXT, ts INTEGER)")
         anuncios.crear_tablas(c)
+        arreglados = anuncios.arreglar_enlaces(c)
         destinos.crear_tabla(c)
         for z, v in ZONAS_DEFAULT.items():
             c.execute("INSERT OR IGNORE INTO zonas (zona, permitida, by, ts) VALUES (?,?,?,?)", (z, v, "", 0))
+    if arreglados:
+        log("events", level="info", src="anuncios", msg=f"{arreglados} enlaces de Boligportal pasados al danés")
     write_config()
 
 
