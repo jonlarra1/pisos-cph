@@ -8,7 +8,7 @@ Habla con la API del backend (base única); no escribe ningún archivo.
     python3 pisos.py nota <enlace> <texto…>       lo que has comprobado («ficha revisada: …», «gemela de …»)
     python3 pisos.py dormitorios <enlace> <n>     dormitorios reales (p. ej. contados en el plano)
 
-Enlaces válidos: anuncios de Lejebolig, Boligportal o EDC (https). La clave va en el archivo .pisos_api_key
+Enlaces válidos: anuncios de Lejebolig, Boligportal, EDC o Juli Living (https). La clave va en el archivo .pisos_api_key
 junto a la carpeta scripts del perfil (o en la variable PISOS_API_KEY); nunca se escribe en la salida.
 """
 
@@ -32,6 +32,7 @@ PATRONES = (  # los mismos que backend/portales.py
         re.compile(r"^https://(?:www\.)?boligportal\.dk/\S*?(?:id-|rental-apartments/)(\d{4,10})(?:[/?#]|$)"),
     ),
     ("EDC", re.compile(r"^https://(?:www\.)?edc\.dk/leje/\S*?/(\d{6,10})/?(?:[?#]|$)")),
+    ("Juli", re.compile(r"^https://(?:www\.)?juliliving\.dk/[a-z0-9-]+/?\?(?:[^#\s]*&)?boligID=(\d{1,8})(?:[&#]|$)")),
 )
 
 
@@ -47,13 +48,13 @@ def clave():
 
 
 def uid_de(enlace):
-    if re.fullmatch(r"(Lejebolig|Boligportal|EDC):\d{4,10}", enlace):
+    if re.fullmatch(r"(Lejebolig|Boligportal|EDC):\d{4,10}|Juli:jl\d{1,8}", enlace):
         return enlace
     for portal, pat in PATRONES:
         m = pat.match(enlace.strip())
         if m:
-            return f"{portal}:{m.group(1)}"
-    raise Error("no es un enlace de anuncio de Lejebolig, Boligportal o EDC")
+            return f"{portal}:{'jl' if portal == 'Juli' else ''}{m.group(1)}"
+    raise Error("no es un enlace de anuncio de Lejebolig, Boligportal, EDC o Juli Living")
 
 
 def llamar(metodo, ruta, cuerpo=None):

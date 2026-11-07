@@ -7,7 +7,7 @@ import io
 import os
 import unittest
 
-from tests.test_api_v2 import BaseV2, BP, EDC, LARES
+from tests.test_api_v2 import BaseV2, BP, EDC, JULI, LARES
 from tests.test_backend import Servidor, pedir
 
 _spec = importlib.util.spec_from_file_location("pisos_tool", os.path.join(os.path.dirname(__file__), "..", "lares", "pisos.py"))
@@ -41,6 +41,15 @@ class TestHerramientaLares(BaseV2):
         ficha = self.ejecutar("consultar", EDC)
         self.assertIn("propuesto → gusta (lares:jon) le gusta a Jon", ficha)
         self.assertEqual(pedir("/api/estados")[2]["11810121"]["st"], "gusta")        # la web lo ve
+
+    def test_juli_living(self):
+        self.assertIn("Añadido: [propuesto] Juli:jl1596", self.ejecutar("añadir", JULI))
+        self.assertEqual(H.uid_de("Juli:jl1596"), "Juli:jl1596")
+        self.assertIn("Hecho: [gusta]", self.ejecutar("estado", JULI, "gusta", "--por", "jon"))
+
+    def test_patrones_iguales_que_el_backend(self):
+        import portales
+        self.assertEqual([(p, r.pattern) for p, r in H.PATRONES], [(p, r.pattern) for p, r in portales._PATRONES])
 
     def test_nota_y_dormitorios_del_plano(self):
         self.ejecutar("añadir", BP)
