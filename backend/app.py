@@ -308,7 +308,7 @@ def init():
         for z, v in ZONAS_DEFAULT.items():
             c.execute("INSERT OR IGNORE INTO zonas (zona, permitida, by, ts) VALUES (?,?,?,?)", (z, v, "", 0))
     if arreglados:
-        log("events", level="info", src="anuncios", msg=f"{arreglados} enlaces de Boligportal pasados al danés")
+        log("events", level="info", src="anuncios", msg=f"{arreglados} enlaces de Boligportal arreglados")
     write_config()
 
 

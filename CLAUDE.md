@@ -91,9 +91,10 @@ idea, la actual. Al cambiar algo, se reescribe lo que ya no es cierto; no se añ
   el vigilante avisa primero «NUEVO | ⭐ VANLØSE | …» y en Vanløse propone lo que falla un filtro con «no pasa: …» (`evaluar_fav`;
   solo rechaza alquilado, habitación, <4 værelser o <3 dormitorios). Juli Living (juliliving.dk) es fuente del vigilante SOLO en
   Vanløse (su JSON `jlet_units`, una petición por pasada; reservada o fuera de su lista = retirada); sus enlaces valen en todas partes.
-- Enlace de Boligportal = `https://www.boligportal.dk/lejligheder/id-<n>` (`portales.enlace_canonico`). El viejo en inglés
-  `/en/rental-apartments/<n>` lleva hoy a una página de búsqueda: backend (`enlace_bp`) y vigilante (`url_ok`) lo reescriben al
-  leer, y al arrancar el backend (`anuncios.arreglar_enlaces`) pasa los de la base al danés una vez (guarda `link_viejo`).
+- Enlace de Boligportal = `https://www.boligportal.dk/lejligheder/bolig/lejlighed-id-<n>` (`portales.enlace_canonico`; redirige
+  al enlace largo del anuncio). `/en/rental-apartments/<n>` y `/lejligheder/id-<n>` abren hoy una página de BÚSQUEDA: backend
+  (`enlace_bp`) y vigilante (`url_ok`) los reescriben al leer, y al arrancar el backend (`anuncios.arreglar_enlaces`) arregla los
+  de la base (guarda el original en `link_viejo`).
 - Lejebolig: Lares NO lo busca (decisión de Jon, 27-oct). Sus enlaces solo entran a mano (chat o barra de la web).
 - Compartir (decisión de Jon, 1-nov): si en Boligportal el casero no marca «Delevenlig» (`features.shareable` = false), el
   anuncio se RECHAZA («no permite compartir (dato del portal)»), aunque sea el motivo nº 1 de rechazo (84 de 150 anuncios de 4 vær.).

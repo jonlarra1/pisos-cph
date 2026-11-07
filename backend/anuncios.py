@@ -76,8 +76,8 @@ def crear_tablas(con):
 
 
 def arreglar_enlaces(con):
-    """Pasa los enlaces viejos en inglés de Boligportal al danés (los viejos ya no llevan al anuncio).
-    Guarda el viejo en `link_viejo` y apunta el cambio en el historial. Se puede repetir: lo arreglado no se toca.
+    """Arregla los enlaces de Boligportal que abren una búsqueda en vez del anuncio (ver portales.enlace_bp).
+    Guarda el original en `link_viejo` y apunta el cambio en el historial. Se puede repetir: lo arreglado no se toca.
     Devuelve cuántos."""
     n, ahora = 0, int(time.time())
     for uid, datos in con.execute("SELECT uid, datos FROM anuncio WHERE portal='Boligportal'").fetchall():
@@ -85,7 +85,8 @@ def arreglar_enlaces(con):
         nuevo = portales.enlace_bp(d.get("link") or "")
         if nuevo == d.get("link"):
             continue
-        d["link_viejo"], d["link"] = d["link"], nuevo
+        d.setdefault("link_viejo", d["link"])  # el original (si ya se arregló una vez, se conserva el primero)
+        d["link"] = nuevo
         con.execute(
             "UPDATE anuncio SET datos=?, actualizado=? WHERE uid=?", (json.dumps(d, ensure_ascii=False), ahora, uid)
         )
@@ -95,7 +96,7 @@ def arreglar_enlaces(con):
             uid,
             estado,
             estado,
-            "enlace de Boligportal pasado al danés (el inglés ya no abre el anuncio)",
+            "enlace de Boligportal arreglado (el anterior abría una búsqueda)",
             "sistema",
             ahora,
         )

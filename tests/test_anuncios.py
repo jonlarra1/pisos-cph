@@ -54,14 +54,14 @@ class TestPortales(unittest.TestCase):
         d = P.ficha("https://www.boligportal.dk/lejligheder/k%C3%B8benhavn/103m2-4-vaer-id-5481965")
         self.assertEqual((d["precio"], d["dep"], d["pre"], d["compartible"], d["amueblado"]), (16300, 48900, 16300, True, False))
         self.assertAlmostEqual(d["lat"], 55.711, places=2)
-        self.assertEqual(d["link"], "https://www.boligportal.dk/lejligheder/id-5481965")
+        self.assertEqual(d["link"], "https://www.boligportal.dk/lejligheder/bolig/lejlighed-id-5481965")
 
     def test_enlace_viejo_en_ingles_de_boligportal(self):
         vistos = []
         P.descargar = lambda url, timeout=20: (vistos.append(url), (200, url, ""))[1]
         P.estado("https://www.boligportal.dk/en/rental-apartments/5481965")
-        self.assertEqual(vistos, ["https://www.boligportal.dk/lejligheder/id-5481965"])   # el inglés es una búsqueda
-        self.assertEqual(P.enlace_bp("https://www.boligportal.dk/en/rental-apartments/5481965/"), "https://www.boligportal.dk/lejligheder/id-5481965")
+        self.assertEqual(vistos, ["https://www.boligportal.dk/lejligheder/bolig/lejlighed-id-5481965"])   # el inglés es una búsqueda
+        self.assertEqual(P.enlace_bp("https://www.boligportal.dk/en/rental-apartments/5481965/"), "https://www.boligportal.dk/lejligheder/bolig/lejlighed-id-5481965")
         otro = "https://www.boligportal.dk/lejligheder/k%C3%B8benhavn/103m2-4-vaer-id-5481965"
         self.assertEqual(P.enlace_bp(otro), otro)
 
@@ -134,9 +134,16 @@ class TestArreglarEnlaces(unittest.TestCase):
         self.assertEqual(A.arreglar_enlaces(con), 1)
         a = A.obtener(con, "Boligportal:5363124")
         self.assertEqual((a["datos"]["link"], a["datos"]["link_viejo"], a["datos"]["precio"], a["estado"]),
-                         ("https://www.boligportal.dk/lejligheder/id-5363124", viejo, 17900, "contactado"))
-        self.assertIn("danés", A.historial(con, "Boligportal:5363124")[0]["motivo"])
+                         ("https://www.boligportal.dk/lejligheder/bolig/lejlighed-id-5363124", viejo, 17900, "contactado"))
+        self.assertIn("arreglado", A.historial(con, "Boligportal:5363124")[0]["motivo"])
         self.assertEqual(A.arreglar_enlaces(con), 0)
+        # el corto /lejligheder/id-<n> (estuvo instalado unos minutos el 7-nov) también abre una búsqueda: se arregla
+        # y se conserva el original
+        d = dict(a["datos"], link="https://www.boligportal.dk/lejligheder/id-5363124")
+        con.execute("UPDATE anuncio SET datos=? WHERE uid=?", (A.json.dumps(d), "Boligportal:5363124"))
+        self.assertEqual(A.arreglar_enlaces(con), 1)
+        a = A.obtener(con, "Boligportal:5363124")
+        self.assertEqual((a["datos"]["link"], a["datos"]["link_viejo"]), ("https://www.boligportal.dk/lejligheder/bolig/lejlighed-id-5363124", viejo))
 
 
 class TestEvaluar(unittest.TestCase):

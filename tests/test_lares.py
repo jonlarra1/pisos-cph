@@ -240,11 +240,11 @@ class TestEstadoAnuncio(unittest.TestCase):
     def test_fallo_de_red_no_retira(self):
         self.link = self.BP; self.assertEqual(self.con(TimeoutError())[0], "desconocido")
     def test_enlace_viejo_en_ingles_de_boligportal(self):
-        self.assertEqual(self.m.url_ok("https://www.boligportal.dk/en/rental-apartments/5363124"), "https://www.boligportal.dk/lejligheder/id-5363124")
+        self.assertEqual(self.m.url_ok("https://www.boligportal.dk/en/rental-apartments/5363124"), "https://www.boligportal.dk/lejligheder/bolig/lejlighed-id-5363124")
         pedida = []
         def abrir(req, timeout=20): pedida.append(req.full_url); return Respuesta(200, req.full_url, "")
         with mock.patch("urllib.request.urlopen", abrir): self.m.estado_anuncio("https://www.boligportal.dk/en/rental-apartments/5363124")
-        self.assertEqual(pedida, ["https://www.boligportal.dk/lejligheder/id-5363124"])
+        self.assertEqual(pedida, ["https://www.boligportal.dk/lejligheder/bolig/lejlighed-id-5363124"])
     def test_url_con_o_danesa(self):
         self.assertNotIn("ø", self.m.url_ok(self.BP))
 

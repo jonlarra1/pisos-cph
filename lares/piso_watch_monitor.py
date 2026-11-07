@@ -209,11 +209,11 @@ def fetch(url, timeout=20):
 
 
 def url_ok(u):
-    """Enlaces con «ø» sin codificar (algunos de descartados.json): urllib no los abre tal cual. El enlace viejo
-    en inglés de Boligportal (/en/rental-apartments/<id>, hoy una búsqueda) se pasa al danés, que abre el anuncio."""
-    m = re.match(r"^https://(?:www\.)?boligportal\.dk/en/rental-apartments/(\d{4,10})/?$", u)
+    """Enlaces con «ø» sin codificar (algunos de descartados.json): urllib no los abre tal cual. Los de Boligportal que
+    abren una búsqueda (/en/rental-apartments/<id>, /lejligheder/id-<id>) pasan al que abre el anuncio."""
+    m = re.match(r"^https://(?:www\.)?boligportal\.dk/(?:en/rental-apartments/|lejligheder/id-)(\d{4,10})/?$", u)
     if m:
-        u = f"https://www.boligportal.dk/lejligheder/id-{m.group(1)}"
+        u = f"https://www.boligportal.dk/lejligheder/bolig/lejlighed-id-{m.group(1)}"
     return urllib.parse.quote(u, safe=":/?=&%#")
 
 

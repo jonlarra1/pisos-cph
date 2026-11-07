@@ -87,15 +87,15 @@ _PATRONES = (
 )
 # Juli Living: toda su oferta (libres y reservadas; lo alquilado no sale) en un JSON de su web. Sus ids son cortos:
 # llevan «jl» delante para no chocar con los de otros portales.
-# Boligportal cambió sus enlaces en inglés: /en/rental-apartments/<id> es ahora una página de búsqueda, no el anuncio.
-# El enlace que vale es el danés corto (redirige al anuncio). Los viejos se reescriben al leer (ver enlace_bp).
-_BP_VIEJO = re.compile(r"^https://(?:www\.)?boligportal\.dk/en/rental-apartments/(\d{4,10})/?$")
+# Boligportal: /en/rental-apartments/<id> y /lejligheder/id-<id> son hoy páginas de búsqueda, no el anuncio. Lo que
+# abre el anuncio es /lejligheder/<lo que sea>/<lo que sea>-id-<id> (redirige a su enlace largo). Ver enlace_bp.
+_BP_VIEJO = re.compile(r"^https://(?:www\.)?boligportal\.dk/(?:en/rental-apartments/|lejligheder/id-)(\d{4,10})/?$")
 
 
 def enlace_bp(url):
-    """Enlace viejo en inglés de Boligportal -> el danés que lleva al anuncio. Los demás, igual."""
+    """Enlace de Boligportal que lleva a una búsqueda (inglés o corto) -> el que abre el anuncio. Los demás, igual."""
     m = _BP_VIEJO.match(url or "")
-    return f"https://www.boligportal.dk/lejligheder/id-{m.group(1)}" if m else url
+    return f"https://www.boligportal.dk/lejligheder/bolig/lejlighed-id-{m.group(1)}" if m else url
 
 
 JULI_API = "https://juliliving.dk/wp-admin/admin-ajax.php?wp_lang=da_DK&action=jlet_units&locale=da"
@@ -119,7 +119,7 @@ def enlace_canonico(portal, pid, url=""):
     if portal == "Lejebolig":
         return f"https://en.lejebolig.dk/lejebolig/{pid}"
     if portal == "Boligportal":
-        return f"https://www.boligportal.dk/lejligheder/id-{pid}"
+        return f"https://www.boligportal.dk/lejligheder/bolig/lejlighed-id-{pid}"
     if portal == "Juli":  # la página del edificio + el número de la vivienda
         return f"{url.split('?')[0].replace('://www.', '://')}?boligID={pid[2:]}"
     return url.split("?")[0].split("#")[0]  # EDC: el id va dentro de una ruta larga
