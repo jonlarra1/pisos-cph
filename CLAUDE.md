@@ -58,6 +58,8 @@ idea, la actual. Al cambiar algo, se reescribe lo que ya no es cierto; no se añ
   `precalculo.py`, `routing.py` (route engine), `admin.html` (panel), `deploy.sh`, `smoke_test.py`, `firewall/`.
 - `lares/` — copies of what runs in Lares' profile on the Pi: `piso_watch_monitor.py` (vigilante), `pisos.py` (chat tool),
   `instrucciones-pisos.md` (goes into Lares' SOUL.md and skill `piso-watch-cph`). See `lares/README.md`.
+- `.claude/skills/boligportal-mensajes/` — skill para leer (solo leer) la bandeja de Boligportal de la cuenta compartida con
+  Claude in Chrome y cruzar los contactados con la base. Sin contraseñas ni cookies fuera del navegador.
 - `tools/` — `sync_web.py` (data → index.html), route builders (`prep.py`, `route.py`, `walkpaths.py`, `fixlate.py`, `direct.py`),
   `barrios.py`, `dora.py` (metrics).
 
