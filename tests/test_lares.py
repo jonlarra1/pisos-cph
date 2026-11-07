@@ -45,6 +45,8 @@ class Pasada:
     def fetch(self, url, timeout=20):
         if "github.io" in url: return json.dumps(self.mapa) if url.endswith("/pisos.json") else "[]"
         self.pedidas.append(url)
+        if url.startswith(self.m.JULI_API):                     # Juli Living: una sola respuesta con todo
+            return json.dumps({"data": {"units": self.paginas.get("juli", [])}})
         if url.startswith(self.m.EDC_API):                      # EDC: JSON de su API, páginas de paginas["edc"]
             pags = self.paginas.get("edc", []); n = int(url.rsplit("pageNr=", 1)[1]) - 1
             return json.dumps({"totalPages": len(pags), "items": [caso_edc(x) for x in (pags[n] if n < len(pags) else [])]})
@@ -414,6 +416,91 @@ class TestFiltros(unittest.TestCase):
     def test_avisos(self):
         _, _, av = self.ev(disp=None, texto="")
         self.assertIn("fecha de entrada sin confirmar", av); self.assertIn("compartir sin confirmar", av)
+
+
+
+FIX = os.path.join(ROOT, "tests", "fixtures")
+
+
+def vivienda_juli(i, **kw):
+    """Una vivienda tal como la da la lista de Juli Living (copia real: tests/fixtures/juli_units.json)."""
+    return {"id": i, "address": "Vanløse Torv 217, 3. th.", "postcode": "2720", "url": f"https://juliliving.dk/tagkronen-bolig/?boligID={i}",
+            "Road": "Vanløse Torv", "HouseNumber": "217", "ZipCity": "2720 Vanløse", "VacantDate": "2027-01-01", "nofRooms": 4,
+            "SquareMeters": 113, "RentPerMonth": 20550, "Headline": "Stor 4-værelses bolig", "UnitType": "Rækkehus",
+            "StatusText": "LEDIG", "projectName": "Tagkronen", "facilities": ["share_friendly", "elevator", "balcony"],
+            "Photos": [{"Type": "Forsidebillede", "Url": "https://nrep.estatetool.net/media/bolig/aa_B.jpg"},
+                       {"Type": "Plantegning", "Url": "https://nrep.estatetool.net/media/bolig/bb_B.jpg"}], **kw}
+
+
+class TestJuli(unittest.TestCase):
+    def setUp(self): self.m = cargar_modulo()
+    def test_lista_real_solo_vanlose_y_libres(self):
+        with open(os.path.join(FIX, "juli_units.json"), encoding="utf-8") as f: txt = f.read()
+        out = self.m.parse_juli(txt, "2026-11-07")
+        self.assertEqual(set(out), {"jl1594", "jl1596", "jl1600"})                  # 1644 está RESERVERET; lo demás no es 2720
+        a = out["jl1596"]
+        self.assertEqual((a["portal"], a["link"], a["precio"], a["m2"], a["vaer"], a["disp"], a["compartible"]),
+                         ("Juli", "https://juliliving.dk/tagkronen-bolig/?boligID=1596", 11900, 44, 1, "2026-12-01", False))
+        self.assertEqual(self.m.zona_de(a), "Vanløse")
+    def test_vivienda_de_4(self):
+        a = self.m.parse_juli(json.dumps({"data": {"units": [vivienda_juli(1700, VacantDate="2020-01-01")]}}), "2026-11-07")["jl1700"]
+        self.assertEqual((a["disp"], a["compartible"], a["balcon"], a["ascensor"], a["plano"]),
+                         ("ya", True, True, True, "https://nrep.estatetool.net/media/bolig/bb_B.jpg"))
+        self.assertEqual(a["fotos"][0], "https://nrep.estatetool.net/media/bolig/aa_B.jpg")
+    def test_num_id(self):
+        self.assertEqual(self.m.num_id("https://juliliving.dk/tagkronen-bolig/?boligID=1644"), "jl1644")
+        self.assertEqual(self.m.num_id("jl1644"), "jl1644")
+    def test_ficha(self):
+        with open(os.path.join(FIX, "juli_1596.html"), encoding="utf-8") as f: html = f.read()
+        with mock.patch.object(self.m, "fetch", lambda u, timeout=20: html):
+            d = self.m.detalle({"portal": "Juli", "link": "https://juliliving.dk/tagkronen-bolig/?boligID=1596"})
+        self.assertEqual((d["dep"], d["pre"], d["aconto"], d["contrato_meses"], d["lat"], d["lon"]), (35700, 11900, 600, 0, 55.687639, 12.491293))
+    def test_estado(self):
+        lista = {"data": {"units": [vivienda_juli(i) for i in range(1, 60)] + [vivienda_juli(1644, StatusText="RESERVERET")]}}
+        with mock.patch.object(self.m, "fetch", lambda u, timeout=20: json.dumps(lista)):
+            self.m.JULI_CACHE.clear()
+            self.assertEqual(self.m.estado_anuncio("https://juliliving.dk/x/?boligID=5")[0], "activo")
+            self.assertEqual(self.m.estado_anuncio("https://juliliving.dk/x/?boligID=1644")[0], "retirado")
+            self.assertEqual(self.m.estado_anuncio("https://juliliving.dk/x/?boligID=999")[0], "retirado")
+        with mock.patch.object(self.m, "fetch", lambda u, timeout=20: '{"data":{"units":[]}}'):
+            self.m.JULI_CACHE.clear()
+            self.assertEqual(self.m.estado_anuncio("https://juliliving.dk/x/?boligID=5")[0], "desconocido")
+    def test_pasada_solo_con_vanlose_activa(self):
+        pas = Pasada(self.m, {"juli": [vivienda_juli(1700)]}); c = pas()
+        self.assertFalse(any(u.startswith(self.m.JULI_API) for u in pas.pedidas))     # Vanløse no está en las zonas activas
+        cfg = json.loads((self.m.BRIDGE / "config.json").read_text(encoding="utf-8")); cfg["zonas"]["Vanløse"] = True
+        (self.m.BRIDGE / "config.json").write_text(json.dumps(cfg), encoding="utf-8")
+        pas = Pasada(self.m, {"juli": [vivienda_juli(1700)]}); c = pas()
+        self.assertEqual([p["id"] for p in c["pisos"]], ["jl1700"])
+        self.assertEqual(self.m.STATS["leidos"].get("Juli"), 1)
+
+
+class TestVanlose(unittest.TestCase):
+    """Vanløse = el barrio favorito: avisa aunque falle un filtro (con «no pasa: …»), salvo lo que hace imposible vivir 3."""
+    F, Z = TestFiltros.F, {"Herlev": True, "Vanløse": True}
+    def setUp(self): self.m = cargar_modulo()
+    def ev(self, **kw): return self.m.evaluar_fav(anuncio(1, lugar="Jernbane Allé 2720 Vanløse", **kw), self.F, self.Z)
+    def test_suave(self):
+        for kw, motivo in (({"precio": 30000}, "precio"), ({"disp": "2026-11-01"}, "libre el"), ({"contrato_meses": 6}, "contrato corto"),
+                           ({"texto": "Ikke delevenlig"}, "no permite compartir")):
+            with self.subTest(kw=kw):
+                ok, mot, av = self.ev(**kw)
+                self.assertTrue(ok); self.assertIsNone(mot); self.assertTrue(av[0].startswith("no pasa: ") and motivo in av[0])
+    def test_duro(self):
+        for kw in ({"vaer": 3}, {"titulo": "Room for rent"}, {"alquilado": True}, {"dorm": 2}):
+            with self.subTest(kw=kw): self.assertFalse(self.ev(**kw)[0])
+        self.assertFalse(self.m.evaluar_fav(anuncio(1, lugar="Jernbane Allé 2720 Vanløse", precio=30000), self.F, {"Vanløse": False})[0])
+    def test_fuera_de_vanlose_igual_que_siempre(self):
+        self.assertFalse(self.m.evaluar_fav(anuncio(1, precio=30000), self.F, self.Z)[0])
+    def test_aviso_de_vanlose_primero_y_con_estrella(self):
+        cfg = json.loads((self.m.BRIDGE / "config.json").read_text(encoding="utf-8")); cfg["zonas"]["Vanløse"] = True
+        (self.m.BRIDGE / "config.json").write_text(json.dumps(cfg), encoding="utf-8")
+        pas = Pasada(self.m, {"boligportal": [[1]], "juli": [vivienda_juli(1700, RentPerMonth=25000)]}); pas()
+        lineas = [x for x in pas.salida.getvalue().splitlines() if x.startswith("NUEVO")]
+        self.assertEqual(len(lineas), 2)
+        self.assertTrue(lineas[0].startswith("NUEVO | ⭐ VANLØSE | 25000 kr/mes"), lineas[0])
+        self.assertIn("no pasa: precio 25000 > 23000", lineas[0])
+        self.assertTrue(lineas[1].startswith("NUEVO | Herlev |"))
 
 
 if __name__ == "__main__":

@@ -5,12 +5,14 @@ Corre en el cron de Lares cada 3 h, sin LLM. Pasos:
  1. Lee config.json del buzón compartido con el mapa (pisos-bridge/): filtros, zonas
     permitidas (editables desde la web) y pisos que ya tienen estado.
  2. Lee el mapa publicado (pisos.json + descartados.json en GitHub Pages) para no repetir.
- 3. Descarga los listados de Boligportal y EDC (páginas adaptativas, ver PAGINAS) y, solo para los
-    que pasan el primer filtro, abre la ficha (máx. MAX_DETAIL por pasada, con caché).
- 4. Aplica los filtros en código y escribe:
+ 3. Descarga los listados de Boligportal y EDC (páginas adaptativas, ver PAGINAS) y, si Vanløse está activa,
+    la lista de Juli Living; solo para los que pasan el primer filtro, abre la ficha (máx. MAX_DETAIL por pasada,
+    con caché).
+ 4. Aplica los filtros en código (en Vanløse, el barrio favorito, avisa aunque falle uno: ver evaluar_fav) y escribe:
       candidatos.json  -> los que pasan (el mapa los muestra como «Propuestos por Lares»)
       rechazados.json  -> últimos rechazados con el motivo exacto
- 5. Imprime solo los candidatos NUEVOS (salida vacía = el agente no se despierta).
+ 5. Imprime solo los candidatos NUEVOS, los de Vanløse primero con «⭐ VANLØSE» (salida vacía = el agente no se
+    despierta).
 """
 
 import json
@@ -60,6 +62,19 @@ EDC_PAGINAS = (1, 3)  # por grupo de códigos postales: mínimo y máximo de pá
 MAX_DETAIL_EDC = 12  # fichas de EDC por pasada: lo de EDC no trae fecha en el listado, así que
 # no se propone hasta abrir su ficha (lo que no cabe espera a la siguiente pasada)
 EDC_MAX_URL = 1400  # con URLs muy largas EDC responde 404: se parten los códigos en grupos
+
+# Juli Living (juliliving.dk, edificio Tagkronen en Vanløse Torv): toda su oferta en un JSON (libres y reservadas;
+# lo alquilado ya no sale). Solo se mira Vanløse y solo si esa zona está activa. Ids con «jl» delante (son cortos).
+JULI_API = "https://juliliving.dk/wp-admin/admin-ajax.php?wp_lang=da_DK&action=jlet_units&locale=da"
+JULI_ZONA = "Vanløse"
+JULI_MIN_LISTA = 50  # con menos viviendas en la lista, la respuesta es rara: el comprobador no retira nada
+JULI_CACHE = {}  # la lista de esta pasada (la reusa el comprobador)
+JULI_LINK = re.compile(r"^https://(?:www\.)?juliliving\.dk/[a-z0-9-]+/?\?(?:[^#\s]*&)?boligID=(\d{1,8})(?:[&#]|$)")
+
+# Vanløse = el barrio favorito de Jon: ahí se avisa aunque falle un filtro, con «no pasa: …». Solo se rechaza lo
+# que hace imposible vivir los 3 (o que ya no está): estos motivos.
+FAV_ZONA = "Vanløse"
+FAV_DUROS = ("alquilado", "es una habitación", "zona excluida", "zona no reconocida", "ficha:", "plano:")
 
 
 def _r(a, b):
@@ -219,8 +234,11 @@ def estado_anuncio(link):
     """('activo' | 'retirado' | 'desconocido', motivo). Solo señales claras cuentan como retirado:
     Boligportal redirige con ?ad_rented_out_redirect=… («udlejet») o el anuncio trae un estado que no es ACTIVE_*;
     Lejebolig responde 404/410 («no longer available»).
+    Juli Living: reservada o fuera de su lista (ver estado_juli).
     Error de red o respuesta rara = desconocido: nunca se retira por un fallo."""
     lid = num_id(link)
+    if lid and lid.startswith("jl"):
+        return estado_juli(lid)
     req = urllib.request.Request(url_ok(link), headers={"User-Agent": UA, "Accept-Language": "da,en;q=0.8"})
     try:
         with urllib.request.urlopen(req, timeout=20) as r:
@@ -259,6 +277,9 @@ def write_json(path, obj):
 
 
 def num_id(url_or_id):
+    j = JULI_LINK.match(str(url_or_id)) or re.match(r"^jl(\d{1,8})$", str(url_or_id))
+    if j:
+        return "jl" + j.group(1)
     m = re.search(
         r"lejebolig/(\d+)|id-(\d+)|rental-apartments/(\d+)|edc\.dk/\S*/(\d{6,})/?(?:[?#]|$)|^(?:lb|bp|edc)?(\d+)$",
         str(url_or_id),
@@ -474,6 +495,8 @@ def detalle(item):
     """Abre la ficha para sacar contrato y texto (y fecha si la hay)."""
     if item.get("portal") == "EDC":
         return detalle_edc(item)
+    if item.get("portal") == "Juli":
+        return detalle_juli(item)
     req = urllib.request.Request(item["link"], headers={"User-Agent": UA, "Accept-Language": "da,en;q=0.8"})
     with urllib.request.urlopen(req, timeout=15) as r:
         final, h = r.geturl(), r.read().decode("utf-8", "replace")
@@ -518,6 +541,97 @@ def detalle(item):
 
 
 # ------------------------------------------------------------------ filtros
+def _viviendas_juli(text):
+    return (json.loads(text).get("data") or {}).get("units") or []
+
+
+def lista_juli():
+    """Viviendas de Juli Living ({id: vivienda}), una descarga por pasada (la guarda leer_portales)."""
+    if "units" not in JULI_CACHE:
+        JULI_CACHE["units"] = {f"jl{u.get('id')}": u for u in _viviendas_juli(fetch(JULI_API))}
+    return JULI_CACHE["units"]
+
+
+def parse_juli(text, hoy):
+    """JSON de Juli Living -> anuncios libres de Vanløse. La fecha pasada («VacantDate» 2020-…) = libre ya."""
+    out = {}
+    for u in _viviendas_juli(text):
+        m = JULI_LINK.match(str(u.get("url") or ""))
+        if u.get("StatusText") != "LEDIG" or int(u.get("postcode") or 0) not in ZONA_POSTNR[JULI_ZONA] or not m:
+            continue
+        fac, fotos = set(u.get("facilities") or []), [p for p in u.get("Photos") or [] if isinstance(p, dict)]
+        urls = [p["Url"] for p in fotos if str(p.get("Url", "")).startswith("https://nrep.estatetool.net/media/bolig/")]
+        disp = str(u.get("VacantDate") or "")[:10] or None
+        lid = "jl" + m.group(1)
+        out[lid] = {
+            "portal": "Juli",
+            "id": lid,
+            "link": f"{u['url'].split('?')[0].replace('://www.', '://')}?boligID={m.group(1)}",
+            "titulo": f"{u.get('UnitType') or 'Bolig'} på {u.get('Road')} {u.get('HouseNumber')} i {JULI_ZONA}"
+            f" ({u.get('projectName') or 'Juli Living'}): {u.get('Headline') or ''}"[:200],
+            "lugar": f"{u.get('address') or ''} {u.get('ZipCity') or ''}".strip(),
+            "precio": int(u.get("RentPerMonth") or 0),
+            "m2": u.get("SquareMeters"),
+            "vaer": u.get("nofRooms"),
+            "disp": ("ya" if disp < hoy else disp) if disp else None,
+            "compartible": "share_friendly" in fac,  # Juli marca «Delevenlig» en cada vivienda que lo es
+            "balcon": "balcony" in fac,
+            "ascensor": "elevator" in fac,
+            "mascotas": "domestic_animal" in fac,
+            "lavadora": "washing_machine" in fac,
+            "parking": "parking_basement" in fac or None,
+            "fotos": urls[:15],
+            "plano": next((p["Url"] for p in fotos if p.get("Type") == "Plantegning" and p.get("Url") in urls), None),
+        }
+    return out
+
+
+def estado_juli(lid):
+    """('activo' | 'retirado' | 'desconocido', motivo) según la lista de Juli Living: reservada o fuera = retirada."""
+    try:
+        units = lista_juli()
+    except Exception as e:
+        return "desconocido", type(e).__name__
+    if len(units) < JULI_MIN_LISTA:
+        return "desconocido", f"lista corta ({len(units)} viviendas)"
+    u = units.get(lid)
+    if u is None:
+        return "retirado", "ya no sale en Juli Living (alquilado)"
+    if u.get("StatusText") != "LEDIG":
+        return "retirado", "reservada en Juli Living" if u.get(
+            "StatusText"
+        ) == "RESERVERET" else "no está libre en Juli Living"
+    return "activo", "LEDIG"
+
+
+def detalle_juli(item):
+    """Ficha de Juli Living: depósito y prepago por separado, a conto, coordenadas, contrato y texto."""
+    h = fetch(item["link"])
+    t = re.sub(
+        r"\s+",
+        " ",
+        unescape(re.sub(r"<[^>]+>", " ", re.sub(r"<script.*?</script>|<style.*?</style>", " ", h, flags=re.S))),
+    )
+
+    def kr(pat):
+        m = re.search(pat, t)
+        return int(re.sub(r"\D", "", m.group(1))) if m else None
+
+    ac = [int(re.sub(r"\D", "", x)) for x in re.findall(r"A conto [a-zæøå ]{2,20}? ([\d.]+) kr", t)]
+    geo = re.search(r'data-lat="([\d.]+)"\s*data-lng="([\d.]+)"', h)
+    i = t.find("Boligen Rum/vær.")
+    return {
+        "dep": kr(r"Depositum(?: \([^)]{0,20}\))? ([\d.]+) kr"),
+        "pre": kr(r"Forudbetalt leje ([\d.]+) kr"),
+        "aconto": sum(ac) if ac else None,
+        "contrato_meses": 0 if re.search(r"Opsigelse Løbende måned", t) and "tidsbegrænset" not in t.lower() else None,
+        "lat": float(geo.group(1)) if geo else None,
+        "lon": float(geo.group(2)) if geo else None,
+        "texto": t[i : i + 6000] if i >= 0 else "",
+        "amueblado": amueblado_de(t[i : i + 6000]) if i >= 0 else None,
+    }
+
+
 def zona_de(item):
     hay = f"{item.get('titulo', '')} {item.get('lugar', '')}".lower()
     for k in sorted(ZONA_ALIAS, key=len, reverse=True):
@@ -583,6 +697,17 @@ def evaluar(item, F, zonas):
     else:
         avisos.append(f"sin plano: {dmin} dormitorios por confirmar")
     return True, None, avisos
+
+
+def evaluar_fav(item, F, zonas):
+    """evaluar() + la regla de Vanløse: allí lo que falla un filtro se propone igual, con «no pasa: …» delante."""
+    ok, motivo, avisos = evaluar(item, F, zonas)
+    if ok or zona_de(item) != FAV_ZONA or not zonas.get(FAV_ZONA) or motivo.startswith(FAV_DUROS):
+        return ok, motivo, avisos
+    if "værelser (<" in motivo:  # menos de 4 værelser: no caben los 3
+        return ok, motivo, avisos
+    item["zona"] = FAV_ZONA
+    return True, None, [f"no pasa: {motivo}"] + avisos
 
 
 # ---------------------------------------------------------------------- main
@@ -789,6 +914,17 @@ def leer_portales(vistos_antes, zonas, F):
                 break  # no hay más páginas
             if i + 1 >= minimo and not (set(page) - vistos_antes):
                 break
+    if zonas.get(JULI_ZONA):
+        JULI_CACHE.clear()
+        try:
+            txt = fetch(JULI_API)
+            page = parse_juli(txt, datetime.now(timezone.utc).date().isoformat())
+            JULI_CACHE["units"] = {f"jl{u.get('id')}": u for u in _viviendas_juli(txt)}
+        except Exception as e:
+            errors.append(f"juli: {type(e).__name__}")
+        else:
+            listings.update(page)
+            paginas["juli"] = 1
     return listings, errors, paginas
 
 
@@ -830,7 +966,7 @@ def evaluar_anuncios(con, listings, known, planos, F, zonas, decididos, now, fic
 
 def _evaluar_con_ficha(con, ev, it, lid, sin_cache, F, zonas, now):
     """(ok, motivo, avisos), o None si es de EDC y no se pudo abrir su ficha (sin ficha no se propone)."""
-    ok, motivo, avisos = evaluar(it, F, zonas)
+    ok, motivo, avisos = evaluar_fav(it, F, zonas)
     de_edc = it.get("_edc") and sin_cache
     if ok and de_edc and ev.budget_edc <= 0:
         ev.pendientes += 1
@@ -846,7 +982,7 @@ def _evaluar_con_ficha(con, ev, it, lid, sin_cache, F, zonas, now):
                 "INSERT OR REPLACE INTO v2_detalle VALUES (?,?,?)", (lid, json.dumps(d, ensure_ascii=False), now)
             )
             it.update({k: v for k, v in d.items() if v is not None and (k == "texto" or it.get(k) in (None, ""))})
-            ok, motivo, avisos = evaluar(it, F, zonas)
+            ok, motivo, avisos = evaluar_fav(it, F, zonas)
         except Exception:
             if de_edc:
                 ev.pendientes += 1
@@ -995,9 +1131,10 @@ def resumen(listings, paginas, errors, ev, known):
         edc_pendientes=ev.pendientes,
         mapa_conocidos=len(known),
     )
-    for n in ev.nuevos:
+    for n in sorted(ev.nuevos, key=lambda n: n["zona"] != FAV_ZONA):  # Vanløse primero
+        zona = "⭐ VANLØSE" if n["zona"] == FAV_ZONA else n["zona"]
         print(
-            f"NUEVO | {n['zona']} | {n['precio']} kr/mes | {n['m2'] or '?'} m², {n['vaer'] or '?'} vær. | "
+            f"NUEVO | {zona} | {n['precio']} kr/mes | {n['m2'] or '?'} m², {n['vaer'] or '?'} vær. | "
             f"{(n['titulo'] or '')[:45]} | {n['link']}" + (f" | ⚠ {', '.join(n['avisos'][:2])}" if n["avisos"] else "")
         )
     if errors and not ev.nuevos:
