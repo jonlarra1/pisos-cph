@@ -11,6 +11,7 @@ import api_v2, portales                                      # noqa: E402  (ya e
 LB = "https://en.lejebolig.dk/lejebolig/1812509"
 BP = "https://www.boligportal.dk/lejligheder/k%C3%B8benhavn/103m2-4-vaer-id-5481965"
 EDC = "https://www.edc.dk/leje/lejlighed/2600-glostrup/grannaalen-1-st-2/11810121/"
+JULI = "https://juliliving.dk/tagkronen-bolig/?boligID=1596"
 WEB, LARES, VIG, COMP = "clave-test", "clave-lares-test", "clave-vigilante-test", "clave-comprobador-test"
 
 
@@ -42,9 +43,9 @@ class BaseV2(Base):
         with app.db() as c:
             c.execute("DELETE FROM cambio"); c.execute("DELETE FROM alias"); c.execute("DELETE FROM anuncio")
             # estados de la web y retirados ya aplicados de los pisos de prueba: cada test empieza limpio
-            c.execute("DELETE FROM estado WHERE id IN ('5481965', '11810121', '1812509')")
-            c.execute("DELETE FROM retirado_aplicado WHERE id IN ('5481965', '11810121', '1812509')")
-            c.execute("UPDATE zonas SET permitida=1 WHERE zona IN ('Herlev','Brønshøj','Glostrup')")
+            c.execute("DELETE FROM estado WHERE id IN ('5481965', '11810121', '1812509', 'jl1596')")
+            c.execute("DELETE FROM retirado_aplicado WHERE id IN ('5481965', '11810121', '1812509', 'jl1596')")
+            c.execute("UPDATE zonas SET permitida=1 WHERE zona IN ('Herlev','Brønshøj','Glostrup','Vanløse')")
 
     def tearDown(self):
         portales.descargar, portales.geocodificar = self._d, self._g
@@ -58,6 +59,13 @@ class TestAnadirEnlace(BaseV2):
         code, _, lista = pedir("/api/v2/anuncios?estado=propuesto")
         self.assertEqual([x["uid"] for x in lista["anuncios"]], ["EDC:11810121"])
         self.assertNotIn("texto", lista["anuncios"][0]["datos"])                 # la lista no lleva el texto largo
+
+    def test_enlace_de_juli_living(self):
+        code, _, a = post("/api/v2/enlaces", {"url": JULI, "quien": "jon"}, WEB, "https://jonlarra1.github.io")
+        self.assertEqual((code, a["uid"], a["estado"], a["datos"]["zona"]), (200, "Juli:jl1596", "propuesto", "Vanløse"))
+        self.assertEqual((a["datos"]["dep"], a["datos"]["pre"]), (35700, 11900))
+        code, _, a = post(uid_url("Juli:jl1596") + "/estado", {"estado": "gusta", "quien": "jon"}, WEB, "https://jonlarra1.github.io")
+        self.assertEqual((code, a["estado"]), (200, "gusta"))
 
     def test_se_propone_aunque_no_pase_con_el_motivo_como_aviso(self):
         code, _, a = post("/api/v2/enlaces", {"url": LB, "quien": "jon"}, WEB, "https://jonlarra1.github.io")

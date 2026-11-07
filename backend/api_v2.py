@@ -30,7 +30,7 @@ import portales as P
 
 MAX_CUERPO = {"/api/v2/anuncios": 64_000}  # el vigilante manda el texto del anuncio; lo demás es pequeño
 MAX_CUERPO_DEFECTO = 2_000
-UID_RE = re.compile(r"^(Lejebolig|Boligportal|EDC):\d{4,10}$")
+UID_RE = re.compile(r"^(?:(?:Lejebolig|Boligportal|EDC):\d{4,10}|Juli:jl\d{1,8})$")
 QUIEN_RE = re.compile(r"^[a-z]{2,12}$")
 ESCRITURAS_MIN = {"web": 30, "lares": 60, "vigilante": 600, "comprobador": 600}  # por minuto
 LECTOR_PAUSA = 2.0  # s entre fichas de la cola (ritmo suave con los portales)

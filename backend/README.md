@@ -13,7 +13,8 @@ fotos, logs, checks y panel privado. Python stdlib + SQLite (WAL), en Docker. C�
 - `app.py` — servidor HTTP, endpoints de la web, límites de peticiones, SSE, logs, checks del monitor y panel.
 - `api_v2.py` — `/api/v2/…`: permisos por clave de cliente (lista de endpoints arriba del archivo).
 - `anuncios.py` — el anuncio: reglas (`evaluar`), estados, historial (`cambio`), duplicados (`alias`).
-- `portales.py` — lee la ficha de un anuncio de Boligportal, EDC o Lejebolig a partir de su enlace.
+- `portales.py` — lee la ficha de un anuncio de Boligportal, EDC, Lejebolig o Juli Living a partir de su enlace
+  (Juli: uid `Juli:jl<n>`; su estado sale de su lista JSON, porque su ficha responde 200 aunque la vivienda ya no exista).
 - `puente.py` — une la base única con lo que la web lee hoy (`/api/candidatos`, tabla `estado`). Se borra en el paso D del plan.
 - `destinos.py` — destinos compartidos. `precalculo.py` — rutas previas de los destinos y freno del motor. `routing.py` — motor de rutas (GTFS).
 

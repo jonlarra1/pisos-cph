@@ -14,6 +14,8 @@ FICHAS = {
     "https://en.lejebolig.dk/lejebolig/1812509": "lejebolig_1812509.html",
     "https://www.boligportal.dk/lejligheder/k%C3%B8benhavn/103m2-4-vaer-id-5481965": "boligportal_5481965.html",
     "https://www.edc.dk/leje/lejlighed/2600-glostrup/grannaalen-1-st-2/11810121/": "edc_11810121.html",
+    "https://juliliving.dk/tagkronen-bolig/?boligID=1596": "juli_1596.html",
+    P.JULI_API: "juli_units.json",
 }
 FILTROS = {"precio_max": 23000, "dorm_min": 3, "disp_desde": "2026-12-18", "disp_hasta": "2027-01-15",
            "compartir": True, "contrato_largo": True, "amueblado": "igual"}
@@ -60,9 +62,37 @@ class TestPortales(unittest.TestCase):
         self.assertEqual((d["disp"], d["ciudad"], d["cp"]), ("2027-01-01", "Glostrup", "2600"))
         self.assertAlmostEqual(d["lat"], 55.682, places=2)
 
+    def test_juli_trae_dinero_separado_fecha_y_coordenadas(self):
+        d = P.ficha("https://juliliving.dk/tagkronen-bolig/?boligID=1596")
+        self.assertEqual((d["portal"], d["pid"], d["link"]), ("Juli", "jl1596", "https://juliliving.dk/tagkronen-bolig/?boligID=1596"))
+        self.assertEqual((d["precio"], d["aconto"], d["dep"], d["pre"], d["m2"], d["vaer"]), (11900, 600, 35700, 11900, 44, 1))
+        self.assertEqual((d["disp"], d["cp"], d["ciudad"], d["calle"], d["compartible"], d["contrato_meses"]),
+                         ("2026-12-01", "2720", "Vanløse", "Vanløse Torv 47", False, 0))
+        self.assertEqual(d["planta"], "3. 5")
+        self.assertEqual((d["lat"], d["lon"]), (55.687639, 12.491293))
+        self.assertTrue(d["fotos"] and all(u.startswith("https://nrep.estatetool.net/media/bolig/") for u in d["fotos"]))
+
+    def test_juli_reservado_no_se_lee(self):
+        FICHAS["https://juliliving.dk/tagkronen-bolig/?boligID=1644"] = "juli_1644.html"
+        with self.assertRaises(P.AnuncioNoValido) as e: P.ficha("https://juliliving.dk/tagkronen-bolig/?boligID=1644")
+        self.assertIn("reservad", str(e.exception))
+
+    def test_juli_enlaces(self):
+        self.assertEqual(P.identificar("https://juliliving.dk/tagkronen-bolig/?boligID=1644"), ("Juli", "jl1644"))
+        self.assertEqual(P.identificar("https://www.juliliving.dk/tagkronen-bolig/?utm=x&boligID=1644#top"), ("Juli", "jl1644"))
+        for u in ("https://juliliving.dk.evil.com/x/?boligID=1", "https://juliliving.dk/x/?boligID=", "http://juliliving.dk/x/?boligID=1"):
+            with self.assertRaises(P.AnuncioNoValido, msg=u): P.identificar(u)
+
+    def test_juli_estado_por_su_lista(self):
+        self.assertEqual(P.estado("https://juliliving.dk/tagkronen-bolig/?boligID=1596"), ("activo", ""))
+        self.assertEqual(P.estado("https://juliliving.dk/tagkronen-bolig/?boligID=1644")[0], "retirado")   # RESERVERET
+        self.assertEqual(P.estado("https://juliliving.dk/tagkronen-bolig/?boligID=99999")[0], "retirado")  # ya no sale
+        P.descargar = lambda url, timeout=20: (200, url, '{"data":{"units":[]}}')                           # lista vacía: no fiarse
+        self.assertEqual(P.estado("https://juliliving.dk/tagkronen-bolig/?boligID=1596")[0], "desconocido")
+
     def test_ficha_devuelve_siempre_los_mismos_campos(self):
         for u in FICHAS:
-            self.assertEqual(tuple(P.ficha(u)), P.CAMPOS)
+            if u != P.JULI_API and "1644" not in u: self.assertEqual(tuple(P.ficha(u)), P.CAMPOS)
 
     def test_debe_fallar_enlaces_que_no_son_anuncios(self):
         for u in ("", "javascript:alert(1)", "http://en.lejebolig.dk/lejebolig/1812509", "https://evil.com/lejebolig/1812509",

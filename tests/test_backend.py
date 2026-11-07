@@ -85,6 +85,7 @@ class TestImgUrl(Base):
                   "https://user:pw@image-lambda.boligportal.dk/x", "https://image-lambda.boligportal.dk/../../etc/passwd",
                   "https://image-lambda.boligportal.dk/%2e%2e/x", "https://s3.eu-central-1.amazonaws.com/otro-bucket/x.jpg",
                   "https://billeder.edc.dk/otra-carpeta/x.jpg", "https://billeder.edc.dk/edcmedia/../x.jpg",
+                  "https://nrep.estatetool.net/documents/x.pdf", "https://nrep.estatetool.net/media/bolig/../../x",
                   "file:///etc/passwd", "https://127.0.0.1/x", ""):
             with self.subTest(u=u), self.assertRaises(ValueError): app.img_proxy(u)
     def test_redirecciones_solo_a_portales(self):

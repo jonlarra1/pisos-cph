@@ -1,4 +1,4 @@
-"""Lectura de anuncios de los portales (Lejebolig, Boligportal, EDC) para pisos-api. Solo stdlib.
+"""Lectura de anuncios de los portales (Lejebolig, Boligportal, EDC, Juli Living) para pisos-api. Solo stdlib.
 
     ficha(url)              -> dict con los campos normalizados del anuncio (ver CAMPOS)
     estado(url)             -> ("activo" | "retirado" | "desconocido", motivo)
@@ -83,7 +83,12 @@ _PATRONES = (
         re.compile(r"^https://(?:www\.)?boligportal\.dk/\S*?(?:id-|rental-apartments/)(\d{4,10})(?:[/?#]|$)"),
     ),
     ("EDC", re.compile(r"^https://(?:www\.)?edc\.dk/leje/\S*?/(\d{6,10})/?(?:[?#]|$)")),
+    ("Juli", re.compile(r"^https://(?:www\.)?juliliving\.dk/[a-z0-9-]+/?\?(?:[^#\s]*&)?boligID=(\d{1,8})(?:[&#]|$)")),
 )
+# Juli Living: toda su oferta (libres y reservadas; lo alquilado no sale) en un JSON de su web. Sus ids son cortos:
+# llevan «jl» delante para no chocar con los de otros portales.
+JULI_API = "https://juliliving.dk/wp-admin/admin-ajax.php?wp_lang=da_DK&action=jlet_units&locale=da"
+JULI_MIN_LISTA = 50  # con menos viviendas en la lista, la respuesta es rara: no se retira nada
 
 
 def identificar(url):
@@ -95,8 +100,8 @@ def identificar(url):
     for portal, pat in _PATRONES:
         m = pat.match(u)
         if m:
-            return portal, m.group(1)
-    raise AnuncioNoValido("solo enlaces de anuncios de Lejebolig, Boligportal o EDC")
+            return portal, ("jl" if portal == "Juli" else "") + m.group(1)
+    raise AnuncioNoValido("solo enlaces de anuncios de Lejebolig, Boligportal, EDC o Juli Living")
 
 
 def enlace_canonico(portal, pid, url=""):
@@ -104,6 +109,8 @@ def enlace_canonico(portal, pid, url=""):
         return f"https://en.lejebolig.dk/lejebolig/{pid}"
     if portal == "Boligportal":
         return f"https://www.boligportal.dk/en/rental-apartments/{pid}"
+    if portal == "Juli":  # la página del edificio + el número de la vivienda
+        return f"{url.split('?')[0].replace('://www.', '://')}?boligID={pid[2:]}"
     return url.split("?")[0].split("#")[0]  # EDC: el id va dentro de una ruta larga
 
 
@@ -286,6 +293,72 @@ def _edc(pid, html, url):
     return d
 
 
+# ------------------------------------------------------------------ Juli Living
+def _juli(pid, html):
+    """Ficha de Juli Living (HTML de su web). Una vivienda reservada no se lee: ya no se puede alquilar."""
+    t = _texto(html)
+    est = re.search(r"\b(LEDIG|RESERVERET|UDLEJET)\b[^|]{0,30}? Boligen Rum/vær\.", t)
+    if not est:
+        raise AnuncioNoValido("el anuncio ya no está publicado")
+    if est.group(1) != "LEDIG":
+        raise AnuncioNoValido(
+            f"Juli Living: la vivienda está {'reservada' if est.group(1) == 'RESERVERET' else 'alquilada'}"
+        )
+    dir_ = re.search(r'data-address="([^",]{3,40}?) (\d+[A-Z]?)(?:, ([^"]{0,20}?))? (\d{4})"', html)
+    ciudad = re.search(rf"{dir_.group(4)} ([A-ZÆØÅ][a-zæøå]+(?: [A-ZÆØÅ]\w*)?) {est.group(1)}", t) if dir_ else None
+
+    def kr(pat):
+        return _kr((re.search(pat, t) or [None, None])[1])
+
+    ac = [_kr(x) for x in re.findall(r"A conto [a-zæøå ]{2,20}? ([\d.]+) kr", t)]
+    ov = re.search(r"Overtagelse fra (?:(\d{2})\.(\d{2})\.(\d{4})|Ledig)", t)
+    geo = re.search(r'data-lat="([\d.]+)"\s*data-lng="([\d.]+)"', html)
+    i = t.find("Boligen Rum/vær.")
+    return {
+        "titulo": unescape((re.search(r'<meta property="og:title" content="([^"]+)"', html) or [None, ""])[1]) or None,
+        "calle": f"{dir_.group(1)} {dir_.group(2)}" if dir_ else None,
+        "planta": dir_.group(3) or None if dir_ else None,
+        "cp": dir_.group(4) if dir_ else None,
+        "ciudad": ciudad.group(1) if ciudad else None,
+        "precio": kr(r"Leje pr\. måned ([\d.]+) kr"),
+        "aconto": sum(ac) if ac else None,
+        "dep": kr(r"Depositum(?: \([^)]{0,20}\))? ([\d.]+) kr"),
+        "pre": kr(r"Forudbetalt leje ([\d.]+) kr"),
+        "m2": kr(r"Bruttoareal (\d+) m"),
+        "vaer": kr(r"Rum/vær\. (\d+)"),
+        "disp": (f"{ov.group(3)}-{ov.group(2)}-{ov.group(1)}" if ov.group(1) else "ya") if ov else None,
+        "contrato_meses": 0 if re.search(r"Opsigelse Løbende måned", t) and "tidsbegrænset" not in t.lower() else None,
+        "compartible": bool(re.search(r"\bDelevenlig\b", t)),  # Juli marca «Delevenlig» en cada vivienda que lo es
+        "lat": float(geo.group(1)) if geo else None,
+        "lon": float(geo.group(2)) if geo else None,
+        "fotos": list(dict.fromkeys(re.findall(r"https://nrep\.estatetool\.net/media/bolig/[0-9a-f]+_B\.jpg", html)))[
+            :15
+        ],
+        "texto": t[i : i + 4000] if i >= 0 else None,
+    }
+
+
+def _estado_juli(pid):
+    """Estado de una vivienda de Juli Living según su lista: reservada o fuera de la lista = retirada."""
+    code, _, txt = descargar(JULI_API)
+    if code != 200:
+        return "desconocido", f"HTTP {code}"
+    try:
+        units = (json.loads(txt).get("data") or {}).get("units") or []
+    except ValueError:
+        return "desconocido", "lista ilegible"
+    if len(units) < JULI_MIN_LISTA:
+        return "desconocido", f"lista corta ({len(units)} viviendas)"
+    u = next((x for x in units if f"jl{x.get('id')}" == pid), None)
+    if u is None:
+        return "retirado", "ya no sale en Juli Living (alquilado)"
+    if u.get("StatusText") != "LEDIG":
+        return "retirado", "reservada en Juli Living" if u.get(
+            "StatusText"
+        ) == "RESERVERET" else "no está libre en Juli Living"
+    return "activo", ""
+
+
 # ------------------------------------------------------------------ texto común
 _FURN_NO = re.compile(r"umøbleret|ikke møbleret|unfurnished|not furnished", re.I)
 _FURN_SI = re.compile(r"(?<!u)møbleret|(?<!un)furnished", re.I)
@@ -308,7 +381,7 @@ def ficha(url):
         raise AnuncioNoValido("el anuncio ya no está publicado")
     if code != 200 or not html:
         raise AnuncioNoValido(f"{portal} respondió HTTP {code}")
-    lector = {"Lejebolig": _lejebolig, "Boligportal": _boligportal}.get(portal)
+    lector = {"Lejebolig": _lejebolig, "Boligportal": _boligportal, "Juli": _juli}.get(portal)
     d = lector(pid, html) if lector else _edc(pid, html, url)
     if not d.get("precio"):
         raise AnuncioNoValido(f"{portal}: no se encuentra el precio en la ficha")
@@ -323,6 +396,8 @@ def estado(url):
     o un estado que no es ACTIVE_*. Un fallo de red es «desconocido»: nunca se retira por un error nuestro."""
     portal, pid = identificar(url)
     try:
+        if portal == "Juli":  # su ficha sale «200» aunque la vivienda ya no exista: manda su lista
+            return _estado_juli(pid)
         code, final, html = descargar(url)
     except Exception as e:
         return "desconocido", type(e).__name__

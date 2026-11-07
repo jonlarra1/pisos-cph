@@ -98,6 +98,7 @@ IMG_HOSTS = {
     "image-lambda.boligportal.dk": "https://www.boligportal.dk/",
     "s3.eu-central-1.amazonaws.com": None,
     "billeder.edc.dk": "https://www.edc.dk/",
+    "nrep.estatetool.net": "https://juliliving.dk/",  # fotos de Juli Living
 }
 IMG_MAX_MB, IMG_CACHE_MB = 8, 300
 IMG_STATS = {"hit": 0, "fetch": 0, "error": 0}
@@ -458,6 +459,8 @@ def img_proxy(u):
         raise ValueError("ruta no permitida")
     if pu.hostname == "billeder.edc.dk" and not raw.startswith("/edcmedia/"):
         raise ValueError("ruta no permitida")
+    if pu.hostname == "nrep.estatetool.net" and not raw.startswith("/media/bolig/"):
+        raise ValueError("ruta no permitida")
     key = hashlib.sha1(u.encode(), usedforsecurity=False).hexdigest()
     path = os.path.join(IMG_DIR, key)
     if os.path.exists(path):
@@ -495,7 +498,16 @@ def img_proxy(u):
     return (
         data,
         ctype,
-        "portal:" + ("boligportal" if "boligportal" in pu.hostname else "edc" if "edc" in pu.hostname else "lejebolig"),
+        "portal:"
+        + (
+            "boligportal"
+            if "boligportal" in pu.hostname
+            else "edc"
+            if "edc" in pu.hostname
+            else "juli"
+            if "estatetool" in pu.hostname
+            else "lejebolig"
+        ),
     )
 
 
