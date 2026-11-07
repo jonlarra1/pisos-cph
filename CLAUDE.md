@@ -134,7 +134,7 @@ idea, la actual. Al cambiar algo, se reescribe lo que ya no es cierto; no se añ
   listar todos los módulos que importa `app.py` (hay test).
 - Commits pequeños + push, estilo midudev: `type(scope): summary` en inglés, sin Co-Authored-By.
 
-## Pendientes (1-nov)
+## Pendientes (7-nov)
 1. Plan de `docs/arquitectura.md` en DOS instalaciones (decisión de Jon, 28-oct):
    - 1.ª — INSTALADA el 1-nov 19:30 (backup-20261101-192924, base copiada en `data/copias/`):
      · Re-evaluación al cambiar filtros/zonas (`anuncios.decidir` + `reevaluar`). Regla de Jon: aflojar un filtro recupera los
@@ -175,7 +175,10 @@ idea, la actual. Al cambiar algo, se reescribe lo que ya no es cierto; no se añ
 6. Mover el `<script>` a app.js y quitar 'unsafe-inline' de script-src (check_site ya lo soporta). Partir `app.py`. ResourceWarnings en los tests.
 7. Vigilante del Funnel (watchdog): pendiente del OK de Jon. La red de la Pi (wlan0 DTU preferida + eth0 a este PC) es de Jon: no tocar sin su decisión.
 8. Nordic Solar = Strandvejen 104B; Jon dice que se entra por el «3B»: preguntar de qué calle es y ajustar el destino.
-9. Ideas sin decidir: chat de Boligportal dentro de la web (no hay API, prohíbe iframes); Chrome en la Pi (noVNC, solo tailnet) —
+9. Vanløse / Juli Living (7-nov): instalado. Comprobar en la próxima pasada que `lares_runs.jsonl` trae `leidos.Juli` y sin
+   error «juli: …», y en el primer aviso de Vanløse que llega al Bot Chat como «⭐ VANLØSE». Jon: apuntarse al Boligagent y a la
+   Interesseliste de Tagkronen (juliliving.dk/tagkronen/) y escribir a la agente de Juli (borrador en el chat del 7-nov).
+10. Ideas sin decidir: chat de Boligportal dentro de la web (no hay API, prohíbe iframes); Chrome en la Pi (noVNC, solo tailnet) —
    ojo: el kernel de la Pi ignora mem_limit de Docker. Grafana (Loki leyendo data/logs) cuando Jon lo monte.
 
 ## Copias de seguridad y acceso
@@ -186,7 +189,9 @@ idea, la actual. Al cambiar algo, se reescribe lo que ya no es cierto; no se añ
   .v9-20261107-preSinConexion.bak y SOUL.md.bak-20261101. QUEDAN en la Pi: `data/copias/pisos-backup-20261101-192924.db` (base
   antes de migrar; `deploy.sh` deja las 3 últimas) y Lares `scripts/piso_watch_monitor.py.v10-20261107-preBarrido.bak`,
   `SOUL.md.bak-20261107`, `skills/productivity/piso-watch-cph/SKILL.md.bak-20261107` → borrar ~9-nov si va bien.
-  Clave SSH quitada al acabar (sin copia).
+  7-nov (noche, Juli Living + Vanløse): backend `backup-20261107-225853`; Lares `scripts/piso_watch_monitor.py.v11-20261107-preJuli.bak`,
+  `scripts/pisos.py.bak-20261107-preJuli`, `SOUL.md.bak-20261107-preJuli`, `SKILL.md.bak-20261107-preJuli` → borrar ~9-nov si va
+  bien (y entonces las de «preBarrido» sobran). Clave SSH quitada al acabar (sin copia).
   En el PC: ~/.claude/settings.json.bak, .bak-narrator, .bak-20261024-voz (narrador, 1–2 KB).
 - Puertos ya usados en la Pi (no tocar): Portainer 8000/9000/9443. Nuestro: 127.0.0.1:8787 (API, Funnel :8443), 127.0.0.1:8790 (panel: serve https :9444 por nombre, y serve TCP :9445 por IP). Comprobar siempre con `ss -ltnp | grep :PUERTO` antes de usar uno nuevo.
 - Acceso a la Pi: clave SSH temporal de 1 h (expiry-time en authorized_keys, comentario «claude-pisos-1h»); pedir una nueva a Jon.
