@@ -69,7 +69,7 @@ idea, la actual. Al cambiar algo, se reescribe lo que ya no es cierto; no se añ
 - Forma de trabajar: contar cada paso y cada test en una línea, y actuar como asistente (preguntar antes de cambios grandes o en la Pi), salvo que Jon pida lo contrario.
 - Layout: left rail = flat list, or the selected flat's ficha (desktop); right column = Viaje, Ver y filtrar, Líneas, Configuración. Mobile: floating card under the map.
   Bottom bar = «añadir un piso por su enlace» (`POST /api/v2/enlaces`; Boligportal, EDC, Lejebolig; always lands as «propuesto», with «no pasa: …» warnings).
-- Keep the UI, barrio grouping, colours, light/dark theme and Spanish UI text. List sorted by monthly cost; no barrio circles on the map.
+- Keep the UI, barrio grouping, colours, light/dark theme and Spanish UI text. List sorted by monthly cost, with Vanløse (Jon's favourite barrio, `esFav`) always first: ⭐ in list/ficha/popup and a gold pin, also in «Propuestos»; no barrio circles on the map.
 - Keep OSM attribution visible: "© OpenStreetMap contributors".
 - Respect OSM tile and Nominatim usage policies (light personal use, real User-Agent, max 1 request/second for Nominatim).
 - Do not invent addresses or coordinates. If an exact address is not found, keep the old point and say so in `ubic`.

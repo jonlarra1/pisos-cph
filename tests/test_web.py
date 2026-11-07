@@ -139,6 +139,18 @@ class TestPropuestos(Web):
         self.esperar("CANDS.length===1", 5000)
         self.assertIn("Piso de prueba", self.page.inner_text("#lares"))
         self.assertEqual(self.js("candLayer.getLayers().length"), 1)
+    def test_vanlose_primero_y_con_estrella(self):
+        self.esperar("CANDS.length===1", 5000)
+        self.js("""CANDS.push({...CANDS[0],id:'7000002',titulo:'Piso en Vanløse',zona:'Vanløse',precio:22000,lat:55.687,lon:12.49});
+                   candSig=''; renderCands();""")
+        self.esperar("!!document.querySelector(\"#lares .item[data-id='7000002']\")")
+        ids = self.js("[...document.querySelectorAll('#lares .item')].map(e=>e.dataset.id)")
+        self.assertEqual(ids[0], "7000002", "el de Vanløse va primero aunque sea más caro")
+        self.assertIn("⭐", self.js("document.querySelector(\"#lares .item[data-id='7000002'] .it-t\").innerText"))
+        self.assertNotIn("⭐", self.js("document.querySelector(\"#lares .item[data-id='7000001'] .it-t\").innerText"))
+        self.assertEqual(self.js("document.querySelectorAll('.leaflet-marker-pane .pin.fav').length"), 1)
+        self.assertTrue(self.js("esFav({zona:'Vanlose'})&&esFav({lugar:'2720 Vanløse'})&&!esFav({zona:'Herlev'})"))
+
     def test_ficha_del_propuesto(self):
         self.esperar("CANDS.length===1", 5000)
         self.js("""Object.assign(CANDS[0],{fotos:['https://image-lambda.boligportal.dk/abc'],amueblado:false,compartible:true,ascensor:true,

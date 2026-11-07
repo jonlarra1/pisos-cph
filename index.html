@@ -804,6 +804,7 @@ html,body{overflow-x:hidden}
 .pin.has-cd{line-height:1;flex-direction:column}
 .pin{position:relative;display:grid;place-items:center;border-radius:50%;color:#fff;font:700 12px var(--f-body);letter-spacing:-.02em;border:2.5px solid #fff;box-shadow:0 2px 6px rgba(0,0,0,.35);cursor:pointer;transition:transform .12s}
 .pin:hover,.pin.sel{transform:scale(1.18)}
+.pin.fav{border-color:#f5b301;box-shadow:0 0 0 3px rgba(245,179,1,.5),0 2px 6px rgba(0,0,0,.35)}
 .work{display:inline-flex;align-items:center;height:24px;padding:0 9px;border-radius:12px;background:var(--fg);color:var(--panel);font:700 11.5px var(--f-display);box-shadow:var(--shadow);white-space:nowrap;border:2px solid var(--panel)}
 
 .leaflet-popup-content-wrapper{background:var(--panel);color:var(--fg);border-radius:12px;box-shadow:var(--shadow)}
@@ -1238,13 +1239,18 @@ PISOS.forEach(p=>{
   p.f=f;
   p.score=Math.round(100*(.35*f.prio+.25*f.coste+.15*f.entrada+.15*f.m2+.10*f.dorm));
 });
-const ranked=[...PISOS].sort((a,b)=>a.mensual-b.mensual);  // más barato primero
+/* Vanløse = el barrio favorito de Jon: ⭐, chincheta dorada y siempre primero (dentro, por coste) */
+const FAV_RE=/vanl(?:ø|o|oe)se|\b2720\b/i;
+const esFav=x=>!!x&&FAV_RE.test([x.zona,x.barrio,x.calle,x.titulo,x.lugar].filter(Boolean).join(" "));
+const favTxt=x=>esFav(x)?'<span class="fav" title="Vanløse: nuestro barrio favorito">⭐</span> ':"";
+const ranked=[...PISOS].sort((a,b)=>esFav(b)-esFav(a)||a.mensual-b.mensual);  // Vanløse primero, luego el más barato
 /* ---------- barrios ---------- */
 const PAL=["#2a8fd6","#d0533a","#3fa34d","#8e5cc2","#e0a422","#1fa3a3","#c2417a","#6b8e23","#f08a1c","#4a6fe3","#a0522d","#2e8b57","#b8860b","#7a4fd0","#d2691e","#008b8b","#9b2c5a","#5b7d1f","#cc5500","#3b5bb3","#8b4513","#20b2aa"];
 const BAR={};
 ranked.forEach(p=>{(BAR[p.barrio]??=[]).push(p);});
 const BORD=Object.keys(BAR).sort((a,b)=>BAR[a][0].mensual-BAR[b][0].mensual);
 const BCOL={};BORD.forEach((b,i)=>BCOL[b]=PAL[i%PAL.length]);
+BORD.sort((a,b)=>esFav(BAR[b][0])-esFav(BAR[a][0]));   /* colores por coste; orden con Vanløse arriba */
 const BST={};BORD.forEach(b=>{const v=BAR[b];
   const lat=v.reduce((a,p)=>a+p.lat,0)/v.length,lon=v.reduce((a,p)=>a+p.lon,0)/v.length;
   const ent=v.map(p=>p.entradaCmp).filter(x=>x!=null);
@@ -1668,7 +1674,7 @@ document.addEventListener("click",e=>{
 document.addEventListener("keydown",e=>{if((e.key==="Enter"||e.key===" ")&&e.target.matches&&e.target.matches(".rt-i[data-route]")){e.preventDefault();e.target.click();}});
 function pinIcon(p,sel){const sz=sel?36:30;
   return L.divIcon({className:"",iconSize:[sz,sz],iconAnchor:[sz/2,sz/2],popupAnchor:[0,-sz/2],
-    html:`<div class="pin${sel?" sel":""}${p.st==="descartado"&&leftH(p)>0?" has-cd":""}" title="${p.st==="descartado"&&leftH(p)>0?`Descartado${p.motivo?` (${esc(p.motivo)})`:""} · desaparece del mapa en ${Math.ceil(leftH(p))} h`:p.by&&p.st!=="nuevo"?`${ESTADOS[p.st].t} · por ${esc(nombre(p.by))}`:""}" style="width:${sz}px;height:${sz}px;background:${col(p)};font-size:${String(MODES[mode].lbl(p)).length>2?10.5:12}px">${MODES[mode].lbl(p)}${p.st==="descartado"&&leftH(p)>0?`<span class="cd">${Math.ceil(leftH(p))}h</span>`:""}</div>`});}
+    html:`<div class="pin${sel?" sel":""}${esFav(p)?" fav":""}${p.st==="descartado"&&leftH(p)>0?" has-cd":""}" title="${p.st==="descartado"&&leftH(p)>0?`Descartado${p.motivo?` (${esc(p.motivo)})`:""} · desaparece del mapa en ${Math.ceil(leftH(p))} h`:p.by&&p.st!=="nuevo"?`${ESTADOS[p.st].t} · por ${esc(nombre(p.by))}`:""}" style="width:${sz}px;height:${sz}px;background:${col(p)};font-size:${String(MODES[mode].lbl(p)).length>2?10.5:12}px">${MODES[mode].lbl(p)}${p.st==="descartado"&&leftH(p)>0?`<span class="cd">${Math.ceil(leftH(p))}h</span>`:""}</div>`});}
 /* quién marcó el estado: «🔵 Jon» (vacío si no se sabe o si está sin decidir) */
 const ST_ICO={gusta:"🔵",contactado:"🟢",descartado:"🔴",nuevo:"🟠"};
 const nombre=by=>PERF[by]?.n||(by==="lares"?"Lares":by);
@@ -1737,7 +1743,7 @@ async function setEstado(id,st){const p=PISOS.find(x=>x.id===id); if(!p||!ESTADO
 document.addEventListener("click",e=>{const b=e.target.closest("[data-setst]"); if(!b)return; e.stopPropagation(); const [id,st]=b.dataset.setst.split("|"); setEstado(id,st);});
 function popupHtml(p){
   return `<div class="pp-h"><span class="badge" style="background:${col(p)}">${MODES[mode].lbl(p)}</span>
-    <div><h3>${esc(p.zona)} · ${esc(p.calle)}</h3><p>${p.m2} m² · ${p.vaer} værelser</p></div></div>
+    <div><h3>${favTxt(p)}${esc(p.zona)} · ${esc(p.calle)}</h3><p>${p.m2} m² · ${p.vaer} værelser</p></div></div>
     ${stPill(p)}
     <dl class="kv">
       <dt>Alquiler</dt><dd>${kr(p.alq)}</dd>
@@ -1830,7 +1836,7 @@ function renderList(){
   const item=itemHtml=p=>`
    <button class="item${p.id===selId?" sel":""}" data-id="${esc(p.id)}">
      <span class="badge" style="background:${col(p)}">${MODES[mode].lbl(p)}</span>
-     <span style="min-width:0"><div class="it-t">${p.estado==="warn"?"⚠️ ":""}${esc(p.calle)}</div>
+     <span style="min-width:0"><div class="it-t">${favTxt(p)}${p.estado==="warn"?"⚠️ ":""}${esc(p.calle)}</div>
        <div class="it-s">${p.m2} m² · ${esc(p.dorm)} dorm · dep ${p.dep==null?"—":Math.round(p.dep/1000)+"k"} · pre ${p.pre==null?"—":Math.round(p.pre/1000)+"k"}${quien(p)?` · <span class="it-by">${quien(p)}</span>`:""}</div>
        ${p.cand?`<div class="it-s it-c">${esc(p.portal)}${p.disp&&p.disp!=="Sin confirmar"?` · libre ${esc(p.disp)}`:""}${p.rasgos?` · ${p.rasgos}`:""}${p.estado==="warn"?` · <span title="${esc(p.aviso)}">⚠️ ${(CANDS.find(c=>String(c.id)===p.id)?.avisos||[]).length} aviso(s)</span>`:""}</div>`:""}</span>
      <span class="it-p">${fmt(p.mensual)}<small>kr/mes</small></span>
@@ -1907,7 +1913,7 @@ function openSheet(id){
   sheet.innerHTML=`
    <div style="padding:10px 20px 0"><button class="sh-back" id="sh-back">← Lista de pisos</button></div>
    <div class="sh-head"><span class="badge" style="background:${col(p)};width:42px;height:42px;font-size:14px">${MODES[mode].lbl(p)}</span>
-     <div style="min-width:0"><h2>${esc(p.zona)} · ${esc(p.calle)}</h2><p>${p.m2} m² · ${p.vaer} værelser · planta ${esc(p.planta||"—")}</p>${stPill(p)}</div>
+     <div style="min-width:0"><h2>${favTxt(p)}${esc(p.zona)} · ${esc(p.calle)}</h2><p>${p.m2} m² · ${p.vaer} værelser · planta ${esc(p.planta||"—")}</p>${stPill(p)}</div>
      <button class="x" id="sh-x" aria-label="Cerrar ficha">×</button></div>
    <div class="sh-body">
      <div class="stats">
@@ -2051,9 +2057,9 @@ function renderCands(){const el=document.getElementById("lares"); if(!el)return;
   const sin=CANDS.filter(c=>c.st==="nuevo"&&idOk(c)), gus=CANDS.filter(c=>(c.st==="gusta"||c.st==="contactado")&&idOk(c));
   const map0=ranked.filter(p=>p.st==="nuevo"&&visible(p));
   const was=el.querySelector("details")?.open;
-  /* una sola categoría: los 🟠 del mapa y los que trae Lares, juntos y por precio */
+  /* una sola categoría: los 🟠 del mapa y los que trae Lares, juntos: Vanløse primero y luego por precio */
   const it=p=>`<div class="plist">${(itemHtml||(()=>""))(p)}</div>`;
-  const todos=[...map0.map(p=>({precio:p.mensual,html:it(p)})),...sin.map(c=>{const p=candPiso(c); return {precio:p.mensual,html:it(p)};})].sort((a,b)=>a.precio-b.precio);
+  const todos=[...map0.map(p=>({fav:esFav(p),precio:p.mensual,html:it(p)})),...sin.map(c=>{const p=candPiso(c); return {fav:esFav(c),precio:p.mensual,html:it(p)};})].sort((a,b)=>b.fav-a.fav||a.precio-b.precio);
   el.innerHTML=`<details${was===false?"":" open"}><summary>🟠 Propuestos (${todos.length})</summary><div class="out-s">
     ${SHOW.nuevo?(todos.map(x=>x.html).join("")||'<p style="color:var(--muted);margin:6px 0">No hay propuestos ahora mismo.</p>'):'<p style="color:var(--muted);margin:6px 0">Ocultos en Visualización.</p>'}
     ${gus.length?`<div class="out-h">🔵 Os gustan · pendientes de pasar al mapa <small>${gus.length}</small></div>${gus.map(c=>it(candPiso(c))).join("")}`:""}</div></details>`;
@@ -2061,7 +2067,7 @@ function renderCands(){const el=document.getElementById("lares"); if(!el)return;
   /* descartados: 48 h en rojo con la cuenta atrás (como los pisos del mapa), luego solo en «Descartados» */
   CANDS.filter(c=>(c.st!=="descartado"||(c.ts&&!expired(c)))&&SHOW[c.st]!==false&&idOk(c)&&candConUbic(c)).forEach(c=>{const lb=Math.round(((c.precio||0)+(c.aconto||0))/1000)+"k", cd=c.st==="descartado"?Math.ceil(leftH(c)):0;
     L.marker([c.lat,c.lon],{zIndexOffset:cd?900:950,icon:L.divIcon({className:"",iconSize:[30,30],iconAnchor:[15,15],
-    html:`<div class="pin${cd?" has-cd":""}" style="width:30px;height:30px;background:${(ESTADOS[c.st]||ESTADOS.nuevo).c};font-size:12px">${lb}${cd?`<span class="cd">${cd}h</span>`:""}</div>`})}).bindTooltip(cd?`Descartado · desaparece del mapa en ${cd} h · ${esc(c.zona||"")}`:`Propuesto · ${esc(c.zona||"")} · ${kr0(c.precio)} kr`,{direction:"top"}).on("click",()=>openCand(c.id)).addTo(candLayer);});}
+    html:`<div class="pin${cd?" has-cd":""}${esFav(c)?" fav":""}" style="width:30px;height:30px;background:${(ESTADOS[c.st]||ESTADOS.nuevo).c};font-size:12px">${lb}${cd?`<span class="cd">${cd}h</span>`:""}</div>`})}).bindTooltip(cd?`Descartado · desaparece del mapa en ${cd} h · ${esc(c.zona||"")}`:`Propuesto · ${esc(c.zona||"")} · ${kr0(c.precio)} kr`,{direction:"top"}).on("click",()=>openCand(c.id)).addTo(candLayer);});}
 /* ---------- barra de abajo: añadir un piso por su enlace (API v2 de la Pi, la misma puerta que usa Lares) ---------- */
 const ENLACE_OK=[/^https:\/\/(?:en\.|www\.)?lejebolig\.dk\/lejebolig\/\d{4,10}(?:[\/?#]|$)/,
   /^https:\/\/(?:www\.)?boligportal\.dk\/\S*?(?:id-|rental-apartments\/)\d{4,10}(?:[\/?#]|$)/,
