@@ -170,8 +170,8 @@ idea, la actual. Al cambiar algo, se reescribe lo que ya no es cierto; no se añ
      iban. Instalado el barrido diario: una vez al día (o al cambiar filtros/zonas) el vigilante recorre Boligportal entero
      (`-værelser/` de 4 a 6, ~25 páginas, hasta 30 fichas; si falla, repite en la siguiente pasada) y lo que ya está en la base
      no se avisa como «NUEVO». Lares lo sabe (SOUL.md y skill). Jon añadió a mano 12 de 13 pisos antiguos que el vigilante no
-     había visto (5522327 estaba reservado). OJO: 4 de ellos no pasan al leer su ficha (5670349, 5587412, 5668362: contrato de
-     4 meses; 5638204: libre el 1-feb) y, por la regla de lo añadido a mano, siguen «propuesto»: pendiente de que Jon decida.
+     había visto (5522327 estaba reservado). Comprobado en directo el 8-nov: 5670349, 5587412, 5668362 y 5638204 tienen contrato
+     indefinido (`rental_period` 0) y fecha dentro de la ventana o sin fecha; no hay ninguno «de 4 meses».
 2. `pisos.py consultar`: el historial enseña la hora en segundos y «propuesto → propuesto» en las notas.
 3. Avisos de Lares al Bot Chat: la última entrega fallida es del 26-oct (piso-check-links, ya en pausa). El chat de Lares sí
    usa `pisos.py` (1-nov). Comprobar en el próximo aviso de piso nuevo que llega al Bot Chat.
