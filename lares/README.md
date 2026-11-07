@@ -23,12 +23,19 @@ Copias de lo que corre en el perfil `lares` de la Pi (`~/docker/hermes/profiles/
 Cuando el vigilante entregue por la API (paso C de `docs/arquitectura.md`), `candidatos.json`, `rechazados.json` y `retirados.json` desaparecen.
 
 ## Qué hace el vigilante
-Fuentes: Boligportal (listado, 3–8 páginas adaptativas) y EDC (edc.dk). Lejebolig NO se busca (decisión de Jon, 27-oct): sus
+Fuentes: Boligportal (listado, 3–8 páginas adaptativas), EDC (edc.dk) y Juli Living (juliliving.dk). Lejebolig NO se busca (decisión de Jon, 27-oct): sus
 enlaces solo entran a mano. EDC se lee por su API JSON (`/api/v1/cases/quick-search`, sin clave) con los códigos postales de las
 zonas activas, ≥ værelser y ≤ precio, más nuevo primero, 1–3 páginas de 100 por grupo de códigos. Trae anuncios propios de EDC y
 copias de Boligportal (se guardan con su id de Boligportal). El listado de EDC no trae fecha: lo de EDC NO se propone hasta abrir su
 ficha (cupo `MAX_DETAIL_EDC` = 12 por pasada; lo que no cabe espera, `edc_pendientes` en lares_runs.jsonl). Fichas de Boligportal:
-`MAX_DETAIL` = 8 por pasada, con caché.
+`MAX_DETAIL` = 8 por pasada, con caché. Juli Living (solo si Vanløse está activa): una petición a su lista JSON
+(`admin-ajax.php?action=jlet_units`, toda su oferta: libres y reservadas; lo alquilado ya no sale), se queda con lo LEDIG de
+Vanløse (2720), ids `jl<n>`. «Delevenlig» sale de `facilities` (`share_friendly`). Su ficha (HTML) da depósito, prepago, a conto
+y coordenadas. Comprobador: reservada o fuera de la lista = retirada (con menos de 50 viviendas en la lista no se fía).
+
+Vanløse (barrio favorito de Jon, `FAV_ZONA`): `evaluar_fav` propone lo que falla un filtro con el aviso «no pasa: …»; solo
+rechaza los motivos de `FAV_DUROS` (alquilado, habitación, zona excluida/no reconocida, dormitorios de ficha o plano) y menos
+værelser del mínimo. Los avisos «NUEVO» de Vanløse salen primero con «⭐ VANLØSE» en lugar de la zona.
 
 Barrido completo: una vez al día (24 h desde el último) y en la primera pasada tras cambiar filtros o zonas, el vigilante lee
 TODAS las páginas de Boligportal con cada número de værelser desde el mínimo hasta 6 y ≤ precio (Boligportal no tiene «4 o más»):

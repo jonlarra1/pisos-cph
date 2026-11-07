@@ -1,15 +1,17 @@
 ---
 name: piso-watch-cph
-description: Use when running or explaining the Copenhagen rental-apartment watch — Boligportal + EDC with the filters set in the web, report ONLY new listings.
+description: Use when running or explaining the Copenhagen rental-apartment watch — Boligportal + EDC (+ Juli Living in Vanløse) with the filters set in the web, report ONLY new listings, Vanløse first.
 ---
 
-# Piso-Watch Copenhague (vigilante de alquiler para Jon y Unai) — rev. 7-nov-2026
+# Piso-Watch Copenhague (vigilante de alquiler para Jon y Unai) — rev. 8-nov-2026
 
 Rutina cada 3 h: busca pisos de ALQUILER con los filtros de la web y **solo reporta los NUEVOS** (sin novedades = silencio).
 
 **Implementación:** script sin LLM `/opt/data/profiles/lares/scripts/piso_watch_monitor.py` (cron `piso-watch-cph`, 180 min).
-- Fuentes: **Boligportal** (JSON del listado) y **EDC** (API JSON por códigos postales). **Lejebolig ya NO** (decisión de Jon, 27-oct):
-  sus enlaces solo entran a mano.
+- Fuentes: **Boligportal** (JSON del listado), **EDC** (API JSON por códigos postales) y **Juli Living** (su lista JSON, solo
+  Vanløse y solo si esa zona está activa). **Lejebolig ya NO** (decisión de Jon, 27-oct): sus enlaces solo entran a mano.
+- **Vanløse es el barrio favorito:** sus avisos salen primero como «NUEVO | ⭐ VANLØSE | …» y allí se avisa aunque falle un filtro
+  (con «no pasa: …»); solo se rechaza lo que no sirve para 3 (menos de 4 værelser o de 3 dormitorios, habitaciones) o lo alquilado.
 - Filtros y zonas: los de la web («🔎 Búsqueda (Lares)»), que el script lee de `Vivienda/pisos-bridge/config.json`. No hay filtros
   escritos en esta skill a propósito: se quedaban desfasados.
 - Escribe en el buzón `Vivienda/pisos-bridge/` (candidatos.json, rechazados.json, retirados.json, lares_runs.jsonl). El buzón es del

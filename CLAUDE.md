@@ -54,7 +54,7 @@ idea, la actual. Al cambiar algo, se reescribe lo que ya no es cierto; no se añ
   DESCARTE_H=48 h on the map with a countdown, then listed in «Descartados»; never deleted). `st` in `PISOS` is only the starting value.
 - `data/pisos.json` — flat data (id, zona, barrio, calle, m2, vaer, dorm, alq, aconto, dep, pre, disp, link, lat, lon, ubic = location precision, estado/aviso = warnings, fotos, fotoPlano).
 - `backend/` — `app.py` (server, checks, logs, panel), `api_v2.py` (API v2), `anuncios.py` (model, rules, states, history),
-  `portales.py` (reads Boligportal/EDC/Lejebolig listing pages), `puente.py` (v2 ↔ the web's `estado`/`candidatos`), `destinos.py`,
+  `portales.py` (reads Boligportal/EDC/Lejebolig/Juli Living listing pages), `puente.py` (v2 ↔ the web's `estado`/`candidatos`), `destinos.py`,
   `precalculo.py`, `routing.py` (route engine), `admin.html` (panel), `deploy.sh`, `smoke_test.py`, `firewall/`.
 - `lares/` — copies of what runs in Lares' profile on the Pi: `piso_watch_monitor.py` (vigilante), `pisos.py` (chat tool),
   `instrucciones-pisos.md` (goes into Lares' SOUL.md and skill `piso-watch-cph`). See `lares/README.md`.
@@ -68,7 +68,7 @@ idea, la actual. Al cambiar algo, se reescribe lo que ya no es cierto; no se añ
   archivan o se marcan). Si falta algo, decirlo como pendiente.
 - Forma de trabajar: contar cada paso y cada test en una línea, y actuar como asistente (preguntar antes de cambios grandes o en la Pi), salvo que Jon pida lo contrario.
 - Layout: left rail = flat list, or the selected flat's ficha (desktop); right column = Viaje, Ver y filtrar, Líneas, Configuración. Mobile: floating card under the map.
-  Bottom bar = «añadir un piso por su enlace» (`POST /api/v2/enlaces`; Boligportal, EDC, Lejebolig; always lands as «propuesto», with «no pasa: …» warnings).
+  Bottom bar = «añadir un piso por su enlace» (`POST /api/v2/enlaces`; Boligportal, EDC, Lejebolig, Juli Living; always lands as «propuesto», with «no pasa: …» warnings).
 - Keep the UI, barrio grouping, colours, light/dark theme and Spanish UI text. List sorted by monthly cost, with Vanløse (Jon's favourite barrio, `esFav`) always first: ⭐ in list/ficha/popup and a gold pin, also in «Propuestos»; no barrio circles on the map.
 - Keep OSM attribution visible: "© OpenStreetMap contributors".
 - Respect OSM tile and Nominatim usage policies (light personal use, real User-Agent, max 1 request/second for Nominatim).
@@ -87,6 +87,10 @@ idea, la actual. Al cambiar algo, se reescribe lo que ya no es cierto; no se añ
   redirección marca el anuncio como «alquilado» (rechazado). Error de red = desconocido (nunca retira). Escribe
   `pisos-bridge/retirados.json`; el backend (`aplicar_retirados`) lo pone UNA vez en «descartado» con by="lares" y `motivo` (si lo
   recuperáis, no se repite) y avisa por SSE. Web: aviso «Han retirado el anuncio…», 48 h en rojo y luego Descartados.
+- Vanløse = barrio favorito (decisión de Jon, 7-nov; contactos de Tagkronen en Juli Living): web ⭐ + chincheta dorada + primero;
+  el vigilante avisa primero «NUEVO | ⭐ VANLØSE | …» y en Vanløse propone lo que falla un filtro con «no pasa: …» (`evaluar_fav`;
+  solo rechaza alquilado, habitación, <4 værelser o <3 dormitorios). Juli Living (juliliving.dk) es fuente del vigilante SOLO en
+  Vanløse (su JSON `jlet_units`, una petición por pasada; reservada o fuera de su lista = retirada); sus enlaces valen en todas partes.
 - Lejebolig: Lares NO lo busca (decisión de Jon, 27-oct). Sus enlaces solo entran a mano (chat o barra de la web).
 - Compartir (decisión de Jon, 1-nov): si en Boligportal el casero no marca «Delevenlig» (`features.shareable` = false), el
   anuncio se RECHAZA («no permite compartir (dato del portal)»), aunque sea el motivo nº 1 de rechazo (84 de 150 anuncios de 4 vær.).
@@ -106,7 +110,7 @@ idea, la actual. Al cambiar algo, se reescribe lo que ya no es cierto; no se añ
     protege además `FRENO`: máx. 6 búsquedas esperando); eventos «limite» en el log.
   - API v2: clave por cliente (web = `API_KEY` pública + Origin, `quien` solo jon/unai/web; `CLAVE_LARES`, `CLAVE_VIGILANTE`,
     `CLAVE_COMPROBADOR` solo en el .env de la Pi). Sin operación de borrar.
-  - /api/img: solo https a image-lambda.boligportal.dk, s3…/lejeboligdata/images/ y billeder.edc.dk/edcmedia/, sin `..`, userinfo ni puertos raros.
+  - /api/img: solo https a image-lambda.boligportal.dk, s3…/lejeboligdata/images/, billeder.edc.dk/edcmedia/ y nrep.estatetool.net/media/bolig/ (Juli Living), sin `..`, userinfo ni puertos raros.
   - Clave de escritura por persona (passkeys/Face ID): aplazado a propósito.
   - Ojo con ACL en la Pi: varias carpetas de Hermes tienen ACL con máscara restrictiva; `setfacl -m` recalcula la máscara y puede reactivar
     permisos de otros usuarios. Comprobar `getfacl` antes y después.

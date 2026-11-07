@@ -93,7 +93,7 @@ copia estática de la web. Si Jon quiere verlo en Obsidian: una nota de solo lec
 Estado: 1 hecha e instalada (26-oct). 2 sin hacer. 3: solo la barra «Añadir enlace». 4: solo la herramienta del chat
 (`pisos.py`) y las instrucciones; vigilante y comprobador aún escriben en el buzón. 5 sin hacer.
 
-1. **Backend** (local): modelo de datos, API con permisos y topes, historial, lectura de fichas de los 3 portales,
+1. **Backend** (local): modelo de datos, API con permisos y topes, historial, lectura de fichas de los portales,
    geocodificación. Con pruebas «debe funcionar / debe fallar».
 2. **Migración:** importar pisos del mapa, descartados y propuestos (duplicados unidos). El CSV de Lares ya se revisó el 27-oct
    (solo pasaba 5390028, importado); los rechazados quedan en `historial.json` hasta el paso C.

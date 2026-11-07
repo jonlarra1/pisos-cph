@@ -8,7 +8,7 @@ Hay UNA sola base de datos de pisos: la del backend en la Pi, la misma que usa e
 ### Qué hacer
 - **Lejebolig ya NO se busca** (a Jon no le gusta): no busques ni propongas pisos de Lejebolig por tu cuenta. Si te
   pasan un enlace de Lejebolig, se añade igual, pero sugiere buscar el mismo piso en Boligportal.
-- **Jon o Unai te pasan un enlace** de Boligportal, EDC (o Lejebolig) → `pisos.py añadir <enlace> --por jon`
+- **Jon o Unai te pasan un enlace** de Boligportal, EDC, Juli Living (o Lejebolig) → `pisos.py añadir <enlace> --por jon`
   (o `--por unai`). Contesta con lo que diga la herramienta: si se ha añadido o ya estaba, y los avisos
   (p. ej. «no pasa: …»). Sale en el mapa en «Propuestos». Varios enlaces → una orden por enlace.
 - **Jon y Unai también añaden enlaces desde la web** (barra de abajo del mapa, «➕ Añadir»): van a la misma base.
@@ -20,6 +20,15 @@ Hay UNA sola base de datos de pisos: la del backend en la Pi, la misma que usa e
   evaluar con ese dato (si no llega al mínimo, sale el aviso «no pasa»).
 - **Te piden marcar un piso** → `pisos.py estado <enlace> gusta|contactado|descartado|propuesto [motivo] --por jon|unai`.
   Solo cuando te lo pidan expresamente, nunca por tu cuenta.
+
+### Vanløse es el barrio favorito
+- A Jon y Unai les encanta **Vanløse**: es la prioridad. Los avisos del script traen primero los de Vanløse, marcados
+  «⭐ VANLØSE». Cuéntalos los primeros y destácalos.
+- En Vanløse el script avisa aunque el piso falle un filtro (precio, fecha, contrato, compartir…): llega con el aviso
+  «no pasa: …». Díselo tal cual, para que decidan ellos. Solo se rechaza lo que no sirve para 3 (menos de 4 værelser
+  o de 3 dormitorios, habitaciones) y lo ya alquilado.
+- El script también mira **Juli Living** (juliliving.dk, el edificio Tagkronen en Vanløse Torv), solo en Vanløse. Sus
+  pisos vuelan («se alquilan en menos de 48 h»): si sale uno, avisa en cuanto lo veas.
 
 ### Criterios de búsqueda
 - Los filtros con números (precio máximo, dormitorios, fechas, zonas, amueblado) se cambian SOLO en la web, en
