@@ -21,3 +21,6 @@
 {"ts": "2026-11-07T17:51:10Z", "pieza": "lares", "commit": "b5cc9023e332e84d459e0ace94958ae3e5935372", "resultado": "ok", "nota": "vigilante: barrido diario y sin avisar lo que ya está en la base; SOUL.md y skill"}
 {"ts": "2026-11-07T21:59:47Z", "pieza": "backend", "commit": "b5eb7558d6979654875898b8afe19fb5a4561ebf", "resultado": "ok", "nota": "backup-20261107-225853"}
 {"ts": "2026-11-07T22:01:21Z", "pieza": "lares", "commit": "b5eb7558d6979654875898b8afe19fb5a4561ebf", "resultado": "ok", "nota": "Juli Living en Vanløse + avisos Vanløse primero; SOUL y skill"}
+{"ts": "2026-11-07T22:09:58Z", "pieza": "backend", "commit": "2808c89bd8f9f44a5b6e4af2d140515f868714b7", "resultado": "ok", "nota": "backup-20261107-230904"}
+{"ts": "2026-11-07T22:14:26Z", "pieza": "backend", "commit": "fdd45746d799622cffb062c44d456126c7ee9297", "resultado": "ok", "nota": "backup-20261107-231325"}
+{"ts": "2026-11-07T22:15:03Z", "pieza": "lares", "commit": "fdd45746d799622cffb062c44d456126c7ee9297", "resultado": "ok", "nota": "comprobador con enlaces de Boligportal que abren el anuncio"}

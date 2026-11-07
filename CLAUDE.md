@@ -193,7 +193,8 @@ idea, la actual. Al cambiar algo, se reescribe lo que ya no es cierto; no se añ
   .v9-20261107-preSinConexion.bak y SOUL.md.bak-20261101. QUEDAN en la Pi: `data/copias/pisos-backup-20261101-192924.db` (base
   antes de migrar; `deploy.sh` deja las 3 últimas) y Lares `scripts/piso_watch_monitor.py.v10-20261107-preBarrido.bak`,
   `SOUL.md.bak-20261107`, `skills/productivity/piso-watch-cph/SKILL.md.bak-20261107` → borrar ~9-nov si va bien.
-  7-nov (noche, Juli Living + Vanløse): backend `backup-20261107-225853`; Lares `scripts/piso_watch_monitor.py.v11-20261107-preJuli.bak`,
+  7-nov (noche, Juli Living + Vanløse, y enlaces de Boligportal): backend `backup-20261107-225853`, `-230904` y `-231325`
+  (la de antes del arreglo de enlaces es `-230904`); Lares `scripts/piso_watch_monitor.py.v12-20261107-preEnlaces.bak`, `scripts/piso_watch_monitor.py.v11-20261107-preJuli.bak`,
   `scripts/pisos.py.bak-20261107-preJuli`, `SOUL.md.bak-20261107-preJuli`, `SKILL.md.bak-20261107-preJuli` → borrar ~9-nov si va
   bien (y entonces las de «preBarrido» sobran). Clave SSH quitada al acabar (sin copia).
   En el PC: ~/.claude/settings.json.bak, .bak-narrator, .bak-20261024-voz (narrador, 1–2 KB).
