@@ -333,6 +333,10 @@ class TestAnadirEnlace(Web):
         self.assertIn(("/api/v2/enlaces", {"url": self.URL, "quien": "unai"}), self.posts)
         toasts = self.page.inner_text("#toasts")
         self.assertIn("Añadido", toasts); self.assertIn("Valby", toasts); self.assertIn("no pasa", toasts)
+    def test_enlace_de_juli_living_se_acepta(self):
+        ok = self.js("u=>ENLACE_OK.some(re=>re.test(u))", "https://juliliving.dk/tagkronen-bolig/?boligID=1644")
+        mal = self.js("u=>ENLACE_OK.some(re=>re.test(u))", "https://juliliving.dk.evil.com/x/?boligID=1")
+        self.assertEqual((ok, mal), (True, False))
     def test_error_de_la_pi_se_cuenta(self):
         self.js("YO='jon'"); self.responder(502, {"error": "el portal no responde, prueba en un rato"})
         self.page.fill("#add-url", self.URL); self.page.click("#add-btn")

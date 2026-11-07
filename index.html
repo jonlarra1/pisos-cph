@@ -1050,7 +1050,7 @@ html,body{overflow-x:hidden}
   <section class="mapwrap">
     <div id="map" aria-label="Mapa de pisos"></div>
     <form class="addbar" id="addbar" role="search" aria-label="Añadir un piso por su enlace" autocomplete="off">
-      <input type="url" id="add-url" name="url" inputmode="url" placeholder="Pega el enlace del anuncio (Lejebolig, Boligportal, EDC)" title="Pega el enlace de un anuncio de Lejebolig, Boligportal o EDC y pulsa Añadir" aria-label="Enlace del anuncio" required maxlength="500">
+      <input type="url" id="add-url" name="url" inputmode="url" placeholder="Pega el enlace del anuncio (Lejebolig, Boligportal, EDC, Juli Living)" title="Pega el enlace de un anuncio de Lejebolig, Boligportal, EDC o Juli Living y pulsa Añadir" aria-label="Enlace del anuncio" required maxlength="500">
       <button type="submit" id="add-btn">➕ Añadir</button>
     </form>
     <div class="rcol">
@@ -2026,7 +2026,7 @@ const sino=(v,si="Sí",no="No")=>v===true?si:v===false?no:"No indicado";
 const numOr=(v,o=null)=>v!=null&&v!==""&&Number.isFinite(+v)?+v:o;   /* datos de anuncios de fuera: solo números */
 function candPiso(c){const id=String(c.id), d=numOr(c.dorm??c.plano_dorm);
   const p={id,cand:true,zona:c.zona||"",barrio:c.zona||"",calle:String(c.titulo||c.lugar||"Propuesto"),m2:numOr(c.m2,"?"),vaer:numOr(c.vaer,"?"),planta:"",
-    alq:numOr(c.precio,0),aconto:numOr(c.aconto),dep:numOr(c.dep),pre:numOr(c.pre),disp:c.disp||"Sin confirmar",link:c.link,portal:c.portal||"",
+    alq:numOr(c.precio,0),aconto:numOr(c.aconto),dep:numOr(c.dep),pre:numOr(c.pre),disp:c.disp||"Sin confirmar",link:c.link,portal:c.portal==="Juli"?"Juli Living":c.portal||"",
     lat:candConUbic(c)?+c.lat:c._geo?c._geo.lat:NaN,lon:candConUbic(c)?+c.lon:c._geo?c._geo.lon:NaN,fotos:Array.isArray(c.fotos)?c.fotos:(c.plano?[c.plano]:[]),fotoPlano:false,
     dorm:d!=null?String(d):"Sin confirmar",dormEst:numOr(c.dorm)!=null?"Ficha del portal":c.plano_dorm!=null?"Plano revisado":"Estimado: værelser − 1",
     deleg:sino(c.compartible),mascotas:sino(c.mascotas),amueblado:sino(c.amueblado,"Sí","Sin amueblar"),balcon:sino(c.balcon),
@@ -2071,14 +2071,15 @@ function renderCands(){const el=document.getElementById("lares"); if(!el)return;
 /* ---------- barra de abajo: añadir un piso por su enlace (API v2 de la Pi, la misma puerta que usa Lares) ---------- */
 const ENLACE_OK=[/^https:\/\/(?:en\.|www\.)?lejebolig\.dk\/lejebolig\/\d{4,10}(?:[\/?#]|$)/,
   /^https:\/\/(?:www\.)?boligportal\.dk\/\S*?(?:id-|rental-apartments\/)\d{4,10}(?:[\/?#]|$)/,
-  /^https:\/\/(?:www\.)?edc\.dk\/leje\/\S*?\/\d{6,10}\/?(?:[?#]|$)/];
+  /^https:\/\/(?:www\.)?edc\.dk\/leje\/\S*?\/\d{6,10}\/?(?:[?#]|$)/,
+  /^https:\/\/(?:www\.)?juliliving\.dk\/[a-z0-9-]+\/?\?(?:[^#\s]*&)?boligID=\d{1,8}(?:[&#]|$)/];
 async function anadirEnlace(url){
   const r=await fetch(API+"/api/v2/enlaces",{method:"POST",headers:{"Content-Type":"application/json","X-Pisos-Key":API_KEY},body:JSON.stringify({url,quien:YO||"web"})});
   const d=await r.json().catch(()=>({})); if(!r.ok)throw new Error(r.status===429?"demasiados cambios seguidos, espera un poco":(d.error||`la Pi respondió ${r.status}`));
   return d;}
 document.getElementById("addbar")?.addEventListener("submit",async e=>{e.preventDefault();
   const inp=document.getElementById("add-url"), btn=document.getElementById("add-btn"), url=inp.value.trim();
-  if(!ENLACE_OK.some(re=>re.test(url))){toast("⚠️ Pega el enlace de un anuncio de Lejebolig, Boligportal o EDC (https://…)"); inp.focus(); return;}
+  if(!ENLACE_OK.some(re=>re.test(url))){toast("⚠️ Pega el enlace de un anuncio de Lejebolig, Boligportal, EDC o Juli Living (https://…)"); inp.focus(); return;}
   if(!YO&&!(await quienSoy()))return;
   btn.disabled=true; btn.textContent="Leyendo el anuncio…";
   try{const a=await anadirEnlace(url), pid=String(a.pid), d=a.datos||{};
