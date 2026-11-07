@@ -45,6 +45,14 @@ PAGINAS = {  # portal: (url de la página i, mínimo, máximo)
         8,
     ),
 }
+# Barrido completo: las pasadas normales solo miran lo más nuevo. Una vez al día (y en la primera pasada tras
+# cambiar filtros o zonas) se leen TODAS las páginas de Boligportal con ≥ værelser y ≤ precio: así entra lo
+# publicado hace semanas y lo que pasa a cumplir al cambiar la búsqueda. Boligportal solo filtra por número
+# exacto de værelser: una búsqueda por cada número.
+BARRIDO_HORAS = 24
+BARRIDO_MAX_PAGINAS = 30  # por número de værelser (18 anuncios por página)
+BARRIDO_VAER_MAX = 6
+MAX_DETAIL_BARRIDO = 30  # fichas de Boligportal en la pasada con barrido (en las demás, MAX_DETAIL)
 # EDC (edc.dk): API JSON de su buscador. Se pide por códigos postales de las zonas activas (más nuevo primero).
 # Trae anuncios propios de EDC y copias de Boligportal (esas se guardan con su id de Boligportal, sin duplicar).
 EDC_API = "https://www.edc.dk/api/v1/cases/quick-search"
@@ -624,7 +632,9 @@ def main():
         STATS.update(leidos={}, paginas=paginas, errores=errors, sin_conexion=True)
         print(f"[aviso] fuentes con error: {', '.join(errors)}")
         return
-    ev = evaluar_anuncios(con, listings, known, planos, F, zonas, decididos, now)
+    fichas = barrido(con, listings, errors, paginas, F, zonas, now)
+    decididos |= set(anuncios_del_chat())  # lo que ya está en la base (añadido a mano) no se avisa como nuevo
+    ev = evaluar_anuncios(con, listings, known, planos, F, zonas, decididos, now, fichas)
     ev.cands += candidatos_recordados(con, listings, known)
     comprobados, nuevos_ret = comprobar_publicados(con, mapa, ev.cands, listings, now)
     ret = retirados_en_cuarentena(con, ev.cands)
@@ -641,6 +651,53 @@ def main():
     write_json(BRIDGE / "candidatos.json", {"actualizado": now, "filtros": F, "pisos": ev.cands, "errores": errors})
     write_json(BRIDGE / "rechazados.json", {"actualizado": now, "pisos": ev.rech[:400]})
     resumen(listings, paginas, errors, ev, known)
+
+
+def urls_barrido(F):
+    """Una función (página i -> URL) por cada número de værelser, de vaer_min a BARRIDO_VAER_MAX."""
+    base = "https://www.boligportal.dk/lejligheder/k%C3%B8benhavn/{}-v%C3%A6relser/?max_monthly_rent={}&offset={}"
+    precio = int(F.get("precio_max") or 23000)
+    return [
+        lambda i, n=n: base.format(n, precio, 18 * i) for n in range(int(F.get("vaer_min") or 4), BARRIDO_VAER_MAX + 1)
+    ]
+
+
+def toca_barrido(con, F, zonas, now):
+    """(toca, firma): toca si nunca se hizo, si el último tiene ≥ BARRIDO_HORAS o si cambiaron filtros o zonas."""
+    firma = json.dumps([F, zonas], sort_keys=True, ensure_ascii=False)
+    row = con.execute("SELECT ts, firma FROM v2_barrido WHERE id=1").fetchone()
+    if not row or row[1] != firma:
+        return True, firma
+    horas = (datetime.fromisoformat(now) - datetime.fromisoformat(row[0])).total_seconds() / 3600
+    return horas >= BARRIDO_HORAS, firma
+
+
+def barrido(con, listings, errors, paginas, F, zonas, now):
+    """Si toca, añade a `listings` todas las páginas del barrido. Devuelve el cupo de fichas de Boligportal."""
+    toca, firma = toca_barrido(con, F, zonas, now)
+    if not toca:
+        return MAX_DETAIL
+    n, fallo = 0, False
+    for url_de in urls_barrido(F):
+        vistos = set()
+        for i in range(BARRIDO_MAX_PAGINAS):
+            try:
+                page = parse_boligportal(fetch(url_de(i)))
+            except Exception as e:
+                errors.append(f"barrido: {type(e).__name__}")
+                fallo = True
+                break
+            n += 1
+            time.sleep(2)
+            if not page or set(page) <= vistos:
+                break  # se acabaron (Boligportal repite los destacados en todas las páginas)
+            vistos |= set(page)
+            for lid, it in page.items():
+                listings.setdefault(lid, it)
+    paginas["barrido"] = n
+    if not fallo:
+        con.execute("INSERT OR REPLACE INTO v2_barrido (id, ts, firma) VALUES (1, ?, ?)", (now, firma))
+    return MAX_DETAIL_BARRIDO
 
 
 def leer_config():
@@ -691,6 +748,7 @@ def abrir_db():
         "CREATE TABLE IF NOT EXISTS v2_eval (id TEXT PRIMARY KEY, portal TEXT, link TEXT, ok INTEGER, motivo TEXT, "
         "item TEXT, first_seen TEXT, last_seen TEXT, avisado INTEGER DEFAULT 0)"
     )
+    con.execute("CREATE TABLE IF NOT EXISTS v2_barrido (id INTEGER PRIMARY KEY CHECK (id = 1), ts TEXT, firma TEXT)")
     return con
 
 
@@ -737,12 +795,13 @@ def leer_portales(vistos_antes, zonas, F):
 class Evaluacion:
     """Resultado de evaluar los anuncios leídos: listas para el buzón y lo gastado del cupo de fichas."""
 
-    def __init__(self):
+    def __init__(self, fichas=None):
         self.cands, self.rech, self.nuevos = [], [], []
-        self.budget, self.budget_edc, self.pendientes = MAX_DETAIL, MAX_DETAIL_EDC, 0
+        self.fichas = fichas or MAX_DETAIL
+        self.budget, self.budget_edc, self.pendientes = self.fichas, MAX_DETAIL_EDC, 0
 
 
-def evaluar_anuncios(con, listings, known, planos, F, zonas, decididos, now):
+def evaluar_anuncios(con, listings, known, planos, F, zonas, decididos, now, fichas=None):
     """Evalúa cada anuncio con los filtros; abre la ficha (con cupo) de los que pasan lo barato, y guarda en v2_eval."""
     # fichas leídas antes de que Lares sacara amueblado/balcón/ascensor: se vuelven a abrir (con el mismo cupo
     # por pasada). Una ficha alquilada ya está leída: si se reabriera, gastaría el cupo en cada pasada.
@@ -751,7 +810,7 @@ def evaluar_anuncios(con, listings, known, planos, F, zonas, decididos, now):
         for i, d in ((r[0], json.loads(r[1])) for r in con.execute("SELECT id, data FROM v2_detalle"))
         if "amueblado" in d or d.get("alquilado")
     }
-    ev = Evaluacion()
+    ev = Evaluacion(fichas)
     orden_ids = sorted(
         listings, key=lambda k: (bool(listings[k].get("_edc")), listings[k]["portal"] != "EDC")
     )  # EDC propios antes que copias
@@ -931,7 +990,7 @@ def resumen(listings, paginas, errors, ev, known):
         nuevos=len(ev.nuevos),
         rechazados=len(ev.rech),
         errores=errors,
-        fichas_abiertas=MAX_DETAIL - ev.budget,
+        fichas_abiertas=ev.fichas - ev.budget,
         fichas_edc=MAX_DETAIL_EDC - ev.budget_edc,
         edc_pendientes=ev.pendientes,
         mapa_conocidos=len(known),

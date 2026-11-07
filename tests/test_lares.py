@@ -51,6 +51,10 @@ class Pasada:
         return url
     def parser(self, portal):
         def p(url):
+            if "-v%C3%A6relser/" in url:                        # barrido: paginas["barrido"] = {værelser: páginas}
+                vaer, off = int(url.split("/")[-2].split("-")[0]), int(url.rsplit("offset=", 1)[1])
+                pags = self.paginas.get("barrido", {}).get(vaer, [])
+                return {str(x): anuncio(x) for x in (pags[off // 18] if off // 18 < len(pags) else [])}
             i = self.m.PAGINAS[portal][0]
             n = next(k for k in range(20) if i(k) == url)
             pags = self.paginas.get(portal, [])
@@ -70,7 +74,8 @@ class Pasada:
 
 class TestPaginas(unittest.TestCase):
     def setUp(self): self.m = cargar_modulo()
-    def cuenta(self, pas, portal): return sum(1 for u in pas.pedidas if portal in u and not u.startswith(self.m.EDC_API))
+    def cuenta(self, pas, portal):
+        return sum(1 for u in pas.pedidas if portal in u and not u.startswith(self.m.EDC_API) and "-v%C3%A6relser/" not in u)
 
     def test_lee_el_minimo_aunque_no_haya_nada_nuevo(self):
         pas = Pasada(self.m, {"boligportal": [[1], [2], [3], [4]]}); pas()
@@ -84,6 +89,37 @@ class TestPaginas(unittest.TestCase):
         self.assertEqual(caida(), antes)                                 # no publica propuestos recordados ni viejos
         self.assertTrue(self.m.STATS["sin_conexion"])
         self.assertIn("boligportal: OSError", self.m.STATS["errores"])
+    def barridas(self, pas): return [u for u in pas.pedidas if "-v%C3%A6relser/" in u]
+    def test_barrido_recupera_lo_antiguo_una_vez_al_dia(self):
+        pas = Pasada(self.m, {"boligportal": [[1]], "barrido": {4: [[50, 51], [52]], 5: [[60]]}})
+        self.assertEqual(sorted(p["id"] for p in pas()["pisos"]), ["1", "50", "51", "52", "60"])
+        self.assertTrue(any("4-v%C3%A6relser/?max_monthly_rent=23000&offset=18" in u for u in self.barridas(pas)))
+        self.assertFalse(any(f"{n}-v%C3%A6relser" in u for u in self.barridas(pas) for n in (1, 2, 3, 7)))
+        otra = Pasada(self.m, {"boligportal": [[1]], "barrido": {4: [[50, 51], [52]]}}); otra()
+        self.assertEqual(self.barridas(otra), [])                        # hasta dentro de BARRIDO_HORAS no se repite
+    def test_barrido_se_repite_al_cambiar_filtros_o_a_las_24_h(self):
+        Pasada(self.m, {"boligportal": [[1]]})()
+        (self.m.BRIDGE / "config.json").write_text(json.dumps({"filtros": {"precio_max": 20000}}), encoding="utf-8")
+        pas = Pasada(self.m, {"boligportal": [[1]]}); pas()
+        self.assertTrue(self.barridas(pas)); self.assertIn("max_monthly_rent=20000", self.barridas(pas)[0])
+        con = self.m.abrir_db(); con.execute("UPDATE v2_barrido SET ts='2026-01-01T00:00:00+00:00'"); con.commit(); con.close()
+        pas = Pasada(self.m, {"boligportal": [[1]]}); pas()
+        self.assertTrue(self.barridas(pas))
+    def test_barrido_sin_red_se_reintenta_en_la_siguiente(self):
+        pas = Pasada(self.m, {"boligportal": [[1]]}); fetch = pas.fetch
+        def falla_barrido(u, timeout=20):
+            if "-v%C3%A6relser/" in u: raise OSError("sin red")
+            return fetch(u, timeout)
+        pas.fetch = falla_barrido; pas()
+        self.assertIn("barrido: OSError", self.m.STATS["errores"])
+        otra = Pasada(self.m, {"boligportal": [[1]]}); otra()
+        self.assertTrue(self.barridas(otra))
+    def test_lo_que_ya_esta_en_la_base_no_se_avisa_como_nuevo(self):
+        pas = Pasada(self.m, {"boligportal": [[1, 2]]}); fetch = pas.fetch
+        base = {"anuncios": [{"origen": "jon", "estado": "propuesto", "datos": {"link": "https://www.boligportal.dk/x-id-2"}}]}
+        pas.fetch = lambda u, timeout=20: json.dumps(base) if u.startswith(self.m.PISOS_API) else fetch(u, timeout)
+        self.assertEqual(sorted(p["id"] for p in pas()["pisos"]), ["1", "2"])    # sigue en la lista del vigilante
+        self.assertIn("x-id-1", pas.salida.getvalue()); self.assertNotIn("x-id-2", pas.salida.getvalue())
     def test_no_recuerda_propuestos_de_lejebolig(self):
         con = self.m.abrir_db()
         hoy = self.m.datetime.now(self.m.timezone.utc).isoformat()
