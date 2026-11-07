@@ -18,3 +18,4 @@
 {"ts": "2026-11-01T18:30:04Z", "pieza": "backend", "commit": "2d9a26b32fede8afff8a9457221c910ea15e72e5", "resultado": "ok", "nota": "backup-20261101-192924"}
 {"ts": "2026-11-01T18:39:02Z", "pieza": "lares", "commit": "c213eff1234390f76f3c099c1d75096787ad32e0", "resultado": "ok", "nota": "vigilante: alquilados, contrato y copias de EDC; SOUL.md límites"}
 {"ts": "2026-11-07T08:18:22Z", "pieza": "lares", "commit": "f3f5bb3de3282dc655a85e85f4cf683e110cbe2e", "resultado": "ok", "nota": "vigilante: fichas alquiladas como leídas y sin conexión no toca el buzón"}
+{"ts": "2026-11-07T17:51:10Z", "pieza": "lares", "commit": "b5cc9023e332e84d459e0ace94958ae3e5935372", "resultado": "ok", "nota": "vigilante: barrido diario y sin avisar lo que ya está en la base; SOUL.md y skill"}
