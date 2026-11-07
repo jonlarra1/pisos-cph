@@ -151,6 +151,14 @@ idea, la actual. Al cambiar algo, se reescribe lo que ya no es cierto; no se añ
      sin marcar (regla de Jon: se rechaza) y fecha. Lares no vuelve a mirar lo rechazado que ya no sale en sus 3 primeras páginas:
      tras ampliar la ventana (1-dic..4-ene), Jon añadió a mano los 3 que pasaban (Boligportal 5456969 Herlev, 5679026 y 5246868
      Sydhavnen). Hoy (19:30) Lares por el chat añadió 5363124 y el backend le rechazó 8 enlaces alquilados: el chat funciona.
+   - 7-nov: la Pi estuvo sin internet el 5-nov 10:30–15:00 (el wifi `scandi` no daba IP) y el 6-nov 07:00–18:00 (con IP pero
+     «no route to host»: la red del edificio sin salida). No se reinició (sin bajadas de tensión; sí tocó el límite de
+     temperatura alguna vez). Sin internet, el vigilante publicó 38 propuestos viejos: eran EDC copias alquiladas cuya ficha
+     («alquilado») no contaba como leída, así que se reabrían las mismas 12 cada pasada y 29 se quedaban pendientes con datos del
+     1-nov. Arreglado e instalado (7-nov): la ficha alquilada cuenta como leída y una pasada sin ningún portal no toca el buzón.
+   - Pendiente (decidir con Jon): los 13 pisos que pasan los filtros y Lares nunca vio (publicados antes del 21-oct, en páginas
+     profundas: 5675305 5461578 5110489 5280579 5672828 5470138 5671334 5041208 5670349 5668362 5522327 5587412 5638204) y un
+     barrido diario completo de 4–5 værelser en Boligportal para no perder lo antiguo ni lo que pasa al cambiar filtros.
 2. `pisos.py consultar`: el historial enseña la hora en segundos y «propuesto → propuesto» en las notas.
 3. Avisos de Lares al Bot Chat: la última entrega fallida es del 26-oct (piso-check-links, ya en pausa). El chat de Lares sí
    usa `pisos.py` (1-nov). Comprobar en el próximo aviso de piso nuevo que llega al Bot Chat.
@@ -167,9 +175,10 @@ idea, la actual. Al cambiar algo, se reescribe lo que ya no es cierto; no se añ
 - Regla de Jon: guardar solo la vuelta atrás del último cambio de cada pieza y borrar las anteriores cuando lleve ~1 día bien;
   apuntar aquí lo que queda. Nunca dejar copias de authorized_keys. No tocar copias de otros agentes de Hermes.
 - 1-nov: BORRADAS backend backup-20261027-075658; Lares .v7-20261027-preLejebolig.bak, SOUL.md.bak-20261027, SKILL.md.bak-20261027.
-  QUEDAN en la Pi: backend `backup-20261101-192924` y `data/copias/pisos-backup-20261101-192924.db` (base antes de migrar);
-  Lares `scripts/piso_watch_monitor.py.v8-20261101-preAlquilado.bak`, `SOUL.md.bak-20261101` → borrar el 2-nov si todo va bien
-  (la copia de la base, en la próxima instalación: `deploy.sh` deja las 3 últimas). Clave SSH quitada (sin copia).
+  7-nov: BORRADAS backend backup-20261101-192924 (código, está en git); Lares .v8-20261101-preAlquilado.bak y
+  SOUL.md.bak-20261101. QUEDAN en la Pi: `data/copias/pisos-backup-20261101-192924.db` (base antes de migrar; `deploy.sh` deja
+  las 3 últimas) y Lares `scripts/piso_watch_monitor.py.v9-20261107-preSinConexion.bak` → borrar ~8-nov si va bien.
+  Clave SSH quitada al acabar (sin copia).
   En el PC: ~/.claude/settings.json.bak, .bak-narrator, .bak-20261024-voz (narrador, 1–2 KB).
 - Puertos ya usados en la Pi (no tocar): Portainer 8000/9000/9443. Nuestro: 127.0.0.1:8787 (API, Funnel :8443), 127.0.0.1:8790 (panel: serve https :9444 por nombre, y serve TCP :9445 por IP). Comprobar siempre con `ss -ltnp | grep :PUERTO` antes de usar uno nuevo.
 - Acceso a la Pi: clave SSH temporal de 1 h (expiry-time en authorized_keys, comentario «claude-pisos-1h»); pedir una nueva a Jon.
