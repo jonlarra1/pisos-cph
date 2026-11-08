@@ -101,6 +101,17 @@ IMG_HOSTS = {
     "billeder.edc.dk": "https://www.edc.dk/",
     "nrep.estatetool.net": "https://juliliving.dk/",  # fotos de Juli Living
 }
+IMG_PREFIJO = {  # carpeta obligatoria de la foto en cada host (sin entrada = cualquiera)
+    "s3.eu-central-1.amazonaws.com": "/lejeboligdata/images/",
+    "billeder.edc.dk": "/edcmedia/",
+    "nrep.estatetool.net": "/media/bolig/",
+}
+IMG_PORTAL = {
+    "image-lambda.boligportal.dk": "boligportal",
+    "s3.eu-central-1.amazonaws.com": "lejebolig",
+    "billeder.edc.dk": "edc",
+    "nrep.estatetool.net": "juli",
+}
 IMG_MAX_MB, IMG_CACHE_MB = 8, 300
 IMG_STATS = {"hit": 0, "fetch": 0, "error": 0}
 os.makedirs(IMG_DIR, exist_ok=True)
@@ -452,31 +463,23 @@ class _RedirSoloPortales(urllib.request.HTTPRedirectHandler):
 _IMG_OPENER = urllib.request.build_opener(_RedirSoloPortales)
 
 
-def img_proxy(u):
-    """Foto de un anuncio desde los portales (con su Referer), cacheada en disco. Devuelve (bytes, content-type)."""
+def _img_url_ok(u):
+    """La URL de la foto, ya comprobada: https, host permitido, su carpeta, sin «..», usuario ni puertos raros."""
     pu = urllib.parse.urlparse(u)
     if pu.scheme != "https" or pu.hostname not in IMG_HOSTS:
         raise ValueError("host no permitido")
     raw = urllib.parse.unquote(pu.path)
     if ".." in raw or "\\" in raw or pu.username or pu.password or pu.port not in (None, 443):
         raise ValueError("ruta no permitida")
-    if pu.hostname.startswith("s3.") and not raw.startswith("/lejeboligdata/images/"):
+    if not raw.startswith(IMG_PREFIJO.get(pu.hostname, "/")):
         raise ValueError("ruta no permitida")
-    if pu.hostname == "billeder.edc.dk" and not raw.startswith("/edcmedia/"):
-        raise ValueError("ruta no permitida")
-    if pu.hostname == "nrep.estatetool.net" and not raw.startswith("/media/bolig/"):
-        raise ValueError("ruta no permitida")
-    key = hashlib.sha1(u.encode(), usedforsecurity=False).hexdigest()
-    path = os.path.join(IMG_DIR, key)
-    if os.path.exists(path):
-        IMG_STATS["hit"] += 1
-        with open(path, "rb") as f:
-            data = f.read()
-        ctype = _txt(path + ".t") if os.path.exists(path + ".t") else "image/jpeg"
-        return data, ctype, "cache"
+    return pu
+
+
+def _img_descargar(u, host):
     h = {"User-Agent": "Mozilla/5.0 (X11; Linux aarch64) Chrome/131.0", "Accept": "image/avif,image/webp,image/*"}
-    if IMG_HOSTS[pu.hostname]:
-        h["Referer"] = IMG_HOSTS[pu.hostname]
+    if IMG_HOSTS[host]:
+        h["Referer"] = IMG_HOSTS[host]
     with _IMG_OPENER.open(urllib.request.Request(u, headers=h), timeout=20) as r:
         ctype = r.headers.get("Content-Type", "image/jpeg").split(";")[0]
         if not ctype.startswith("image/"):
@@ -484,36 +487,42 @@ def img_proxy(u):
         data = r.read(IMG_MAX_MB * 1024 * 1024 + 1)
     if len(data) > IMG_MAX_MB * 1024 * 1024:
         raise ValueError("imagen demasiado grande")
+    return data, ctype
+
+
+def _img_limpiar_cache():
+    """Si la caché pasa del límite, borra la cuarta parte más antigua."""
+    files = [os.path.join(IMG_DIR, x) for x in os.listdir(IMG_DIR) if not x.endswith((".t", ".tmp"))]
+    total = sum(os.path.getsize(x) for x in files)
+    if total <= IMG_CACHE_MB * 1024 * 1024:
+        return
+    for x in sorted(files, key=os.path.getmtime)[: len(files) // 4]:
+        for y in (x, x + ".t"):
+            try:
+                os.remove(y)
+            except OSError:
+                pass
+    log("events", level="info", src="img", msg=f"caché de fotos limpiada ({total // 1048576} MB)")
+
+
+def img_proxy(u):
+    """Foto de un anuncio desde los portales (con su Referer), cacheada en disco. Devuelve (bytes, content-type,
+    origen: «cache» o «portal:<nombre>»)."""
+    pu = _img_url_ok(u)
+    path = os.path.join(IMG_DIR, hashlib.sha1(u.encode(), usedforsecurity=False).hexdigest())
+    if os.path.exists(path):
+        IMG_STATS["hit"] += 1
+        with open(path, "rb") as f:
+            data = f.read()
+        return data, (_txt(path + ".t") if os.path.exists(path + ".t") else "image/jpeg"), "cache"
+    data, ctype = _img_descargar(u, pu.hostname)
     with open(path + ".tmp", "wb") as f:
         f.write(data)
     os.replace(path + ".tmp", path)
     _put(path + ".t", ctype)
     IMG_STATS["fetch"] += 1
-    # limpiar caché si pasa del límite (borra las más antiguas)
-    files = [os.path.join(IMG_DIR, x) for x in os.listdir(IMG_DIR) if not x.endswith((".t", ".tmp"))]
-    total = sum(os.path.getsize(x) for x in files)
-    if total > IMG_CACHE_MB * 1024 * 1024:
-        for x in sorted(files, key=os.path.getmtime)[: len(files) // 4]:
-            for y in (x, x + ".t"):
-                try:
-                    os.remove(y)
-                except OSError:
-                    pass
-        log("events", level="info", src="img", msg=f"caché de fotos limpiada ({total // 1048576} MB)")
-    return (
-        data,
-        ctype,
-        "portal:"
-        + (
-            "boligportal"
-            if "boligportal" in pu.hostname
-            else "edc"
-            if "edc" in pu.hostname
-            else "juli"
-            if "estatetool" in pu.hostname
-            else "lejebolig"
-        ),
-    )
+    _img_limpiar_cache()
+    return data, ctype, "portal:" + IMG_PORTAL[pu.hostname]
 
 
 _rl_logged = {}

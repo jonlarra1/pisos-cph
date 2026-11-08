@@ -88,6 +88,11 @@ class TestImgUrl(Base):
                   "https://nrep.estatetool.net/documents/x.pdf", "https://nrep.estatetool.net/media/bolig/../../x",
                   "file:///etc/passwd", "https://127.0.0.1/x", ""):
             with self.subTest(u=u), self.assertRaises(ValueError): app.img_proxy(u)
+    def test_acepta_y_cada_host_tiene_portal(self):
+        for u in ("https://image-lambda.boligportal.dk/x.jpg", "https://s3.eu-central-1.amazonaws.com/lejeboligdata/images/a.jpg",
+                  "https://billeder.edc.dk/edcmedia/a.jpg", "https://nrep.estatetool.net/media/bolig/a_B.jpg"):
+            with self.subTest(u=u): self.assertIn(app._img_url_ok(u).hostname, app.IMG_PORTAL)
+        self.assertEqual(set(app.IMG_HOSTS), set(app.IMG_PORTAL))
     def test_redirecciones_solo_a_portales(self):
         h = app._RedirSoloPortales(); req = urllib.request.Request("https://image-lambda.boligportal.dk/a")
         for u in ("https://evil.com/x", "http://image-lambda.boligportal.dk/x", "https://127.0.0.1/x", "https://image-lambda.boligportal.dk:8443/x"):
