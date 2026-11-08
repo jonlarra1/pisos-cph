@@ -63,8 +63,7 @@ class Web(unittest.TestCase):
         self.page.on("dialog", lambda d: (self.alerts.append(d.message), d.dismiss()))
         self.page.route(PI + "/**", self.pi)
         self.page.route("https://tile.openstreetmap.org/**", lambda r: r.fulfill(status=200, content_type="image/png", body=PNG))
-        self.page.route("https://routing.openstreetmap.de/**", lambda r: r.fulfill(status=200, json={"code": "Ok", "routes": [
-            {"distance": 4000, "duration": 900, "geometry": {"coordinates": [[12.585, 55.679], [12.57, 55.665], [12.553, 55.649]]}}]}))   # bici/andando por calle
+        self.page.route("https://routing.openstreetmap.de/**", lambda r: r.fulfill(status=200, json=OSRM_OK))   # bici/andando por calle
         self.page.route("https://fonts.googleapis.com/**", lambda r: r.fulfill(status=200, content_type="text/css", body=""))
         self.page.goto(self.url)
         self.esperar("window.map && document.querySelectorAll('.pin').length>0", 15000)
@@ -456,6 +455,10 @@ class TestDestinosDeAntes(Web):
         self.assertEqual(self.js("localStorage.getItem('destinos_v2')"), "1")
 
 
+OSRM_OK = {"code": "Ok", "routes": [
+    {"distance": 4000, "duration": 900, "geometry": {"coordinates": [[12.585, 55.679], [12.57, 55.665], [12.553, 55.649]]}}]}
+
+
 class TestDestinoAnadido(Web):
     INIT = "localStorage.setItem('destinos', JSON.stringify([{id:'xcris',n:'Cris',addr:'Nørrebrogade',ll:[55.6935,12.548],who:'unai'}]));"
     def abrir(self):
@@ -475,6 +478,41 @@ class TestDestinoAnadido(Web):
         self.js(f"drawRoute('{pid}','xcris-unai',false)")
         tramos = self.js("routeLayer.getLayers().filter(l=>l.options&&/route-ant.*(walk|bike)/.test(l.options.className||'')).map(l=>l.getLatLngs().length)")
         self.assertTrue(tramos); self.assertTrue(all(n > 2 for n in tramos), tramos)    # ningún tramo en línea recta (2 puntos)
+    def osrm(self, fallos):
+        """OSRM simulado: las primeras peticiones contestan con los códigos de `fallos`, luego Ok."""
+        self.osrm_q = []
+        def h(r):
+            self.osrm_q.append(r.request.url); st = fallos.pop(0) if fallos else 200
+            if st == 200: return r.fulfill(status=200, json=OSRM_OK)
+            if st == 400: return r.fulfill(status=400, json={"code": "NoRoute", "message": "Impossible route"})
+            r.fulfill(status=st, body="ocupado")
+        self.page.route("https://routing.openstreetmap.de/**", h)
+    def tramos(self, foco=True):
+        clase = "route-ant.*(walk|bike)" if foco else "(walk|bike)"
+        return self.js(f"routeLayer.getLayers().filter(l=>l.options&&/{clase}/.test(l.options.className||'')).map(l=>l.getLatLngs().length)")
+    def test_si_osrm_falla_se_reintenta(self):
+        self.osrm([503, 429, 503]); self.js("LIVE_ESPERA=50")
+        pid = self.abrir(); self.esperar(f"RTS('{pid}','xcris-unai').length===1&&RTS('{pid}','xcris-jon').length===1")
+        self.js(f"drawRoute('{pid}','xcris-unai',false)")
+        self.esperar("Object.keys(LIVE).length>0&&Object.values(LIVE).every(v=>v&&v.path)")   # todo acaba por calle
+        self.js(f"drawRoute('{pid}','xcris-unai',false)")
+        self.assertTrue(all(n > 2 for n in self.tramos()), self.tramos())
+        self.assertGreater(len(self.osrm_q), self.js("Object.keys(LIVE).length"))          # hubo reintentos
+    def test_sin_ruta_no_se_reintenta(self):
+        self.osrm([400] * 50); self.js("LIVE_ESPERA=20")
+        pid = self.abrir(); self.esperar(f"RTS('{pid}','xcris-unai').length===1")
+        self.js(f"drawRoute('{pid}','xcris-unai',false)")
+        self.esperar("Object.keys(LIVE).length>0&&Object.values(LIVE).every(v=>v===null)")
+        self.page.wait_for_timeout(300)
+        self.assertEqual(len(self.osrm_q), self.js("Object.keys(LIVE).length"))            # una petición por tramo
+        self.assertEqual(self.js("LIVEQ.activas"), 0)
+    def test_las_rutas_atenuadas_tambien_van_por_calle(self):
+        pid = self.abrir(); self.esperar(f"RTS('{pid}','xcris-unai').length===1&&RTS('{pid}','xcris-jon').length===1")
+        self.js(f"drawRoute('{pid}','xcris-unai',false)")
+        self.esperar("Object.keys(LIVE).length>0&&Object.values(LIVE).every(v=>v!=='pending')")
+        self.js(f"drawRoute('{pid}','xcris-unai',false)")
+        todos, foco = self.tramos(False), self.tramos()
+        self.assertGreater(len(todos), len(foco)); self.assertTrue(all(n > 2 for n in todos), todos)
     def test_metro_del_motor_sigue_la_via(self):
         pid = self.abrir(); self.esperar(f"RTS('{pid}','xcris-unai').length===1")
         self.js(f"drawRoute('{pid}','xcris-unai',false)")
