@@ -7,6 +7,8 @@ Habla con la API del backend (base única); no escribe ningún archivo.
     python3 pisos.py estado <enlace> <gusta|contactado|descartado|propuesto> [motivo…] [--por jon|unai]
     python3 pisos.py nota <enlace> <texto…>       lo que has comprobado («ficha revisada: …», «gemela de …»)
     python3 pisos.py dormitorios <enlace> <n>     dormitorios reales (p. ej. contados en el plano)
+    python3 pisos.py chats [texto]                último mensaje de cada chat de Boligportal (lo leído por
+                                                  chats_boligportal.py; filtra por calle o número de anuncio)
 
 Enlaces válidos: anuncios de Lejebolig, Boligportal, EDC o Juli Living (https). La clave va en el archivo .pisos_api_key
 junto a la carpeta scripts del perfil (o en la variable PISOS_API_KEY); nunca se escribe en la salida.
@@ -16,6 +18,7 @@ import json
 import os
 import re
 import sys
+import time
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -24,6 +27,13 @@ from pathlib import Path
 API = os.environ.get("PISOS_API", "https://raspberrypi.tail9f1069.ts.net:8443")
 MAPA = "https://jonlarra1.github.io/pisos-cph/"
 CLAVE_ARCHIVO = Path(__file__).resolve().parent.parent / ".pisos_api_key"
+CHATS_ARCHIVO = Path(__file__).resolve().parent.parent / "chats_boligportal.json"  # privado (600), solo del perfil
+MARCAS = {
+    "respondido": "💬 contestado",
+    "sin_respuesta": "⏳ sin respuesta",
+    "visita": "📅 visita",
+    "alquilado": "🏁 alquilado",
+}
 ESTADOS = ("gusta", "contactado", "descartado", "propuesto")
 PATRONES = (  # los mismos que backend/portales.py
     ("Lejebolig", re.compile(r"^https://(?:en\.|www\.)?lejebolig\.dk/lejebolig/(\d{4,10})(?:[/?#]|$)")),
@@ -138,6 +148,24 @@ def dormitorios(enlace, n, por):
         print(f"  aviso: {av}")
 
 
+def chats(filtro=""):
+    try:
+        d = json.loads(CHATS_ARCHIVO.read_text(encoding="utf-8"))
+    except (FileNotFoundError, ValueError):
+        raise Error("aún no hay chats leídos (falta la cookie o la primera lectura)") from None
+    f = filtro.lower()
+    lista = [c for c in d.get("chats") or [] if not f or f in (c.get("calle") or "").lower() or f == c.get("pid")]
+    print(f"Leído {time.strftime('%Y-%m-%d %H:%M', time.localtime(d.get('leido', 0)))} · {len(lista)} conversaciones")
+    for c in sorted(lista, key=lambda c: c.get("fecha") or "", reverse=True)[:30]:
+        quien = "nosotros" if c.get("es_mio") else "casero"
+        print(
+            f"- {c.get('calle') or c['pid']} · {MARCAS.get(c.get('marca'), '?')}"
+            f" · {(c.get('fecha') or '')[:16]} ({quien})"
+        )
+        print(f"  {' '.join((c.get('texto') or '(sin texto: adjunto)').split())[:500]}")
+        print(f"  https://www.boligportal.dk/indbakke/t/{c.get('hilo')}")
+
+
 def main(args):
     por = None
     if "--por" in args:
@@ -160,6 +188,8 @@ def main(args):
         nota(resto[0], " ".join(resto[1:])[:300], por)
     elif orden == "dormitorios" and len(resto) == 2:
         dormitorios(resto[0], resto[1], por)
+    elif orden == "chats":
+        chats(" ".join(resto))
     else:
         raise Error("orden no válida; mira: python3 pisos.py ayuda")
 

@@ -7,6 +7,11 @@ Copias de lo que corre en el perfil `lares` de la Pi (`~/docker/hermes/profiles/
   a Lares (salida no vacía) cuando hay candidatos nuevos.
 - `pisos.py` → `scripts/`. La herramienta de Lares en el chat: añadir enlaces, consultar, cambiar estados, notas y dormitorios.
   Usa la API v2 con `CLAVE_LARES` (archivo `.pisos_api_key` en la carpeta del perfil). Es su ÚNICA forma de tocar pisos.
+- `chats_boligportal.py` → `scripts/`. Lector de los chats de Boligportal (solo lee). Lo lanza la tarea `boligportal-chats`
+  cada 30 min, sin IA; lee solo a la hora sorteada (3–5 h tras la anterior, nunca de 00 a 08 h). Cookie en
+  `.boligportal_cookie` (600, la pegan Jon o Unai); texto de los mensajes solo en `chats_boligportal.json` (600); a la API
+  v2 (`POST /api/v2/contactos`) va la marca, si el último mensaje es nuestro y su fecha. Escribe
+  `pisos-bridge/chats_estado.json` (sesión, conversaciones, error) para el check «chats».
 - `instrucciones-pisos.md` → va en su `SOUL.md` desde la sección «Pisos de Copenhague» (las líneas de antes son las reglas
   generales de Lares, que no están aquí). Es el contexto del agente: si cambia algo que le afecte, se actualiza aquí y se
   reinstala en el mismo bloque.

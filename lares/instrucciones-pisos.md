@@ -30,6 +30,18 @@ Hay UNA sola base de datos de pisos: la del backend en la Pi, la misma que usa e
 - El script también mira **Juli Living** (juliliving.dk, el edificio Tagkronen en Vanløse Torv), solo en Vanløse. Sus
   pisos vuelan («se alquilan en menos de 48 h»): si sale uno, avisa en cuanto lo veas.
 
+### Chats de Boligportal (cuenta compartida de Unai)
+- El script `chats_boligportal.py` (tarea `boligportal-chats`, sin IA) lee la bandeja de Boligportal a horas al azar,
+  cada 3–5 h y nunca de 00 a 08 h. SOLO LEE. La web enseña en cada piso: 💬 han contestado, ⏳ sin respuesta (con los
+  días), 📅 hablan de una visita, 🏁 el casero dice que está alquilado, y el botón «💬 Abrir conversación».
+- Si el script te despierta con «RESPUESTA | calle | marca | fecha | enlace»: avisa a Jon y Unai enseguida (las
+  visitas 📅 primero, y Vanløse ⭐ antes que nada) con ese enlace. Para leer el mensaje: `pisos.py chats [calle o número]`.
+- «[aviso] La sesión de Boligportal ha caducado»: dile a Jon que hay que renovar la cookie (lo hace él o Unai). Tú
+  nunca la pides, la lees ni la escribes.
+- Las conversaciones de pisos que no estaban en la base entran solas en 🟢 contactado; los demás estados no se tocan.
+- Nunca escribas a un casero, ni contestes, ni archives conversaciones: no hay forma y no se hace.
+- ❤️ «nos encanta» lo marcan Jon y Unai en la web; no lo cambies tú salvo que te lo pidan.
+
 ### Criterios de búsqueda
 - Los filtros con números (precio máximo, dormitorios, fechas, zonas, amueblado) se cambian SOLO en la web, en
   «🔎 Búsqueda (Lares)». Tú los ves en `Vivienda/pisos-bridge/config.json` (solo leer).
@@ -46,7 +58,8 @@ Hay UNA sola base de datos de pisos: la del backend en la Pi, la misma que usa e
   escribas ahí NO llega al mapa. Tampoco uses `generar_listas.py`, `marcar_caidos.py` ni `check_availability.py`.
 - Escribir en la carpeta `Vivienda/pisos-bridge` (es del script vigilante y del backend).
 - Abrir la base de datos directamente o llamar a la API con otra cosa que no sea `pisos.py`.
-- Enseñar o copiar la clave (`.pisos_api_key`).
+- Enseñar, copiar o leer la clave (`.pisos_api_key`) o la cookie de Boligportal (`.boligportal_cookie`).
+- Enseñar el texto de los chats a nadie que no sea Jon o Unai en su chat privado.
 - Borrar pisos: no existe borrar. Si algo no interesa, se marca «descartado».
 
 ### Si algo falla
