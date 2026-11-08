@@ -47,9 +47,12 @@ idea, la actual. Al cambiar algo, se reescribe lo que ya no es cierto; no se añ
     of max 2 requests, current row first, retry after 30 s on 429/503); when a destination is added the Pi precomputes them
     (`backend/precalculo.py`) and the web shows «⏳ La Pi está preparando las rutas: X de N».
   - Routes not in `RUTAS` (other times, «Ahora», centro, destinos, propuestos) use the Pi engine, whose walk/bike legs are
-    straight lines; every drawn route asks OSRM (FOSSGIS) for the street path (`liveRoute`: max 2 requests at a time, focused
-    route first, 250 ms between requests, the previous flat's queue dropped on change; network/429/5xx → stays «…» and
-    retries after 10, 20 and 30 s, then null and a new try after 5 min; «NoRoute» stays straight). Only the focused route animates.
+    straight lines. Street paths live on the Pi (`backend/calles.py`, table `calle`, never deleted): legs already saved come
+    inside `/api/ruta` as `calle`; the rest go to a queue that a thread fills from OSRM (FOSSGIS) at 1 request/s, and the web asks
+    `GET /api/calle` (the Pi only asks OSRM for legs its engine gave, max 50 000 rows; unknown leg = 403 and Pi
+    down → OSRM directly). Web `liveRoute`: max 2 requests at a time, 250 ms apart, focused route first,
+    previous flat's queue dropped; failure → stays «…» and retries after 10, 20, 30 s, then null and a new try after 5 min;
+    «no route» stays straight. Only the focused route animates.
   - Station dots/labels hide when all lines through them are switched off (`lineOn`, `updateStations`).
   - `HORARIOS` — saved schedule presets shown as "Mis horarios".
 - Flat status (shared on the Pi, table `estado`; `/api/estados` on load, every 15 s without SSE and on focus; POST `/api/estado`;
@@ -58,7 +61,7 @@ idea, la actual. Al cambiar algo, se reescribe lo que ya no es cierto; no se añ
 - `data/pisos.json` — flat data (id, zona, barrio, calle, m2, vaer, dorm, alq, aconto, dep, pre, disp, link, lat, lon, ubic = location precision, estado/aviso = warnings, fotos, fotoPlano).
 - `backend/` — `app.py` (server, checks, logs, panel), `api_v2.py` (API v2), `anuncios.py` (model, rules, states, history),
   `portales.py` (reads Boligportal/EDC/Lejebolig/Juli Living listing pages), `puente.py` (v2 ↔ the web's `estado`/`candidatos`), `destinos.py`, `contactos.py`,
-  `precalculo.py`, `routing.py` (route engine), `admin.html` (panel), `deploy.sh`, `smoke_test.py`, `firewall/`.
+  `precalculo.py`, `routing.py` (route engine), `calles.py` (street paths), `admin.html` (panel), `deploy.sh`, `smoke_test.py`, `firewall/`.
 - `lares/` — copies of what runs in Lares' profile on the Pi: `piso_watch_monitor.py` (vigilante), `pisos.py` (chat tool), `chats_boligportal.py` (chats),
   `instrucciones-pisos.md` (goes into Lares' SOUL.md and skill `piso-watch-cph`). See `lares/README.md`.
 - `.claude/skills/boligportal-mensajes/` — skill para leer (solo leer) la bandeja de Boligportal de la cuenta compartida con
@@ -85,7 +88,7 @@ idea, la actual. Al cambiar algo, se reescribe lo que ya no es cierto; no se añ
   GitHub Pages); on a new version it reloads alone if idle ≥20 s (max once per 2 min, keeps map view + selected flat via
   sessionStorage «vista»), otherwise shows «🆕 Hay cambios nuevos». Lares: only its profile `lares` and the folder
   `Vivienda/pisos-bridge`; never read other Hermes agents/profiles. On the Pi only touch `/home/docker/pisos-backend`; use targeted checks (grep).
-- Monitoring & logs policy (keep for every new feature): backend logs JSON lines in /data/logs/<tipo>/AAAA-MM-DD.jsonl (past days gzipped; retention api/client 14 d, events/checks/summary 183 d; 20 MB/day cap; checks written only on OK<->fail change, last 10 per check in memory + checks_recientes.json; daily summary line); Docker stdout capped 2×5 MB; checks every 5 min (funnel_publico, web_github, lares_pasadas, lares_cron, buzon_compartido, api_errores, fotos, almacenamiento, aislamiento_red, motor_rutas, anuncios, destinos, chats). Check «chats»: última lectura de la bandeja (`pisos-bridge/chats_estado.json`: sesión ok|caducada|sin_cookie, conversaciones, error), contactos por marca y ❤️; falla si la sesión caducó o hubo error; eventos src=chats y src=favoritos. Check «destinos»: destinos visibles/quitados, rutas previas (en cola, calculadas, con error, sin sitio) y búsquedas rechazadas por motor ocupado (también evento warn src=rutas, máx. 1/min); eventos src=destinos y src=rutas_previas. Check «anuncios» (API v2): anuncios por estado, cola de fichas, errores del lector, enlaces añadidos/fallidos, entregas del vigilante y acciones no permitidas (403, también evento warn src=permisos). Private panel http://100.72.170.60:9445 (tailscale serve --tcp, tailnet only) or https://raspberrypi.tail9f1069.ts.net:9444 (needs MagicDNS; Tailscale-User-Login must start with larrabajojon@). Add a check + log events for anything new.
+- Monitoring & logs policy (keep for every new feature): backend logs JSON lines in /data/logs/<tipo>/AAAA-MM-DD.jsonl (past days gzipped; retention api/client 14 d, events/checks/summary 183 d; 20 MB/day cap; checks written only on OK<->fail change, last 10 per check in memory + checks_recientes.json; daily summary line); Docker stdout capped 2×5 MB; checks every 5 min (funnel_publico, web_github, lares_pasadas, lares_cron, buzon_compartido, api_errores, fotos, almacenamiento, aislamiento_red, motor_rutas, calles, anuncios, destinos, chats). Check «calles»: trazados guardados, cola y respuestas de OSRM; falla si OSRM lleva >6 h sin responder; eventos src=calles al caerse y al volver. Check «chats»: última lectura de la bandeja (`pisos-bridge/chats_estado.json`: sesión ok|caducada|sin_cookie, conversaciones, error), contactos por marca y ❤️; falla si la sesión caducó o hubo error; eventos src=chats y src=favoritos. Check «destinos»: destinos visibles/quitados, rutas previas (en cola, calculadas, con error, sin sitio) y búsquedas rechazadas por motor ocupado (también evento warn src=rutas, máx. 1/min); eventos src=destinos y src=rutas_previas. Check «anuncios» (API v2): anuncios por estado, cola de fichas, errores del lector, enlaces añadidos/fallidos, entregas del vigilante y acciones no permitidas (403, también evento warn src=permisos). Private panel http://100.72.170.60:9445 (tailscale serve --tcp, tailnet only) or https://raspberrypi.tail9f1069.ts.net:9444 (needs MagicDNS; Tailscale-User-Login must start with larrabajojon@). Add a check + log events for anything new.
 - Anuncios retirados: el comprobador del vigilante (`estado_anuncio`) mira ≤8 anuncios por pasada (`MAX_ACTIVO`: pisos del mapa +
   propuestos que ya no salen en las páginas, los menos mirados primero). Retirado SOLO con señal clara: Boligportal redirige con
   `?ad_rented_out_redirect=` o trae `state` ≠ ACTIVE_*; Lejebolig 404/410. Al leer una ficha de Boligportal, esa misma
@@ -129,7 +132,7 @@ idea, la actual. Al cambiar algo, se reescribe lo que ya no es cierto; no se añ
     cadenas PISOS-EGRESS (en DOCKER-USER) y PISOS-HOST (en INPUT) — el contenedor sale a internet pero no a LAN, Tailscale, otras redes Docker
     ni a la propia Pi. El check «aislamiento_red» lo verifica cada 5 min.
   - Límite de peticiones con la IP real (último valor de X-Forwarded-For, lo añade tailscaled): escrituras 30/min por IP y 120/min global,
-    lecturas 300/min por IP y 2000/min global, fotos 120/min por IP y 600 global, `/api/ruta` 240/min por IP y 600 global (el motor lo
+    lecturas 300/min por IP y 2000/min global, fotos 120/min por IP y 600 global, `/api/ruta` 240/min por IP y 600 global, `/api/calle` 120/min por IP y 400 global (el motor lo
     protege además `FRENO`: máx. 6 búsquedas esperando); eventos «limite» en el log.
   - API v2: clave por cliente (web = `API_KEY` pública + Origin, `quien` solo jon/unai/web; `CLAVE_LARES`, `CLAVE_VIGILANTE`,
     `CLAVE_COMPROBADOR` solo en el .env de la Pi). Sin operación de borrar. Claves de lectura de los mensajes:

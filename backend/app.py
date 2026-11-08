@@ -24,6 +24,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 import anuncios
 import api_v2
+import calles
 import contactos
 import destinos
 import precalculo
@@ -316,6 +317,7 @@ def init():
         c.execute("CREATE TABLE IF NOT EXISTS ajustes (k TEXT PRIMARY KEY, v TEXT NOT NULL, by TEXT, ts INTEGER)")
         anuncios.crear_tablas(c)
         contactos.crear_tablas(c)
+        calles.crear_tabla(c)
         arreglados = anuncios.arreglar_enlaces(c)
         destinos.crear_tabla(c)
         for z, v in ZONAS_DEFAULT.items():
@@ -894,6 +896,12 @@ class H(BaseHTTPRequestHandler):
                 return self.reply(200, {"destinos": destinos.listar(c), "preparando": precalculo.progreso()})
         if self.path == "/api/candidatos":
             return self.reply(200, candidatos())
+        if self.path.startswith("/api/calle?"):
+            if limited("calle:" + self.client_ip(), 120, "calle:*", 400):
+                return self.reply(429, {"error": "demasiadas peticiones, espera un minuto"})
+            code, obj = calle(urllib.parse.urlparse(self.path).query)
+            self._note = "" if code == 200 else str(obj.get("error", ""))[:60]
+            return self.reply(code, obj)
         if self.path.startswith("/api/ruta?"):
             if limited("ruta:" + self.client_ip(), 240, "ruta:*", 600):  # cachés baratas; el motor lo protege FRENO
                 return self.reply(429, {"error": "demasiadas búsquedas, espera un minuto"})
@@ -1155,7 +1163,7 @@ def ruta(qs, previo=False):
     key = (round(olat, 4), round(olon, 4), round(dlat, 4), round(dlon, 4), fecha, hora, modo, perfil, lim, vw, vb)
     hit = RUTA_CACHE.get(key)
     if hit and time.time() - hit[0] < hit[2]:
-        return 200, {**hit[1], "cache": True}
+        return 200, {**hit[1], "opciones": calles.con_calles(db, hit[1]["opciones"], previo), "cache": True}
     if not previo and not FRENO.entrar():  # demasiadas esperando: «ocupado» al momento, sin ocupar un hilo
         if time.time() - _FRENO_LOG["t"] > 60:  # al log como mucho una vez por minuto
             _FRENO_LOG["t"] = time.time()
@@ -1190,7 +1198,28 @@ def ruta(qs, previo=False):
     RUTA_CACHE[key] = (time.time(), res, 86400 if previo else 600)
     while len(RUTA_CACHE) > 2000:
         RUTA_CACHE.popitem(last=False)
-    return 200, res
+    return 200, {
+        **res,
+        "opciones": calles.con_calles(db, opts, previo),
+    }  # tramos a pie / en bici ya guardados por calle
+
+
+def _punto(txt):
+    la, lo = (float(x) for x in txt.split(","))
+    return [la, lo]
+
+
+def calle(qs):
+    """GET /api/calle?modo=foot|bike&a=lat,lon&b=lat,lon → {d, path} por calle (calles.py: base + OSRM)."""
+    import routing
+
+    q = urllib.parse.parse_qs(qs, max_num_fields=5)
+    try:
+        modo, a, b = q["modo"][0], _punto(q["a"][0]), _punto(q["b"][0])
+        calles.valido(modo, a, b, routing.BBOX)
+    except (KeyError, ValueError, IndexError) as e:
+        return 400, {"error": f"parámetros no válidos ({e})"}
+    return calles.trazado(db, modo, a, b)
 
 
 FRENO = precalculo.Freno()
@@ -1639,6 +1668,12 @@ def check_destinos():
     return ok and precalculo.ESTADO["errores"] < 50, f"{txt} · {precalculo.resumen()}"
 
 
+def check_calles():
+    """Trazados por calle (calles.py): guardados, cola y si OSRM responde."""
+    with db() as c:
+        return calles.resumen(c)
+
+
 CHECKS_LISTA = (
     ("funnel_publico", check_funnel),
     ("web_github", check_site),
@@ -1653,6 +1688,7 @@ CHECKS_LISTA = (
     ("almacenamiento", check_storage),
     ("aislamiento_red", check_isolation),
     ("motor_rutas", check_rutas),
+    ("calles", check_calles),
     ("anuncios", check_anuncios),
     ("destinos", check_destinos),
     ("chats", check_chats),
@@ -1852,6 +1888,8 @@ if __name__ == "__main__":
     threading.Thread(target=housekeeper, daemon=True).start()
     threading.Thread(target=gtfs_worker, daemon=True).start()
     threading.Thread(target=COLA_RUTAS.trabajar, daemon=True).start()
+    calles.LOG["fn"] = lambda level, msg: log("events", level=level, src="calles", msg=msg)
+    threading.Thread(target=calles.rellenar, args=(db,), daemon=True).start()
     threading.Thread(target=monitor, daemon=True).start()
     threading.Thread(target=api_v2.lector, args=(CTX,), daemon=True).start()
     threading.Thread(target=vigilar_candidatos, daemon=True).start()

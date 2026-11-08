@@ -1442,7 +1442,8 @@ async function pullDestinos(){try{const r=await fetch(API+"/api/destinos",{cache
       try{lista=await destinoApi({accion:"anadir",id:d.id,n:d.n,addr:d.addr||"",ll:d.ll}); d.pend=false;}catch(e){if(!(e instanceof TypeError))d.pend=false;}}
     setExtra(lista);}catch(e){}}
 drawExtraMarkers();
-/* Tramos en bici / andando por calle con OSRM (FOSSGIS, servidor gratuito: pocas peticiones). Caché LIVE; cola LIVEQ
+/* Tramos en bici / andando por calle. Se piden a la Pi (/api/calle: los guarda para siempre y, si no los tiene, los pide
+   a OSRM de FOSSGIS); si la Pi no responde, directamente a OSRM (servidor gratuito: pocas peticiones). Caché LIVE; cola LIVEQ
    con MAX peticiones a la vez y LIVE_PAUSA ms entre una y otra; primero la ruta que estás mirando (prio) y al cambiar de
    piso se suelta lo que quedaba del anterior (liveSoltar). Si falla la red, 429 o 5xx, sigue «pending» (recta, «…») y se
    reintenta a los 10, 20 y 30 s; tras LIVE_REINT fallos queda null y vuelve a probarse a los 5 min. «No hay ruta» = null. */
@@ -1460,10 +1461,18 @@ function liveSig(){clearTimeout(LIVEQ.t);
   while(LIVEQ.activas<LIVEQ.MAX&&LIVEQ.cola.length){const falta=LIVEQ.ult+LIVE_PAUSA-Date.now();
     if(falta>0){LIVEQ.t=setTimeout(liveSig,falta); return;}
     LIVEQ.activas++; LIVEQ.ult=Date.now(); livePedir(LIVEQ.cola.shift());}}
-function livePedir(t){const {key,mode,a,b}=t;
-  fetch(`https://routing.openstreetmap.de/routed-${mode==="bike"?"bike":"foot"}/route/v1/driving/${a[1]},${a[0]};${b[1]},${b[0]}?overview=full&geometries=geojson`)
+/* {d,path} | null (no hay ruta); rechaza si es un fallo pasajero */
+function osrmDirecto(mode,a,b){
+  return fetch(`https://routing.openstreetmap.de/routed-${mode==="bike"?"bike":"foot"}/route/v1/driving/${a[1]},${a[0]};${b[1]},${b[0]}?overview=full&geometries=geojson`)
    .then(r=>r.ok||r.status===400?r.json():Promise.reject(r.status)).then(j=>{const x=j.code==="Ok"&&j.routes&&j.routes[0];
-     LIVE[key]=x?{d:Math.round(x.distance),path:x.geometry.coordinates.map(([lo,la])=>[la,lo])}:null;
+     return x?{d:Math.round(x.distance),path:x.geometry.coordinates.map(([lo,la])=>[la,lo])}:null;});}
+function liveTramo(mode,a,b){const m=mode==="bike"?"bike":"foot";
+  return fetch(`${API}/api/calle?modo=${m}&a=${a[0]},${a[1]}&b=${b[0]},${b[1]}`)
+   .then(r=>r.ok?r.json():r.status===404?null:r.status===400||r.status===403?osrmDirecto(m,a,b):Promise.reject(r.status),
+         ()=>osrmDirecto(m,a,b));}   /* 400/403: tramo que la Pi no pide (fuera de su zona o no es del motor) */
+function livePedir(t){const {key,mode,a,b}=t;
+  liveTramo(mode,a,b).then(x=>{const ok=x&&Number.isFinite(x.d)&&Array.isArray(x.path)&&x.path.length>1&&x.path.every(p=>Array.isArray(p)&&Number.isFinite(p[0])&&Number.isFinite(p[1]));
+     LIVE[key]=ok?{d:Math.round(x.d),path:x.path}:null;
      delete LIVE_T[key]; delete LIVE_FALLOS[key]; liveAviso(t);})
    .catch(()=>{const n=LIVE_FALLOS[key]=(LIVE_FALLOS[key]||0)+1;
      if(n<=LIVE_REINT){setTimeout(()=>{if(LIVE_T[key]===t)liveCola(t);},LIVE_ESPERA*n); return;}
@@ -1587,11 +1596,11 @@ function drawRoute(id,key,fit){
     if(!r)return;
     const sig=usaMotor(row,P)?rk:r.legs.map(l=>l.p).join(","); if(!on&&seen.has(sig))return; seen.add(sig);
     const op=on?1:.4, w=on?1:.7, dname=dName(row.k), ant=on?"route-ant ":"";
-    r.legs.forEach(l=>{let path=l.live||l.path||LP(l);
-      /* el motor de la Pi da los tramos en bici / andando en línea recta (no tiene calles): en todas las rutas
-         dibujadas se piden por calle con liveRoute (primero la elegida); mientras no llega, queda la recta */
+    r.legs.forEach(l=>{let path=l.live||l.calle||l.path||LP(l);
+      /* el motor de la Pi da los tramos en bici / andando en línea recta (no tiene calles): si ya los tiene guardados
+         por calle vienen en l.calle; si no, se piden con liveRoute (primero la ruta elegida); mientras, queda la recta */
       if(!isMove(l)&&l.path&&!l.p){const rp=railPath(l); if(rp)path=rp;}
-      if(isMove(l)&&!l.live&&l.path&&l.path.length===2){const lv=liveRoute(l.m==="bike"?"bike":"foot",l.path[0],l.path[1],on,id); if(lv&&lv!=="pending"&&lv.path.length>1)path=lv.path;}
+      if(isMove(l)&&!l.live&&!l.calle&&l.path&&l.path.length===2){const lv=liveRoute(l.m==="bike"?"bike":"foot",l.path[0],l.path[1],on,id); if(lv&&lv!=="pending"&&lv.path.length>1)path=lv.path;}
       if(on)focusPts.push(...path);
       if(isMove(l)){const bike=l.m==="bike";
         L.polyline(path,{renderer:routeR,color:css("--panel"),weight:(bike?8:7)*w,opacity:.85*op,interactive:false}).addTo(routeLayer);

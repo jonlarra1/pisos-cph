@@ -89,6 +89,13 @@ class Web(unittest.TestCase):
             sse = getattr(self, "sse", None)
             if sse is None: return route.fulfill(status=404, headers=self.cors(), json={"error": "not found"})
             return route.fulfill(status=200, headers={**self.cors(), "Content-Type": "text/event-stream"}, body=sse)
+        if path == "/api/calle":                    # trazados por calle de la Pi: sin self.calle, la Pi no responde
+            self.calle_q = getattr(self, "calle_q", []); self.calle_q.append(req.url)
+            pend = getattr(self, "calle", None)
+            if pend is None: return route.abort()
+            st = pend.pop(0) if pend else 200
+            if st == 200: return route.fulfill(status=200, headers=self.cors(), json={"d": 4100, "path": [[55.679, 12.585], [55.67, 12.575], [55.66, 12.56], [55.649, 12.553]]})
+            return route.fulfill(status=st, headers=self.cors(), json={"error": "x"})
         if path == "/api/ruta":                     # motor de rutas simulado (o caído si self.ruta_caida)
             import urllib.parse as up
             self.rutas_q.append({k: v[0] for k, v in up.parse_qs(req.url.split("?", 1)[1]).items()})
@@ -526,6 +533,30 @@ class TestDestinoAnadido(Web):
         self.js(f"drawRoute('{pid}','xcris-unai',false)")
         todos, foco = self.tramos(False), self.tramos()
         self.assertGreater(len(todos), len(foco)); self.assertTrue(all(n > 2 for n in todos), todos)
+    def test_la_pi_da_el_trazado_y_no_se_llama_a_osrm(self):
+        self.calle = []; self.osrm([])
+        pid = self.abrir(); self.esperar(f"RTS('{pid}','xcris-unai').length===1&&RTS('{pid}','xcris-jon').length===1")
+        self.js(f"drawRoute('{pid}','xcris-unai',false)")
+        self.esperar("Object.keys(LIVE).length>0&&Object.values(LIVE).every(v=>v&&v.path&&v.path.length===4)")
+        self.assertEqual(self.osrm_q, []); self.assertTrue(self.calle_q)
+    def test_si_la_pi_dice_osrm_caido_se_reintenta(self):
+        self.calle = [503, 503]; self.osrm([]); self.js("LIVE_ESPERA=50")
+        pid = self.abrir(); self.esperar(f"RTS('{pid}','xcris-unai').length===1&&RTS('{pid}','xcris-jon').length===1")
+        self.js(f"drawRoute('{pid}','xcris-unai',false)")
+        self.esperar("Object.keys(LIVE).length>0&&Object.values(LIVE).every(v=>v&&v.path)")
+        self.assertEqual(self.calle, []); self.assertEqual(self.osrm_q, [])                 # la Pi responde: no se va a OSRM
+    def test_tramo_que_la_pi_no_pide_va_directo_a_osrm(self):
+        self.calle = [403] * 50; self.osrm([])
+        pid = self.abrir(); self.esperar(f"RTS('{pid}','xcris-unai').length===1&&RTS('{pid}','xcris-jon').length===1")
+        self.js(f"drawRoute('{pid}','xcris-unai',false)")
+        self.esperar("Object.keys(LIVE).length>0&&Object.values(LIVE).every(v=>v&&v.path&&v.path.length===3)")   # forma de OSRM_OK
+        self.assertTrue(self.osrm_q)
+    def test_tramo_ya_guardado_en_la_ruta_no_pide_nada(self):
+        self.calle = []
+        pid = self.abrir(); self.esperar(f"RTS('{pid}','xcris-unai').length===1")
+        n = self.js(f"""(()=>{{const r=RTS('{pid}','xcris-unai')[0]; r.legs.forEach(l=>{{if(isMove(l))l.calle=[l.path[0],[55.66,12.56],l.path[1]];}});
+                     drawRoute('{pid}','xcris-unai',false); return routeLayer.getLayers().filter(l=>/route-ant.*walk/.test(l.options.className||'')).map(l=>l.getLatLngs().length);}})()""")
+        self.assertEqual(set(n), {3})
     def test_metro_del_motor_sigue_la_via(self):
         pid = self.abrir(); self.esperar(f"RTS('{pid}','xcris-unai').length===1")
         self.js(f"drawRoute('{pid}','xcris-unai',false)")

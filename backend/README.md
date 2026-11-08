@@ -19,10 +19,11 @@ fotos, logs, checks y panel privado. Python stdlib + SQLite (WAL), en Docker. C�
 - `puente.py` — une la base única con lo que la web lee hoy (`/api/candidatos`, tabla `estado`). Se borra en el paso D del plan.
 - `contactos.py` — marcas de los chats de Boligportal por anuncio, sus mensajes (privados: solo con clave de lectura) y
   ❤️ «nos encanta» (no se borra: se desactiva).
-- `destinos.py` — destinos compartidos. `precalculo.py` — rutas previas de los destinos y freno del motor. `routing.py` — motor de rutas (GTFS).
+- `destinos.py` — destinos compartidos. `precalculo.py` — rutas previas de los destinos y freno del motor. `routing.py` — motor de rutas (GTFS). `calles.py` — trazados por calle de los tramos a pie / en bici (OSRM de FOSSGIS),
+  guardados para siempre en la tabla `calle`; un hilo rellena los tramos de las rutas del motor a 1 petición/s.
 
 ## Endpoints
-- Web: `GET /api/health`, `/api/estados`, `/api/candidatos`, `/api/zonas`, `/api/filtros`, `/api/destinos`, `/api/ruta?…`,
+- Web: `GET /api/health`, `/api/estados`, `/api/candidatos`, `/api/zonas`, `/api/filtros`, `/api/destinos`, `/api/ruta?…` (sus tramos rectos llevan `calle` si ya están guardados), `/api/calle?modo=foot|bike&a=lat,lon&b=lat,lon`,
   `/api/img?u=…`, SSE `/api/eventos`; `POST /api/estado`, `/api/zona`, `/api/filtros`, `/api/destino`, `/api/clientlog`.
 - API v2: ver la cabecera de `api_v2.py`.
 - Panel (8790): `/`, `/status`, `/flow`, `/checknow`.
