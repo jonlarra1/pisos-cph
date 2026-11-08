@@ -1289,18 +1289,8 @@ def _get(url, timeout=15):
         return r.status, r.read()
 
 
-def check_site():
-    """La web publicada: responde, trae los datos, cada piso tiene rutas, tiene CSP y los scripts del CDN
-    siguen coincidiendo con su huella SRI (si no, el navegador los bloquea y el mapa no carga)."""
-    st, raw = _get(SITE + f"?chk={int(time.time())}")
-    body = raw.decode("utf-8", "replace")
-    js = body
-    if re.search(r'<script[^>]*\ssrc="app\.js"', body):  # JavaScript en su propio fichero (la etiqueta, no el texto)
-        st2, raw2 = _get(SITE + f"app.js?chk={int(time.time())}")
-        js = raw2.decode("utf-8", "replace")
-        if st2 != 200:
-            return False, f"app.js: HTTP {st2}"
-    problemas = []
+def _site_listas(js, problemas):
+    """PISOS y OUT de la web, para el contador del panel."""
     for k, name in (("pisos", "PISOS"), ("out", "OUT")):  # listas del mapa para el contador del panel
         m = re.search(r"const %s = (\[.*?\]);\n" % name, js, re.S)
         if m:
@@ -1310,8 +1300,12 @@ def check_site():
                 problemas.append(f"{name} no es JSON válido")
         else:
             problemas.append(f"falta {name}")
+
+
+def _site_rutas(js, problemas):
+    """Pisos sin rutas en RUTAS (solo se analiza cuando cambia la web)."""
     h = hashlib.sha1(js.encode(), usedforsecurity=False).hexdigest()
-    if h != _SITE_CACHE["hash"]:  # solo se analizan las rutas cuando cambia la web
+    if h != _SITE_CACHE["hash"]:
         _SITE_CACHE["hash"] = h
         _SITE_CACHE["sin_rutas"] = []
         m = re.search(r"^const RUTAS ?= ?(.*?);[ \t]*$", js, re.M)
@@ -1337,11 +1331,11 @@ def check_site():
                 ]
             except (ValueError, KeyError, AttributeError) as e:
                 problemas.append(f"RUTAS ilegible ({type(e).__name__})")
-    if _SITE_CACHE["sin_rutas"]:
-        problemas.append("pisos sin rutas: " + ", ".join(_SITE_CACHE["sin_rutas"][:5]))
-    if 'http-equiv="Content-Security-Policy"' not in body:
-        problemas.append("sin CSP")
-    if time.time() - _SITE_CACHE["sri_t"] > 3600:  # scripts del CDN: como mucho una vez por hora
+
+
+def _site_sri(body):
+    """Scripts del CDN cuya huella SRI ya no coincide (como mucho una comprobación por hora)."""
+    if time.time() - _SITE_CACHE["sri_t"] > 3600:
         _SITE_CACHE["sri_t"] = time.time()
         mal = []
         for src, integ in re.findall(r'<script src="(https://[^"]+)" integrity="(sha384-[^"]+)"', body):
@@ -1352,7 +1346,28 @@ def check_site():
             except Exception as e:
                 mal.append(f"{src.rsplit('/', 1)[-1]} ({type(e).__name__})")
         _SITE_CACHE["sri_mal"] = mal
-    if _SITE_CACHE["sri_mal"]:
+    return _SITE_CACHE["sri_mal"]
+
+
+def check_site():
+    """La web publicada: responde, trae los datos, cada piso tiene rutas, tiene CSP y los scripts del CDN
+    siguen coincidiendo con su huella SRI (si no, el navegador los bloquea y el mapa no carga)."""
+    st, raw = _get(SITE + f"?chk={int(time.time())}")
+    body = raw.decode("utf-8", "replace")
+    js = body
+    if re.search(r'<script[^>]*\ssrc="app\.js"', body):  # JavaScript en su propio fichero (la etiqueta, no el texto)
+        st2, raw2 = _get(SITE + f"app.js?chk={int(time.time())}")
+        js = raw2.decode("utf-8", "replace")
+        if st2 != 200:
+            return False, f"app.js: HTTP {st2}"
+    problemas = []
+    _site_listas(js, problemas)
+    _site_rutas(js, problemas)
+    if _SITE_CACHE["sin_rutas"]:
+        problemas.append("pisos sin rutas: " + ", ".join(_SITE_CACHE["sin_rutas"][:5]))
+    if 'http-equiv="Content-Security-Policy"' not in body:
+        problemas.append("sin CSP")
+    if _site_sri(body):
         problemas.append("el CDN cambió (SRI no coincide, el mapa no cargaría): " + ", ".join(_SITE_CACHE["sri_mal"]))
     ok = st == 200 and not problemas
     det = f"HTTP {st}, {len(raw) // 1024} KB, {len(SITE_DATA.get('pisos', []))} pisos" + (
