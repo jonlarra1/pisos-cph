@@ -230,6 +230,12 @@ class TestContactosYCorazon(Web):
         req = route.request; path = req.url.split(PI, 1)[1].split("?")[0]
         if path == "/api/v2/contactos" and req.method == "GET":
             return route.fulfill(status=200, headers=self.cors(), json=getattr(self, "cont", {"contactos": {}, "favoritos": {}}))
+        if path == "/api/v2/mensajes" and req.method == "GET":
+            if req.headers.get("x-pisos-lectura") != "clave-buena-de-pruebas":
+                return route.fulfill(status=401, headers=self.cors(), json={"error": "hace falta la clave de lectura"})
+            return route.fulfill(status=200, headers=self.cors(), json={"pid": "x", "mensajes": [
+                {"id": 1, "hilo": 1, "es_mio": True, "fecha": "2026-11-01T10:00:00Z", "texto": "Kære udlejer", "adjuntos": 0},
+                {"id": 2, "hilo": 1, "es_mio": False, "fecha": "2026-11-07T18:00:00Z", "texto": "<img src=x onerror=window.__xss=1>Fremvisning?", "adjuntos": 1}]})
         if path == "/api/v2/favoritos" and req.method == "POST":
             d = json.loads(req.post_data or "{}"); self.posts.append((path, d))
             return route.fulfill(status=200, headers=self.cors(), json={"id": d["id"], "activo": d["activo"]})
@@ -247,6 +253,21 @@ class TestContactosYCorazon(Web):
         self.js("id=>openSheet(id)", p["id"])
         self.assertEqual(self.js("document.querySelector('#sheet a[href*=\"indbakke/t/\"]').href"),
                          "https://www.boligportal.dk/indbakke/t/37733843")
+
+    def test_conversacion_en_la_ficha_solo_con_clave(self):
+        p = self.js("(()=>{const p=ranked.filter(inMain).filter(p=>bpPid(p)).at(-1); return {id:p.id,pid:bpPid(p)};})()")
+        self.js("x=>applyContactos({contactos:{[x.pid]:{hilo:1,marca:'visita',es_mio:false,fecha:'2026-11-07T18:00:00Z'}},favoritos:{}})", p)
+        self.js("id=>openSheet(id)", p["id"])
+        self.assertIn("pon tu clave de lectura", self.js("document.getElementById('chat-b').textContent"))
+        self.js("ponerClaveLectura('clave-mala-de-pruebas')")
+        self.esperar("document.getElementById('chat-b').textContent.includes('no vale')")
+        self.js("document.getElementById('cfg').open=true")
+        self.page.fill("#clave-lect", "clave-buena-de-pruebas"); self.page.click("[data-lect='1']")
+        self.esperar("document.querySelectorAll('#chat-b .bur').length===2")
+        self.assertEqual(self.js("[...document.querySelectorAll('#chat-b .bur')].map(b=>b.className)"), ["bur yo", "bur el"])
+        self.assertIn("<img src=x", self.js("document.querySelector('#chat-b .bur.el').textContent"), "el HTML se enseña como texto")
+        self.assertIsNone(self.js("window.__xss||null"))
+        self.assertEqual(self.js("localStorage.getItem('claveLectura')"), "clave-buena-de-pruebas")
 
     def test_solo_corazon_no_vacia_el_mapa_si_la_pi_no_responde_y_vale_para_propuestos(self):
         self.js("CONT_OK=false; SOLO_COR=true; applyFilter(false)")

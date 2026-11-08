@@ -20,7 +20,7 @@ ESTADOS = SISTEMA + PERSONA
 # Qué puede hacer cada cliente de la API. No existe ninguna operación de borrar.
 PERMISOS = {
     "web": {"leer", "entregar_enlace", "cambiar_estado", "anotar", "filtros", "favorito"},
-    "lares": {"leer", "entregar_enlace", "cambiar_estado", "anotar", "favorito", "contactos"},
+    "lares": {"leer", "entregar_enlace", "cambiar_estado", "anotar", "favorito", "contactos", "mensajes"},
     "vigilante": {"leer", "entregar"},
     "comprobador": {"leer", "comprobar"},
     "panel": {"leer"},

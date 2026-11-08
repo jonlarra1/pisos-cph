@@ -82,7 +82,9 @@ class TestPasada(BaseV2):
 
     def correr(self, paginas, ahora=MEDIODIA):
         out = io.StringIO()
-        with mock.patch.object(CB, "pedir_pagina", side_effect=paginas), contextlib.redirect_stdout(out):
+        conv = getattr(self, "conversacion", lambda cookie, hilo: [])
+        with mock.patch.object(CB, "pedir_pagina", side_effect=paginas), mock.patch.object(CB, "leer_conversacion", conv), \
+                contextlib.redirect_stdout(out):
             CB.pasada(ahora, pausa=lambda s: None)
         return out.getvalue()
 
@@ -122,6 +124,34 @@ class TestPasada(BaseV2):
         ok, _ = app.check_chats()
         self.assertFalse(ok)
         self.assertEqual(self.correr(CB.Caducada("401"), MEDIODIA + 6 * 3600), "", "el aviso no se repite en el día")
+
+    def test_guarda_la_conversacion_y_solo_se_lee_con_clave(self):
+        import api_v2
+        CB.COOKIE.write_text(COOKIE); api_v2.LECTORES["clave-de-lectura-de-unai-tests"] = "unai"
+        self.addCleanup(api_v2.LECTORES.pop, "clave-de-lectura-de-unai-tests", None)
+        with app.db() as c: c.execute("DELETE FROM mensaje")
+        pedidas = []
+        def conversacion(cookie, hilo):
+            pedidas.append(hilo)
+            return [{"id": 1, "hilo": hilo, "es_mio": True, "fecha": "2026-11-01T10:00:00Z", "texto": "Kære udlejer", "adjuntos": 0},
+                    {"id": 7, "hilo": hilo, "es_mio": False, "fecha": "2026-11-07T18:00:00Z", "texto": "Fremvisning?", "adjuntos": 0}]
+        self.conversacion = conversacion
+        pag = {"threads": [hilo("5670349", 7, False, "Fremvisning?")], "count": 1}
+        self.correr([pag])
+        self.assertEqual(pedidas, [56703490])
+        self.correr([pag], MEDIODIA + 6 * 3600)
+        self.assertEqual(pedidas, [56703490], "sin mensajes nuevos no se vuelve a abrir")
+        code, _, r = pedir("/api/v2/mensajes?pid=5670349", headers={"X-Pisos-Lectura": "clave-de-lectura-de-unai-tests"})
+        self.assertEqual([m["texto"] for m in r["mensajes"]], ["Kære udlejer", "Fremvisning?"])
+
+    def test_como_mucho_5_conversaciones_por_lectura(self):
+        pedidas = []
+        chats = CB.resumir([hilo(str(5000000 + i), i + 1, False, "Tak") for i in range(8)])
+        leidas = {}
+        with mock.patch.object(CB, "leer_conversacion", lambda c, h: pedidas.append(h) or []):
+            self.assertEqual(CB.guardar_conversaciones("c", chats, leidas, lambda s: None), 5)
+            CB.guardar_conversaciones("c", chats, leidas, lambda s: None)
+        self.assertEqual(len(pedidas), 8, "las que faltaban entran en la siguiente")
 
     def test_lo_alquilado_sigue_alquilado_aunque_contestemos(self):
         CB.COOKIE.write_text(COOKIE)

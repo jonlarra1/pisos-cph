@@ -809,6 +809,11 @@ html,body{overflow-x:hidden}
 .pin[data-mk]::before{content:attr(data-mk);position:absolute;bottom:-9px;right:-9px;font-size:11px;line-height:1}
 .cmk small{font-size:10px;color:var(--muted);margin-left:1px}
 .cor-b[aria-pressed="true"]{background:#fde2e6;border-color:#e0607a}
+.chat{display:flex;flex-direction:column;gap:6px;max-height:440px;overflow:auto;padding:2px}
+.bur{max-width:85%;padding:7px 10px;border-radius:12px;font-size:13px;line-height:1.35;white-space:pre-wrap;overflow-wrap:anywhere}
+.bur.yo{align-self:flex-end;background:rgba(46,158,79,.16);border-bottom-right-radius:4px}
+.bur.el{align-self:flex-start;background:rgba(127,127,127,.14);border-bottom-left-radius:4px}
+.bur small{display:block;color:var(--muted);font-size:10.5px;margin-top:3px;white-space:normal}
 .work{display:inline-flex;align-items:center;height:24px;padding:0 9px;border-radius:12px;background:var(--fg);color:var(--panel);font:700 11.5px var(--f-display);box-shadow:var(--shadow);white-space:nowrap;border:2px solid var(--panel)}
 
 .leaflet-popup-content-wrapper{background:var(--panel);color:var(--fg);border-radius:12px;box-shadow:var(--shadow)}
@@ -1637,7 +1642,9 @@ function renderWalk(){
      <label class="pfl">Andando <select data-pfvw="${w}">${VW.map(([v,t])=>opt(v,`${t} · ${v} km/h`,v===pf.vw)).join("")}</select></label>
      <label class="pfl">En bici <select data-pfvb="${w}">${VB.map(([v,t])=>opt(v,`${t} · ${v} km/h`,v===pf.vb)).join("")}</select></label>
      <small>${pf.mode==="bike"?`Bici + S-tog / tren / Letbane (sin bus ni metro)`:"Andando + bus, metro, Letbane y tren"}</small></div>`).join("")+
-    `<div class="pf"><b>Destinos</b><div id="prep">${prepHtml()}</div>
+    `<div class="pf"><b>Leer los chats</b><label class="pfl">Clave de lectura <input type="password" id="clave-lect" autocomplete="off" placeholder="${CLAVE_LECT?"•••••• guardada":"pégala aquí"}"></label>
+      <div class="addd-r"><small>Para ver las conversaciones en la ficha. Se guarda solo en este navegador.</small><button class="btn sec" type="button" data-lect="1">Guardar</button>${CLAVE_LECT?'<button class="lnk" type="button" data-lect="0">Quitar</button>':""}</div></div>
+    <div class="pf"><b>Destinos</b><div id="prep">${prepHtml()}</div>
       ${ROWS.map(r=>`<div class="dst"><span>${esc(dName(r.k))}</span><small>${PERF[r.who].n}</small></div>`).join("")}
       ${EXTRA.map(d=>`<div class="dst"><span>${esc(d.n)}</span><small>${d.pend?"⏳ sin subir a la Pi":"Jon y Unai"}</small><button class="lnk" data-deldest="${esc(d.id)}" title="Quitar para los dos">✕</button></div>`).join("")}
       <form class="addd" id="addd"><input name="n" placeholder="Nombre (p. ej. Gimnasio)" required maxlength="30">
@@ -1666,6 +1673,7 @@ async function quitarDestino(id){const d=EXTRA.find(x=>x.id===id); if(!d)return;
     if(!(err instanceof TypeError))clientLog(`quitar destino: ${err.message}`,"destinos","warn");}}
 document.getElementById("cfg-b").addEventListener("click",e=>{
   const del=e.target.closest("[data-deldest]"); if(del){quitarDestino(del.dataset.deldest); return;}
+  const lect=e.target.closest("[data-lect]"); if(lect){const k=lect.dataset.lect==="1"?document.getElementById("clave-lect").value.trim():""; if(lect.dataset.lect==="1"&&!k)return; ponerClaveLectura(k); toast(k?"🔑 Clave guardada en este navegador":"Clave quitada de este navegador"); return;}
   const b=e.target.closest("[data-pfmode]"); if(!b)return; const [w,m]=b.dataset.pfmode.split("|"); PERF[w].mode=m; tripChanged();});
 document.getElementById("cfg-b").addEventListener("submit",async e=>{e.preventDefault(); const f=e.target, msg=f.querySelector("#addd-m");
   const n=f.n.value.trim(), a=f.a.value.trim(); if(!n||!a)return; if(!YO&&!(await quienSoy()))return; msg.textContent="Buscando dirección…";
@@ -1784,6 +1792,23 @@ async function setCor(id){if(!YO&&!(await quienSoy()))return; const activo=!CONT
     if(!r.ok)throw 0;}catch(e){toast("No se pudo guardar el ❤️ en la Raspberry Pi"); pullContactos();}}
 document.addEventListener("click",e=>{const b=e.target.closest("button[data-cor]"); if(!b)return; e.stopPropagation(); setCor(b.dataset.cor);});
 document.getElementById("cor-ck").addEventListener("change",e=>{SOLO_COR=e.target.checked; applyFilter(false); renderCands();});
+/* ---------- conversación con el casero en la ficha: el texto es privado, solo con la clave de lectura de cada uno
+   (GET /api/v2/mensajes con la cabecera X-Pisos-Lectura; la clave se guarda solo en este navegador) ---------- */
+let CLAVE_LECT=""; try{CLAVE_LECT=localStorage.getItem("claveLectura")||"";}catch(_){}
+const CHAT_CACHE={};
+const chatSec=p=>contOf(p)?`<div class="sec"><h4>💬 Conversación con el casero</h4><div id="chat-b" data-pid="${esc(bpPid(p))}">${CLAVE_LECT?'<p class="it-s">Cargando la conversación…</p>':'<p class="it-s">🔒 Para leerla aquí, pon tu clave de lectura en Configuración.</p>'}</div></div>`:"";
+function chatHtml(ms){if(!ms.length)return '<p class="it-s">Lares aún no ha guardado esta conversación (entran poco a poco: como mucho 5 en cada lectura).</p>';
+  return `<div class="chat">${ms.map(m=>`<div class="bur ${m.es_mio?"yo":"el"}">${m.texto?esc(m.texto):"<i>(sin texto)</i>"}${m.adjuntos?` 📎 ${m.adjuntos}`:""}<small>${m.es_mio?"Nosotros":"Casero"} · ${esc(String(m.fecha).slice(0,16).replace("T"," "))}</small></div>`).join("")}</div>`;}
+function pintarChat(pid,html){const b=document.getElementById("chat-b"); if(b&&b.dataset.pid===pid){b.innerHTML=html; const c=b.querySelector(".chat"); if(c)c.scrollTop=c.scrollHeight;}}
+async function cargarChat(){const b=document.getElementById("chat-b"); if(!b||!CLAVE_LECT)return; const pid=b.dataset.pid;
+  if(CHAT_CACHE[pid])pintarChat(pid,chatHtml(CHAT_CACHE[pid]));
+  try{const r=await fetch(API+"/api/v2/mensajes?pid="+encodeURIComponent(pid),{headers:{"X-Pisos-Lectura":CLAVE_LECT},cache:"no-cache"});
+    if(r.status===401||r.status===429)return pintarChat(pid,'<p class="it-s">🔒 La clave de lectura no vale. Revísala en Configuración.</p>');
+    if(!r.ok)throw 0; CHAT_CACHE[pid]=(await r.json()).mensajes||[]; pintarChat(pid,chatHtml(CHAT_CACHE[pid]));}
+  catch(e){if(!CHAT_CACHE[pid])pintarChat(pid,'<p class="it-s">No se pudo cargar la conversación (sin conexión con la Raspberry Pi).</p>');}}
+function ponerClaveLectura(k){CLAVE_LECT=k; for(const x in CHAT_CACHE)delete CHAT_CACHE[x];
+  try{k?localStorage.setItem("claveLectura",k):localStorage.removeItem("claveLectura");}catch(_){}
+  renderWalk(); if(sheet.classList.contains("open"))openSheet(sheet.dataset.id);}
 function popupHtml(p){
   return `<div class="pp-h"><span class="badge" style="background:${col(p)}">${MODES[mode].lbl(p)}</span>
     <div><h3>${favTxt(p)}${esc(p.zona)} · ${esc(p.calle)}</h3><p>${p.m2} m² · ${p.vaer} værelser</p></div></div>
@@ -1977,6 +2002,7 @@ function openSheet(id){
          :`Calculado al momento en la Raspberry Pi con los horarios de Rejseplanen (${MOM().ida?"la salida más tarde que llega a tiempo":"lo primero que sale a esa hora"}), con la configuración de cada uno. Horario previsto, sin retrasos.`}
          El botón abre Rejseplanen con su propio cálculo para el próximo ${DAYF[tripDay]}.</p></div>`}
      <div class="sec"><h4>Fotos${p.fotoPlano?" · plano primero":""}</h4>${galHtml(p)}</div>
+     ${chatSec(p)}
      <div class="sec"><h4>Dinero</h4><dl class="kv">
        ${row("Alquiler",kr(p.alq))}${row("Aconto",p.aconto==null?"No indicado (se calcula con 1.000)":kr(p.aconto))}
        ${row("Depósito",kr(p.dep))}${row("Prepago",kr(p.pre))}${row("Total a la entrada (depósito + prepago)",p.entradaCmp!=null?kr(p.entradaCmp):kr(p.entrada)+(p.entrada!=null?" (el anuncio no lo separa)":""))}</dl></div>
@@ -2001,7 +2027,7 @@ function openSheet(id){
   const sc=sheet.querySelector(".sh-body")?.scrollTop||0, same=sheet.dataset.id===id&&sheet.classList.contains("open");
   sheet.dataset.id=id; sheet.classList.add("open"); sheet.setAttribute("aria-hidden","false"); document.getElementById("rail").classList.add("has-sheet");
   if(same)sheet.querySelector(".sh-body").scrollTop=sc; else sheet.querySelector(".sh-body").scrollTop=0;
-  document.getElementById("sh-x").onclick=closeSheet; document.getElementById("sh-back").onclick=closeSheet;
+  document.getElementById("sh-x").onclick=closeSheet; document.getElementById("sh-back").onclick=closeSheet; cargarChat();
 }
 function closeSheet(){sheet.classList.remove("open");sheet.setAttribute("aria-hidden","true"); document.getElementById("rail").classList.remove("has-sheet"); renderList();}
 /* Abrir un piso: en escritorio la ficha sale a la izquierda; en móvil, la tarjeta abajo del mapa. */

@@ -104,8 +104,13 @@ idea, la actual. Al cambiar algo, se reescribe lo que ya no es cierto; no se añ
 - Chats de Boligportal (decisión de Jon, 8-nov: «Solo leer, con Lares», y a horas pseudoaleatorias para no parecer un
   robot): `lares/chats_boligportal.py` lee la bandeja de la cuenta compartida cada 3–5 h al azar (nunca 00–08 h), ≤3
   páginas con pausas, y se para ante 401/403/429. Marca por anuncio (tabla `contacto`, `backend/contactos.py`):
-  respondido 💬 | sin_respuesta ⏳ | visita 📅 | alquilado 🏁. El TEXTO de los mensajes nunca va a la API pública: solo
-  al archivo privado del perfil de Lares (600). La cookie solo en `.boligportal_cookie` (600) del perfil de Lares; la
+  respondido 💬 | sin_respuesta ⏳ | visita 📅 | alquilado 🏁. El TEXTO de los mensajes nunca va a la API pública:
+  Lares abre ≤5 conversaciones con mensajes nuevos por lectura (`threads/<n>?mark_read=0`, no las marca como leídas) y
+  las guarda en la tabla `mensaje` (POST /api/v2/mensajes, solo Lares; no se borra); `GET /api/v2/mensajes?pid=` solo
+  responde con la cabecera `X-Pisos-Lectura` = `CLAVE_LECTURA_JON` o `CLAVE_LECTURA_UNAI` (decisión de Jon, 8-nov;
+  clave mala → evento warn src=permisos y 429 con >5/min por IP). La web la pide una vez en Configuración («Leer los
+  chats», localStorage `claveLectura`) y enseña la conversación en la ficha, debajo de las fotos. El último mensaje
+  también queda en el archivo privado del perfil de Lares (600) para `pisos.py chats`. La cookie solo en `.boligportal_cookie` (600) del perfil de Lares; la
   pegan Jon o Unai, Claude no la ve. Conversación de un anuncio que no está en la base → se añade y va a 🟢 contactado;
   los demás estados no se tocan. Nunca escribir a caseros ni archivar. Web: marca en chincheta/lista/ficha, «💬 Abrir
   conversación» (`/indbakke/t/<hilo>`). ❤️ «nos encanta» (tabla `favorito`, `POST /api/v2/favoritos`, web y Lares),
@@ -114,7 +119,7 @@ idea, la actual. Al cambiar algo, se reescribe lo que ya no es cierto; no se añ
   2027-01-04 (antes 18-dic..15-ene). `DEFAULT_FILTROS` del vigilante solo se usa si no hay config.json.
 - Photos: `fotos` (list, floor plan first when `fotoPlano`) per flat, shown through the backend image proxy `/api/img?u=` (allow-listed hosts, disk cache 300 MB).
 - Right column «🔎 Búsqueda (Lares)» = search params stored on the Pi (`/api/filtros`, zones) → config.json → Lares. Any change to «Búsqueda» (filters, zones) MUST ask for confirmation with a pop-up whose first line is «⚠️ ESTE CAMBIO ES DE BÚSQUEDA, NO DE VISUALIZACIÓN» (it changes what Lares searches for everyone). «👁 Visualización» = map-only view settings (states shown, «Barrios y municipios» layer, colour by Estado/Coste/Barrios), per browser.
-- UI settings per browser in localStorage: `ui` (day, colour mode, barrio filter, lines off, route option, open panels, soloYo), `perfiles`, `tripTime`, `yo`, `destinos`, `cardPos`.
+- UI settings per browser in localStorage: `ui` (day, colour mode, barrio filter, lines off, route option, open panels, soloYo, soloCor), `perfiles`, `tripTime`, `yo`, `destinos`, `cardPos`, `claveLectura`.
 - Seguridad del backend:
   - Contenedor pisos-api: usuario propio 10002, read_only, cap_drop ALL, no-new-privileges, pids 100, 128 MB; solo monta /data y /bridge
     (buzón con grupo 10002, 2775). No monta la carpeta cron de Lares: Lares copia su estado a pisos-bridge/lares_cron.json.
@@ -125,7 +130,8 @@ idea, la actual. Al cambiar algo, se reescribe lo que ya no es cierto; no se añ
     lecturas 300/min por IP y 2000/min global, fotos 120/min por IP y 600 global, `/api/ruta` 240/min por IP y 600 global (el motor lo
     protege además `FRENO`: máx. 6 búsquedas esperando); eventos «limite» en el log.
   - API v2: clave por cliente (web = `API_KEY` pública + Origin, `quien` solo jon/unai/web; `CLAVE_LARES`, `CLAVE_VIGILANTE`,
-    `CLAVE_COMPROBADOR` solo en el .env de la Pi). Sin operación de borrar.
+    `CLAVE_COMPROBADOR` solo en el .env de la Pi). Sin operación de borrar. Claves de lectura de los mensajes:
+    `CLAVE_LECTURA_JON` y `CLAVE_LECTURA_UNAI` (≥16 caracteres, solo en el .env; si faltan, la web no enseña textos).
   - /api/img: solo https a image-lambda.boligportal.dk, s3…/lejeboligdata/images/, billeder.edc.dk/edcmedia/ y nrep.estatetool.net/media/bolig/ (Juli Living), sin `..`, userinfo ni puertos raros.
   - Clave de escritura por persona (passkeys/Face ID): aplazado a propósito.
   - Ojo con ACL en la Pi: varias carpetas de Hermes tienen ACL con máscara restrictiva; `setfacl -m` recalcula la máscara y puede reactivar

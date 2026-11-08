@@ -698,7 +698,7 @@ class H(BaseHTTPRequestHandler):
             self.send_header("Access-Control-Allow-Origin", o)
             self.send_header("Vary", "Origin")
             self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
-            self.send_header("Access-Control-Allow-Headers", "Content-Type, X-Pisos-Key")
+            self.send_header("Access-Control-Allow-Headers", "Content-Type, X-Pisos-Key, X-Pisos-Lectura")
 
     def reply(self, code, obj):
         b = json.dumps(obj, ensure_ascii=False).encode()
@@ -793,6 +793,21 @@ class H(BaseHTTPRequestHandler):
                 log("events", level="info", src="rutas_previas", msg=f"{x['id']}: {n} rutas en cola")
         return self.reply(200, {"destinos": lista, "cambiado": cambiado, "preparando": precalculo.progreso()})
 
+    def v2_get(self):
+        """Lecturas de la API v2. El texto de los mensajes necesita la clave de lectura de Jon o de Unai; una clave
+        que no vale se registra y, con más de 5 por minuto desde la misma IP, se corta (429)."""
+        clave = self.headers.get("X-Pisos-Lectura", "")
+        lector = api_v2.lector_de(clave)
+        if clave and not lector:
+            ip = self.client_ip()
+            log("events", level="warn", src="permisos", msg="clave de lectura no válida", ip=ip, path=self.path[:80])
+            if limited("lect:" + ip, 5):
+                return self.reply(429, {"error": "too many requests"})
+        code, obj = api_v2.leer(CTX, self.path, lector)
+        if lector and code == 200 and self.path.startswith("/api/v2/mensajes"):
+            log("events", level="info", src="mensajes", msg=f"{lector} lee la conversación", path=self.path[:80])
+        return self.reply(code, obj)
+
     def v2_post(self):
         """Escrituras de la API v2: cliente por su clave, tamaño máximo, JSON → api_v2.escribir."""
         cliente = api_v2.cliente_de(self.headers.get("X-Pisos-Key", ""), self.headers.get("Origin", ""), ORIGINS)
@@ -848,8 +863,7 @@ class H(BaseHTTPRequestHandler):
             self.wfile.write(data)
             return
         if self.path.startswith("/api/v2/"):
-            code, obj = api_v2.leer(CTX, self.path)
-            return self.reply(code, obj)
+            return self.v2_get()
         if self.path == "/api/eventos":
             return self.eventos()
         if self.path == "/api/estados":
@@ -1547,7 +1561,8 @@ def check_chats():
         + f" · {ch.get('conversaciones', 0)} conversaciones"
         + (f" · error: {ch['error']}" if ch.get("error") else "")
         + f" · guardados: {', '.join(f'{k} {v}' for k, v in sorted(r['marcas'].items())) or 'ninguno'}"
-        + f" · ❤️ {r['favoritos']}"
+        + f" · {r['mensajes']} mensajes de {r['conversaciones']} conversaciones · ❤️ {r['favoritos']}"
+        + ("" if api_v2.LECTORES else " · sin claves de lectura (la web no puede enseñar los mensajes)")
     )
 
 

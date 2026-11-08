@@ -12,6 +12,8 @@
     GET  /api/v2/contactos                        contactos (chats) y ❤️, sin textos  público
     POST /api/v2/contactos      {contactos: [{pid, hilo, marca, es_mio, fecha}]}   lares
     POST /api/v2/favoritos      {id, activo, quien?}  ❤️ «nos encanta»            web, lares
+    GET  /api/v2/mensajes?pid=N                   texto de la conversación   cabecera X-Pisos-Lectura (Jon, Unai)
+    POST /api/v2/mensajes       {mensajes: [{id, hilo, pid, es_mio, fecha, texto, adjuntos}]}   lares
 
 Clientes: «web» = la clave pública de la página (API_KEY) + Origin permitido; «lares», «vigilante» y «comprobador» =
 claves secretas propias (CLAVE_LARES, CLAVE_VIGILANTE, CLAVE_COMPROBADOR), solo en la Pi. No hay operación de borrar.
@@ -35,6 +37,7 @@ import portales as P
 MAX_CUERPO = {
     "/api/v2/anuncios": 64_000,
     "/api/v2/contactos": 100_000,
+    "/api/v2/mensajes": 800_000,
 }  # el vigilante manda el texto del anuncio; lo demás es pequeño
 MAX_CUERPO_DEFECTO = 2_000
 UID_RE = re.compile(r"^(?:(?:Lejebolig|Boligportal|EDC):\d{4,10}|Juli:jl\d{1,8})$")
@@ -59,6 +62,7 @@ class Contexto:
 
 
 CLAVES = {}  # clave -> cliente; se carga en configurar()
+LECTORES = {}  # clave de lectura -> persona (jon | unai): la única forma de leer el texto de los mensajes
 ESTADO = {
     "lector_ok": 0,
     "lector_error": 0,
@@ -85,6 +89,19 @@ def configurar(env=os.environ):
         k = env.get(var, "")
         if len(k) >= 8:
             CLAVES[k] = cliente
+    LECTORES.clear()
+    for persona in ("jon", "unai"):
+        k = env.get(f"CLAVE_LECTURA_{persona.upper()}", "")
+        if len(k) >= 16:
+            LECTORES[k] = persona
+
+
+def lector_de(clave):
+    """Persona dueña de la clave de lectura (comparación en tiempo constante), o None."""
+    for k, persona in LECTORES.items():
+        if clave and hmac.compare_digest(k.encode(), clave.encode()):
+            return persona
+    return None
 
 
 def cliente_de(clave, origin, origenes):
@@ -222,8 +239,8 @@ def _para_lista(a):
     return a
 
 
-def leer(ctx, path):
-    """GET. Devuelve (código, objeto)."""
+def leer(ctx, path, lector=None):
+    """GET. Devuelve (código, objeto). `lector`: persona con clave de lectura válida (solo para /api/v2/mensajes)."""
     u = urllib.parse.urlparse(path)
     q = urllib.parse.parse_qs(u.query, max_num_fields=5)
     if u.path == "/api/v2/anuncios":
@@ -241,6 +258,14 @@ def leer(ctx, path):
     if u.path == "/api/v2/contactos":
         with ctx.db() as con:
             return 200, C.listar(con)
+    if u.path == "/api/v2/mensajes":
+        if not lector:
+            return 401, {"error": "hace falta la clave de lectura (Configuración)"}
+        pid = q.get("pid", [""])[0]
+        if not C.PID_RE.match(pid):
+            return 400, {"error": "pid no válido"}
+        with ctx.db() as con:
+            return 200, {"pid": pid, "mensajes": C.mensajes_de(con, pid)}
     if u.path == "/api/v2/resumen":
         with ctx.db() as con:
             return 200, {"estados": A.contar(con), "cola_fichas": cola()}
@@ -284,7 +309,7 @@ def _escribir(ctx, path, cliente, cuerpo):
     if path == "/api/v2/enlaces":
         A.permitir(cliente, "entregar_enlace")
         return _anadir_enlace(ctx, cuerpo.get("url"), cliente, quien)
-    if path in ("/api/v2/contactos", "/api/v2/favoritos"):
+    if path in ("/api/v2/contactos", "/api/v2/favoritos", "/api/v2/mensajes"):
         return _contactos(ctx, path, cliente, quien, cuerpo)
     if path == "/api/v2/anuncios":
         return _entrega_vigilante(ctx, cliente, cuerpo)
@@ -331,7 +356,15 @@ def _accion(ctx, uid, accion, cliente, quien, cuerpo):
 
 
 def _contactos(ctx, path, cliente, quien, cuerpo):
-    """Contactos de los chats (Lares) y ❤️ (web, Lares)."""
+    """Contactos y mensajes de los chats (Lares) y ❤️ (web, Lares)."""
+    if path == "/api/v2/mensajes":
+        A.permitir(cliente, "mensajes")
+        with ctx.db() as con:
+            n = C.guardar_mensajes(con, cuerpo.get("mensajes"))
+        if n:
+            ctx.log("events", level="info", src="chats", msg=f"{n} mensajes nuevos", by=f"{cliente}:{quien}")
+            ctx.avisar("contactos", {"mensajes": n})
+        return 200, {"nuevos": n}
     if path == "/api/v2/contactos":
         A.permitir(cliente, "contactos")
         with ctx.db() as con:

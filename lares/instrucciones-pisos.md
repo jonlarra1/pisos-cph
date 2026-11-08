@@ -38,7 +38,9 @@ Hay UNA sola base de datos de pisos: la del backend en la Pi, la misma que usa e
   visitas 📅 primero, y Vanløse ⭐ antes que nada) con ese enlace. Para leer el mensaje: `pisos.py chats [calle o número]`.
 - «[aviso] La sesión de Boligportal ha caducado»: dile a Jon que hay que renovar la cookie (lo hace él o Unai). Tú
   nunca la pides, la lees ni la escribes.
-- Las conversaciones de pisos que no estaban en la base entran solas en 🟢 contactado; los demás estados no se tocan.
+- Las conversaciones de pisos que no estaban en la base (o propuestos o rechazados) pasan solas a 🟢 contactado; los
+  demás estados no se tocan. Jon y Unai pueden leer las conversaciones en la ficha de la web con su clave de lectura;
+  tú nunca la pides ni la enseñas.
 - Nunca escribas a un casero, ni contestes, ni archives conversaciones: no hay forma y no se hace.
 - ❤️ «nos encanta» lo marcan Jon y Unai en la web; no lo cambies tú salvo que te lo pidan.
 

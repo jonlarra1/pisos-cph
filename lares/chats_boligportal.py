@@ -7,8 +7,11 @@ sortea la siguiente entre 3 y 5 h después (y nunca de 00 a 08 h, hora de Copenh
 - Cookie: archivo `.boligportal_cookie` (permisos 600) en la carpeta del perfil. La pegan Jon o Unai; este programa
   nunca la imprime ni la guarda en otro sitio.
 - Lee GET /api/messaging/ (lo mismo que pide la web de Boligportal al abrir la bandeja): ≤3 páginas de 20, con pausas.
+  Después abre ≤5 conversaciones con mensajes nuevos (GET /api/messaging/threads/<n>?mark_read=0: no las marca como
+  leídas) y manda sus mensajes a la API (POST /api/v2/mensajes). Lo pendiente entra en las lecturas siguientes.
   401/403 = sesión caducada; 429 u otra cosa rara = error. En los dos casos para y no reintenta hasta la próxima hora.
-- Texto completo de los mensajes: SOLO en `chats_boligportal.json` (600) del perfil, para `pisos.py chats`.
+- Texto: el último mensaje en `chats_boligportal.json` (600) del perfil, para `pisos.py chats`; las conversaciones en
+  la base de la Pi, que solo las enseña con la clave de lectura de Jon o de Unai.
 - A la API v2 (POST /api/v2/contactos, clave de Lares) solo va: anuncio, conversación, marca, si el último es
   nuestro y su fecha.
 - Conversación de un anuncio que no está en la base, o que está «propuesto» o «rechazado»: queda en «contactado»
@@ -40,6 +43,8 @@ ESTADO = PERFIL / ".chats_estado.json"  # próxima lectura, último aviso y lo y
 PRIVADO = PERFIL / "chats_boligportal.json"  # texto de los mensajes: solo aquí
 BRIDGE = Path(os.environ.get("PISOS_BRIDGE", "/opt/data/vault/Vivienda/pisos-bridge"))
 BANDEJA = "https://www.boligportal.dk/api/messaging/?offset={}&limit=20&search=&show_archived=true"
+CONVERSACION = "https://www.boligportal.dk/api/messaging/threads/{}?mark_read=0"
+MAX_CONVERSACIONES = 5  # conversaciones abiertas por lectura
 ANUNCIO = "https://www.boligportal.dk/lejligheder/bolig/lejlighed-id-{}"
 UA = "Mozilla/5.0 (X11; Linux aarch64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0 Safari/537.36"
 CPH = ZoneInfo("Europe/Copenhagen")
@@ -94,8 +99,12 @@ def sortear(ahora):
 
 
 def pedir_pagina(cookie, offset):
+    return pedir_json(cookie, BANDEJA.format(offset))
+
+
+def pedir_json(cookie, url):
     req = urllib.request.Request(
-        BANDEJA.format(offset),
+        url,
         headers={
             "User-Agent": UA,
             "Cookie": cookie,
@@ -127,6 +136,39 @@ def leer_bandeja(cookie, pausa=time.sleep):
             break
         pausa(AZAR.uniform(2, 6))
     return hilos
+
+
+def leer_conversacion(cookie, hilo):
+    """Mensajes de una conversación, listos para POST /api/v2/mensajes (sin el pid, que pone quien llama)."""
+    out = []
+    for m in pedir_json(cookie, CONVERSACION.format(hilo)).get("messages") or []:
+        if isinstance(m.get("id"), int) and m.get("sent_date"):
+            out.append(
+                {
+                    "id": m["id"],
+                    "hilo": hilo,
+                    "es_mio": bool(m.get("is_me")),
+                    "fecha": str(m["sent_date"])[:25],
+                    "texto": str(m.get("body") or "")[:5000],
+                    "adjuntos": min(len(m.get("attachments") or []), 50),
+                }
+            )
+    return out
+
+
+def guardar_conversaciones(cookie, chats, leidas, pausa):
+    """Abre las conversaciones cuyo último mensaje aún no está guardado (≤ MAX_CONVERSACIONES, con pausas) y manda
+    sus mensajes a la API. `leidas`: {hilo: id del último mensaje guardado}. Devuelve cuántas se guardaron."""
+    pendientes = [c for c in chats if c["hilo"] and c["msg"] and leidas.get(str(c["hilo"])) != c["msg"]]
+    n = 0
+    for c in pendientes[:MAX_CONVERSACIONES]:
+        pausa(AZAR.uniform(2, 6))
+        mensajes = [{**m, "pid": c["pid"]} for m in leer_conversacion(cookie, c["hilo"])]
+        if mensajes:
+            pisos.llamar("POST", "/api/v2/mensajes", {"mensajes": mensajes})
+        leidas[str(c["hilo"])] = c["msg"]
+        n += 1
+    return n
 
 
 def clasificar(h):
@@ -235,7 +277,8 @@ def pasada(ahora=None, pausa=time.sleep):
     estado["proximo"] = sortear(ahora)
     info = {"ts": ahora, "proximo": estado["proximo"], "sesion": "ok"}
     try:
-        chats = resumir(leer_bandeja(cabecera_cookie(COOKIE.read_text(encoding="utf-8")), pausa))
+        cookie = cabecera_cookie(COOKIE.read_text(encoding="utf-8"))
+        chats = resumir(leer_bandeja(cookie, pausa))
         alquilados = set(estado.get("alquilados") or [])  # lo que el casero dio por alquilado lo sigue estando
         for c in chats:
             if c["pid"] in alquilados:
@@ -252,6 +295,8 @@ def pasada(ahora=None, pausa=time.sleep):
         for c in nuevas:
             enlace = pisos.HILO.format(c["hilo"]) if c["hilo"] else ANUNCIO.format(c["pid"])
             print(f"RESPUESTA | {c['calle'] or c['pid']} | {c['marca']} | {c['fecha'][:16]} | {enlace}")
+        estado.setdefault("leidas", {})
+        info["conversaciones_guardadas"] = guardar_conversaciones(cookie, chats, estado["leidas"], pausa)
     except Caducada as e:
         info["sesion"] = "caducada"
         aviso_caducada(estado, ahora, e)

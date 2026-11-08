@@ -25,7 +25,8 @@ Rutina cada 3 h: busca pisos de ALQUILER con los filtros de la web y **solo repo
 **Chats de Boligportal:** otro script sin LLM, `scripts/chats_boligportal.py` (cron `boligportal-chats`, cada 30 min, pero
 solo lee a la hora sorteada: cada 3–5 h al azar, nunca de 00 a 08 h). Solo lee la bandeja; manda a la base la marca de cada
 conversación (💬 respondido, ⏳ sin respuesta, 📅 visita, 🏁 alquilado) y avisa «RESPUESTA | …» con lo nuevo del casero. El texto
-se queda en el perfil (`chats_boligportal.json`, 600): `pisos.py chats`. Sesión caducada → «[aviso] … renovar la cookie».
+del último mensaje se queda en el perfil (`chats_boligportal.json`, 600): `pisos.py chats`; las conversaciones (≤5
+por lectura, sin marcarlas como leídas) van a la base, que solo las enseña con la clave de lectura de Jon o Unai. Sesión caducada → «[aviso] … renovar la cookie».
 
 **Los pisos viven en UNA base de datos** (backend de la Pi, la del mapa https://jonlarra1.github.io/pisos-cph/). Para consultarla o
 añadir/anotar pisos usa SOLO `python3 /opt/data/profiles/lares/scripts/pisos.py` (ver SOUL.md, «Pisos de Copenhague»).

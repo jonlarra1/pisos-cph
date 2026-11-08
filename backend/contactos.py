@@ -5,6 +5,8 @@
   y el número de la conversación (para el botón «Abrir conversación»).
   NO se guarda el texto de los mensajes: la API se lee sin clave.
 - favorito: ❤️ por piso (id de la web), compartido entre Jon y Unai. Quitarla no borra nada: la deja inactiva.
+- mensaje: el texto de cada mensaje de las conversaciones (lo escribe Lares). Es PRIVADO: la API solo lo da con la clave
+  de lectura de Jon o de Unai (api_v2.lector_de). No se borra nunca.
 """
 
 import re
@@ -15,6 +17,8 @@ ID_RE = re.compile(r"^[A-Za-z0-9_-]{1,40}$")  # ids de la web (Boligportal, Leje
 PID_RE = re.compile(r"^\d{4,10}$")  # anuncio de Boligportal
 FECHA_RE = re.compile(r"^\d{4}-\d{2}-\d{2}(?:T[\d:.+Z-]{0,20})?$")
 MAX_CONTACTOS = 500
+MAX_MENSAJES = 1000  # por entrega
+MAX_TEXTO = 5000
 
 
 class NoValido(ValueError):
@@ -27,6 +31,12 @@ def crear_tablas(con):
             pid TEXT PRIMARY KEY,               -- anuncio de Boligportal
             hilo INTEGER, marca TEXT NOT NULL, es_mio INTEGER NOT NULL, fecha TEXT, actualizado INTEGER NOT NULL
         );
+        CREATE TABLE IF NOT EXISTS mensaje (
+            id INTEGER PRIMARY KEY,             -- id del mensaje en Boligportal
+            hilo INTEGER NOT NULL, pid TEXT NOT NULL, es_mio INTEGER NOT NULL, fecha TEXT NOT NULL,
+            texto TEXT NOT NULL, adjuntos INTEGER NOT NULL DEFAULT 0, guardado INTEGER NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS mensaje_pid ON mensaje (pid, fecha);
         CREATE TABLE IF NOT EXISTS favorito (
             id TEXT PRIMARY KEY,                -- id del piso en la web
             activo INTEGER NOT NULL, by TEXT NOT NULL, ts INTEGER NOT NULL
@@ -43,8 +53,7 @@ def _fila(c):
         raise NoValido(f"contacto no válido ({pid[:12]})")
     if fecha and not FECHA_RE.match(fecha):
         raise NoValido(f"fecha no válida ({pid})")
-    hilo_ok = isinstance(hilo, int) and not isinstance(hilo, bool) and 0 < hilo < 10**12
-    if hilo is not None and not hilo_ok:
+    if hilo is not None and not _entero(hilo):
         raise NoValido(f"conversación no válida ({pid})")
     return pid, hilo, marca, int(c["es_mio"]), fecha[:25] or None
 
@@ -70,6 +79,48 @@ def guardar_contactos(con, lista, ahora=None):
         )
         n += 1
     return n
+
+
+def _entero(v, hasta=10**12):
+    return isinstance(v, int) and not isinstance(v, bool) and 0 < v < hasta
+
+
+def _mensaje(m):
+    """Un mensaje validado como fila (id, hilo, pid, es_mio, fecha, texto, adjuntos), o NoValido."""
+    if not isinstance(m, dict) or not _entero(m.get("id")) or not _entero(m.get("hilo")):
+        raise NoValido("mensaje no válido")
+    pid, fecha, texto, adj = str(m.get("pid") or ""), str(m.get("fecha") or ""), m.get("texto"), m.get("adjuntos", 0)
+    if not PID_RE.match(pid) or not FECHA_RE.match(fecha) or not isinstance(m.get("es_mio"), bool):
+        raise NoValido(f"mensaje no válido ({m['id']})")
+    if not isinstance(texto, str) or len(texto) > MAX_TEXTO or not (isinstance(adj, int) and 0 <= adj <= 50):
+        raise NoValido(f"texto o adjuntos no válidos ({m['id']})")
+    return m["id"], m["hilo"], pid, int(m["es_mio"]), fecha[:25], texto, adj
+
+
+def guardar_mensajes(con, lista, ahora=None):
+    """Guarda los mensajes (por su id; si ya estaba, se actualiza). Devuelve cuántos son nuevos."""
+    if not isinstance(lista, list) or len(lista) > MAX_MENSAJES:
+        raise NoValido("mensajes: lista no válida")
+    filas, ahora = [_mensaje(m) for m in lista], ahora or int(time.time())
+    antes = con.execute("SELECT COUNT(*) FROM mensaje").fetchone()[0]
+    con.executemany(
+        "INSERT INTO mensaje (id, hilo, pid, es_mio, fecha, texto, adjuntos, guardado) VALUES (?,?,?,?,?,?,?,?) "
+        "ON CONFLICT(id) DO UPDATE SET texto=excluded.texto, adjuntos=excluded.adjuntos",
+        [(*f, ahora) for f in filas],
+    )
+    return con.execute("SELECT COUNT(*) FROM mensaje").fetchone()[0] - antes
+
+
+def mensajes_de(con, pid, limite=300):
+    """La conversación de un anuncio de Boligportal, de la más antigua a la más reciente."""
+    filas = con.execute(
+        "SELECT id, hilo, es_mio, fecha, texto, adjuntos FROM mensaje WHERE pid=? ORDER BY fecha DESC, id DESC LIMIT ?",
+        (pid, limite),
+    ).fetchall()
+    return [
+        {"id": r[0], "hilo": r[1], "es_mio": bool(r[2]), "fecha": r[3], "texto": r[4], "adjuntos": r[5]}
+        for r in reversed(filas)
+    ]
 
 
 def poner_favorito(con, id_, activo, quien, ahora=None):
@@ -100,4 +151,5 @@ def resumen(con):
     marcas = dict(con.execute("SELECT marca, COUNT(*) FROM contacto GROUP BY marca").fetchall())
     ultimo = con.execute("SELECT MAX(actualizado) FROM contacto").fetchone()[0]
     fav = con.execute("SELECT COUNT(*) FROM favorito WHERE activo=1").fetchone()[0]
-    return {"marcas": marcas, "ultimo": ultimo, "favoritos": fav}
+    msj = con.execute("SELECT COUNT(*), COUNT(DISTINCT pid) FROM mensaje").fetchone()
+    return {"marcas": marcas, "ultimo": ultimo, "favoritos": fav, "mensajes": msj[0], "conversaciones": msj[1]}
