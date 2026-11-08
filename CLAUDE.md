@@ -17,10 +17,11 @@ idea, la actual. Al cambiar algo, se reescribe lo que ya no es cierto; no se añ
 
 | Pieza | Lee | Escribe |
 |---|---|---|
-| Web (`index.html`) | `PISOS`/`OUT` incrustados (copia de `data/`), `/api/estados`, `/api/candidatos`, `/api/destinos`, `/api/zonas`, `/api/filtros`, `/api/ruta`, SSE `/api/eventos` | `/api/estado`, `/api/v2/enlaces`, `/api/destino`, `/api/zona`, `/api/filtros`, `/api/clientlog` |
+| Web (`index.html`) | `PISOS`/`OUT` incrustados (copia de `data/`), `/api/v2/contactos`, `/api/estados`, `/api/candidatos`, `/api/destinos`, `/api/zonas`, `/api/filtros`, `/api/ruta`, SSE `/api/eventos` | `/api/estado`, `/api/v2/enlaces`, `/api/v2/favoritos`, `/api/destino`, `/api/zona`, `/api/filtros`, `/api/clientlog` |
 | Vigilante (`lares/piso_watch_monitor.py`, cron cada 3 h, sin IA) | `pisos-bridge/config.json`, `pisos.json`/`descartados.json` de GitHub Pages, `GET /api/v2/anuncios` (los añadidos a mano), su SQLite `piso-watch/pisos.db` | `pisos-bridge/candidatos.json`, `rechazados.json`, `retirados.json`, `historial.json`, `lares_cron.json`, `lares_runs.jsonl` |
 | Comprobador (dentro del vigilante: `comprobar_publicados`) | ≤8 anuncios por pasada (mapa + propuestos que no salen en su portal, también los que solo salen en la copia de EDC) | `retirados.json` → el backend (`aplicar_retirados`) los descarta una vez |
-| Lares en el chat (`lares/pisos.py`) | `/api/v2/anuncios`, `/api/v2/resumen` | `/api/v2/enlaces`, `/estado`, `/nota`, `/dormitorios` (clave `CLAVE_LARES`) |
+| Lares en el chat (`lares/pisos.py`) | `/api/v2/anuncios`, `/api/v2/resumen`, `chats_boligportal.json` (privado) | `/api/v2/enlaces`, `/estado`, `/nota`, `/dormitorios`, `/favoritos` (clave `CLAVE_LARES`) |
+| Chats (`lares/chats_boligportal.py`, tarea `boligportal-chats` cada 30 min, lee cada 3–5 h al azar, nunca 00–08 h) | bandeja de Boligportal (`/api/messaging/`, cookie `.boligportal_cookie` 600), `GET /api/v2/anuncios` | `POST /api/v2/contactos`, `/api/v2/enlaces` + `/estado` contactado (≤3 nuevos por lectura), `chats_boligportal.json` (600, texto), `pisos-bridge/chats_estado.json` |
 | Panel (`backend/admin.html`, :9445) | `/status` y `/flow` del backend: contadores de `pisos.json` + `candidatos.json` + tabla `estado` + `historial.json`; solo el check «anuncios» mira la base única | — |
 | Backend (`backend/app.py`) | buzón `pisos-bridge`, GitHub Pages (`data/pisos.json` para las rutas previas) | SQLite: `estado`+`historial` (web), `anuncio`+`cambio`+`alias` (v2), `destino`, `zonas`, `ajustes` (filtros), `retirado_aplicado`; `config.json` |
 
@@ -54,9 +55,9 @@ idea, la actual. Al cambiar algo, se reescribe lo que ya no es cierto; no se añ
   DESCARTE_H=48 h on the map with a countdown, then listed in «Descartados»; never deleted). `st` in `PISOS` is only the starting value.
 - `data/pisos.json` — flat data (id, zona, barrio, calle, m2, vaer, dorm, alq, aconto, dep, pre, disp, link, lat, lon, ubic = location precision, estado/aviso = warnings, fotos, fotoPlano).
 - `backend/` — `app.py` (server, checks, logs, panel), `api_v2.py` (API v2), `anuncios.py` (model, rules, states, history),
-  `portales.py` (reads Boligportal/EDC/Lejebolig/Juli Living listing pages), `puente.py` (v2 ↔ the web's `estado`/`candidatos`), `destinos.py`,
+  `portales.py` (reads Boligportal/EDC/Lejebolig/Juli Living listing pages), `puente.py` (v2 ↔ the web's `estado`/`candidatos`), `destinos.py`, `contactos.py`,
   `precalculo.py`, `routing.py` (route engine), `admin.html` (panel), `deploy.sh`, `smoke_test.py`, `firewall/`.
-- `lares/` — copies of what runs in Lares' profile on the Pi: `piso_watch_monitor.py` (vigilante), `pisos.py` (chat tool),
+- `lares/` — copies of what runs in Lares' profile on the Pi: `piso_watch_monitor.py` (vigilante), `pisos.py` (chat tool), `chats_boligportal.py` (chats),
   `instrucciones-pisos.md` (goes into Lares' SOUL.md and skill `piso-watch-cph`). See `lares/README.md`.
 - `.claude/skills/boligportal-mensajes/` — skill para leer (solo leer) la bandeja de Boligportal de la cuenta compartida con
   Claude in Chrome y cruzar los contactados con la base. Sin contraseñas ni cookies fuera del navegador.
@@ -82,7 +83,7 @@ idea, la actual. Al cambiar algo, se reescribe lo que ya no es cierto; no se añ
   GitHub Pages); on a new version it reloads alone if idle ≥20 s (max once per 2 min, keeps map view + selected flat via
   sessionStorage «vista»), otherwise shows «🆕 Hay cambios nuevos». Lares: only its profile `lares` and the folder
   `Vivienda/pisos-bridge`; never read other Hermes agents/profiles. On the Pi only touch `/home/docker/pisos-backend`; use targeted checks (grep).
-- Monitoring & logs policy (keep for every new feature): backend logs JSON lines in /data/logs/<tipo>/AAAA-MM-DD.jsonl (past days gzipped; retention api/client 14 d, events/checks/summary 183 d; 20 MB/day cap; checks written only on OK<->fail change, last 10 per check in memory + checks_recientes.json; daily summary line); Docker stdout capped 2×5 MB; checks every 5 min (funnel_publico, web_github, lares_pasadas, lares_cron, buzon_compartido, api_errores, fotos, almacenamiento, aislamiento_red, motor_rutas, anuncios, destinos). Check «destinos»: destinos visibles/quitados, rutas previas (en cola, calculadas, con error, sin sitio) y búsquedas rechazadas por motor ocupado (también evento warn src=rutas, máx. 1/min); eventos src=destinos y src=rutas_previas. Check «anuncios» (API v2): anuncios por estado, cola de fichas, errores del lector, enlaces añadidos/fallidos, entregas del vigilante y acciones no permitidas (403, también evento warn src=permisos). Private panel http://100.72.170.60:9445 (tailscale serve --tcp, tailnet only) or https://raspberrypi.tail9f1069.ts.net:9444 (needs MagicDNS; Tailscale-User-Login must start with larrabajojon@). Add a check + log events for anything new.
+- Monitoring & logs policy (keep for every new feature): backend logs JSON lines in /data/logs/<tipo>/AAAA-MM-DD.jsonl (past days gzipped; retention api/client 14 d, events/checks/summary 183 d; 20 MB/day cap; checks written only on OK<->fail change, last 10 per check in memory + checks_recientes.json; daily summary line); Docker stdout capped 2×5 MB; checks every 5 min (funnel_publico, web_github, lares_pasadas, lares_cron, buzon_compartido, api_errores, fotos, almacenamiento, aislamiento_red, motor_rutas, anuncios, destinos, chats). Check «chats»: última lectura de la bandeja (`pisos-bridge/chats_estado.json`: sesión ok|caducada|sin_cookie, conversaciones, error), contactos por marca y ❤️; falla si la sesión caducó o hubo error; eventos src=chats y src=favoritos. Check «destinos»: destinos visibles/quitados, rutas previas (en cola, calculadas, con error, sin sitio) y búsquedas rechazadas por motor ocupado (también evento warn src=rutas, máx. 1/min); eventos src=destinos y src=rutas_previas. Check «anuncios» (API v2): anuncios por estado, cola de fichas, errores del lector, enlaces añadidos/fallidos, entregas del vigilante y acciones no permitidas (403, también evento warn src=permisos). Private panel http://100.72.170.60:9445 (tailscale serve --tcp, tailnet only) or https://raspberrypi.tail9f1069.ts.net:9444 (needs MagicDNS; Tailscale-User-Login must start with larrabajojon@). Add a check + log events for anything new.
 - Anuncios retirados: el comprobador del vigilante (`estado_anuncio`) mira ≤8 anuncios por pasada (`MAX_ACTIVO`: pisos del mapa +
   propuestos que ya no salen en las páginas, los menos mirados primero). Retirado SOLO con señal clara: Boligportal redirige con
   `?ad_rented_out_redirect=` o trae `state` ≠ ACTIVE_*; Lejebolig 404/410. Al leer una ficha de Boligportal, esa misma
@@ -100,6 +101,15 @@ idea, la actual. Al cambiar algo, se reescribe lo que ya no es cierto; no se añ
 - Lejebolig: Lares NO lo busca (decisión de Jon, 27-oct). Sus enlaces solo entran a mano (chat o barra de la web).
 - Compartir (decisión de Jon, 1-nov): si en Boligportal el casero no marca «Delevenlig» (`features.shareable` = false), el
   anuncio se RECHAZA («no permite compartir (dato del portal)»), aunque sea el motivo nº 1 de rechazo (84 de 150 anuncios de 4 vær.).
+- Chats de Boligportal (decisión de Jon, 8-nov: «Solo leer, con Lares», y a horas pseudoaleatorias para no parecer un
+  robot): `lares/chats_boligportal.py` lee la bandeja de la cuenta compartida cada 3–5 h al azar (nunca 00–08 h), ≤3
+  páginas con pausas, y se para ante 401/403/429. Marca por anuncio (tabla `contacto`, `backend/contactos.py`):
+  respondido 💬 | sin_respuesta ⏳ | visita 📅 | alquilado 🏁. El TEXTO de los mensajes nunca va a la API pública: solo
+  al archivo privado del perfil de Lares (600). La cookie solo en `.boligportal_cookie` (600) del perfil de Lares; la
+  pegan Jon o Unai, Claude no la ve. Conversación de un anuncio que no está en la base → se añade y va a 🟢 contactado;
+  los demás estados no se tocan. Nunca escribir a caseros ni archivar. Web: marca en chincheta/lista/ficha, «💬 Abrir
+  conversación» (`/indbakke/t/<hilo>`). ❤️ «nos encanta» (tabla `favorito`, `POST /api/v2/favoritos`, web y Lares),
+  aparte del estado: ❤️ primero en la lista (luego ⭐ Vanløse), filtro «Solo ❤️» en Visualización; quitarlo no borra.
 - Los valores de «Búsqueda» viven en la Pi (`/api/filtros`), no en el código: el 1-nov Jon puso la entrada del 2026-12-01 al
   2027-01-04 (antes 18-dic..15-ene). `DEFAULT_FILTROS` del vigilante solo se usa si no hay config.json.
 - Photos: `fotos` (list, floor plan first when `fotoPlano`) per flat, shown through the backend image proxy `/api/img?u=` (allow-listed hosts, disk cache 300 MB).
