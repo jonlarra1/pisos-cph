@@ -224,6 +224,41 @@ class TestEstados(Web):
         self.assertEqual(self.js("PISOS[0].st"), antes)
 
 
+class TestContactosYCorazon(Web):
+    """Marcas de los chats (💬⏳📅) y ❤️ «nos encanta» desde /api/v2/contactos."""
+    def pi(self, route):
+        req = route.request; path = req.url.split(PI, 1)[1].split("?")[0]
+        if path == "/api/v2/contactos" and req.method == "GET":
+            return route.fulfill(status=200, headers=self.cors(), json=getattr(self, "cont", {"contactos": {}, "favoritos": {}}))
+        if path == "/api/v2/favoritos" and req.method == "POST":
+            d = json.loads(req.post_data or "{}"); self.posts.append((path, d))
+            return route.fulfill(status=200, headers=self.cors(), json={"id": d["id"], "activo": d["activo"]})
+        return super().pi(route)
+
+    def test_marca_boton_de_conversacion_y_corazon_primero(self):
+        p = self.js("(()=>{const p=ranked.filter(inMain).filter(p=>bpPid(p)).at(-1); return {id:p.id,pid:bpPid(p)};})()")
+        self.assertTrue(p["pid"], "hay un piso de Boligportal en la lista")
+        self.js("""x=>applyContactos({contactos:{[x.pid]:{hilo:37733843,marca:'visita',es_mio:false,fecha:'2026-11-07T18:00:00Z'}},
+                                      favoritos:{[x.id]:{by:'unai',ts:1}}})""", p)
+        self.assertEqual(self.js("document.querySelector('#list .item').dataset.id"), p["id"], "el ❤️ sube arriba")
+        self.assertIn("❤️", self.js("document.querySelector('#list .item .it-t').textContent"))
+        self.assertIn("📅", self.js("document.querySelector('#list .item .it-t').textContent"))
+        self.assertTrue(self.js("id=>!!markers[id].getElement().querySelector('.pin[data-cor][data-mk]')", p["id"]))
+        self.js("id=>openSheet(id)", p["id"])
+        self.assertEqual(self.js("document.querySelector('#sheet a[href*=\"indbakke/t/\"]').href"),
+                         "https://www.boligportal.dk/indbakke/t/37733843")
+
+    def test_corazon_se_guarda_en_la_pi_y_filtro_solo_corazon(self):
+        self.js("localStorage.setItem('yo','jon'); YO='jon'")
+        pid = self.js("ranked.filter(inMain)[0].id")
+        self.js("id=>showCard(id)", pid)
+        self.page.click(f"#card button[data-cor='{pid}']")
+        self.esperar("document.querySelector('#card button[data-cor]').getAttribute('aria-pressed')==='true'")
+        self.assertIn(("/api/v2/favoritos", {"id": pid, "activo": True, "quien": "jon"}), self.posts)
+        self.js("document.getElementById('d-ver').open=true"); self.page.check("#cor-ck")
+        self.assertEqual(self.js("PISOS.filter(visible).map(p=>p.id)"), [pid])
+
+
 class TestFicha(Web):
     def test_ficha_con_rutas(self):
         pid = self.js("PISOS[PISOS.length-1].id")
