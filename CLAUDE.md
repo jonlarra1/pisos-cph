@@ -219,6 +219,9 @@ idea, la actual. Al cambiar algo, se reescribe lo que ya no es cierto; no se añ
   `scripts/pisos.py.bak-20261108-preChats`, `.bak-20261108-preArreglos`, `scripts/chats_boligportal.py.bak-20261108-preArreglos`,
   `SOUL.md.bak-20261108-preChats`, `SKILL.md.bak-20261108-preChats` → borrar ~10-nov si va bien. En git: etiqueta
   `backup-pre-limpieza-20261108` (antes de la limpieza).
+  8-nov (conversaciones en la ficha y panel por módulos): backend `backup-20261108-100010` y `-100309`, `.env.bak-20261108-preLectura`
+  (el .env antes de las claves de lectura: borrarlo cuando estas funcionen); Lares `*.bak-20261108-preMensajes` (chats_boligportal.py,
+  SOUL.md, SKILL.md) y `scripts/piso_watch_monitor.py.v13-20261108-preMensajes.bak` → borrar ~10-nov si va bien.
   En el PC: ~/.claude/settings.json.bak, .bak-narrator, .bak-20261024-voz (narrador, 1–2 KB).
 - Puertos ya usados en la Pi (no tocar): Portainer 8000/9000/9443. Nuestro: 127.0.0.1:8787 (API, Funnel :8443), 127.0.0.1:8790 (panel: serve https :9444 por nombre, y serve TCP :9445 por IP). Comprobar siempre con `ss -ltnp | grep :PUERTO` antes de usar uno nuevo.
 - Acceso a la Pi: clave SSH temporal de 1 h (expiry-time en authorized_keys, comentario «claude-pisos-1h»); pedir una nueva a Jon.
