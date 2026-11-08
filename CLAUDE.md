@@ -48,7 +48,8 @@ idea, la actual. Al cambiar algo, se reescribe lo que ya no es cierto; no se añ
     (`backend/precalculo.py`) and the web shows «⏳ La Pi está preparando las rutas: X de N».
   - Routes not in `RUTAS` (other times, «Ahora», centro, destinos, propuestos) use the Pi engine, whose walk/bike legs are
     straight lines; every drawn route asks OSRM (FOSSGIS) for the street path (`liveRoute`: max 2 requests at a time, focused
-    route first; network/429/5xx → retry after 10, 20 and 30 s; only «NoRoute» stays straight). Only the focused route animates.
+    route first, 250 ms between requests, the previous flat's queue dropped on change; network/429/5xx → stays «…» and
+    retries after 10, 20 and 30 s, then null and a new try after 5 min; «NoRoute» stays straight). Only the focused route animates.
   - Station dots/labels hide when all lines through them are switched off (`lineOn`, `updateStations`).
   - `HORARIOS` — saved schedule presets shown as "Mis horarios".
 - Flat status (shared on the Pi, table `estado`; `/api/estados` on load, every 15 s without SSE and on focus; POST `/api/estado`;

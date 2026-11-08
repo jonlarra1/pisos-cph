@@ -480,7 +480,7 @@ class TestDestinoAnadido(Web):
         self.assertTrue(tramos); self.assertTrue(all(n > 2 for n in tramos), tramos)    # ningún tramo en línea recta (2 puntos)
     def osrm(self, fallos):
         """OSRM simulado: las primeras peticiones contestan con los códigos de `fallos`, luego Ok."""
-        self.osrm_q = []
+        self.osrm_q, self.osrm_fallos = [], fallos
         def h(r):
             self.osrm_q.append(r.request.url); st = fallos.pop(0) if fallos else 200
             if st == 200: return r.fulfill(status=200, json=OSRM_OK)
@@ -497,7 +497,20 @@ class TestDestinoAnadido(Web):
         self.esperar("Object.keys(LIVE).length>0&&Object.values(LIVE).every(v=>v&&v.path)")   # todo acaba por calle
         self.js(f"drawRoute('{pid}','xcris-unai',false)")
         self.assertTrue(all(n > 2 for n in self.tramos()), self.tramos())
+        self.assertEqual(self.osrm_fallos, [])                                              # se usaron los 3 fallos
         self.assertGreater(len(self.osrm_q), self.js("Object.keys(LIVE).length"))          # hubo reintentos
+    def test_reintentando_no_cuenta_como_sin_ruta(self):
+        self.osrm([503] * 50); self.js("LIVE_ESPERA=100000")
+        self.assertEqual(self.js("liveRoute('bike',[55.68,12.55],[55.70,12.57],true,'x')"), "pending")
+        self.esperar("Object.values(LIVE_FALLOS).length===1")
+        self.assertEqual(self.js("Object.values(LIVE)"), ["pending"])                       # «…», no «—»
+    def test_al_cambiar_de_piso_se_suelta_la_cola_del_anterior(self):
+        self.js("LIVEQ.activas=LIVEQ.MAX")                                                 # cola parada
+        self.js("liveRoute('bike',[55.68,12.55],[55.70,12.57],false,'a'); liveRoute('foot',[55.68,12.55],[55.69,12.56],true,'b')")
+        self.assertEqual(self.js("LIVEQ.cola.map(t=>t.grupo)"), ["b", "a"])                # lo que miras va primero
+        self.js("liveSoltar('b')")
+        self.assertEqual(self.js("[LIVEQ.cola.map(t=>t.grupo), Object.keys(LIVE).length]"), [["b"], 1])
+        self.js("LIVEQ.activas=0")
     def test_sin_ruta_no_se_reintenta(self):
         self.osrm([400] * 50); self.js("LIVE_ESPERA=20")
         pid = self.abrir(); self.esperar(f"RTS('{pid}','xcris-unai').length===1")
