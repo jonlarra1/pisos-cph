@@ -59,6 +59,15 @@ class Caducada(Exception):
     pass
 
 
+def cabecera_cookie(texto):
+    """Lo pegado en `.boligportal_cookie` como cabecera Cookie: vale la línea de la petición («cookie: a=1; b=2»),
+    «sessionid=…» o solo el valor de sessionid."""
+    t = " ".join(texto.split())
+    if t.lower().startswith("cookie:"):
+        t = t[7:].strip()
+    return t if "=" in t else f"sessionid={t}"
+
+
 def leer_json(ruta, defecto):
     try:
         return json.loads(ruta.read_text(encoding="utf-8"))
@@ -226,7 +235,7 @@ def pasada(ahora=None, pausa=time.sleep):
     estado["proximo"] = sortear(ahora)
     info = {"ts": ahora, "proximo": estado["proximo"], "sesion": "ok"}
     try:
-        chats = resumir(leer_bandeja(COOKIE.read_text(encoding="utf-8").strip(), pausa))
+        chats = resumir(leer_bandeja(cabecera_cookie(COOKIE.read_text(encoding="utf-8")), pausa))
         alquilados = set(estado.get("alquilados") or [])  # lo que el casero dio por alquilado lo sigue estando
         for c in chats:
             if c["pid"] in alquilados:

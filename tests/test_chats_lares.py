@@ -53,6 +53,11 @@ class TestReglas(unittest.TestCase):
         self.assertEqual(CB.respuestas_nuevas(chats, {}), [])
         self.assertEqual([c["pid"] for c in CB.respuestas_nuevas(chats, {"5670349": 6, "5363124": 1})], ["5670349"])
 
+    def test_cookie_pegada_de_cualquier_forma(self):
+        for pegado in ("abc123", "sessionid=abc123", "cookie: sessionid=abc123", "  sessionid=abc123\n"):
+            self.assertEqual(CB.cabecera_cookie(pegado), "sessionid=abc123")
+        self.assertEqual(CB.cabecera_cookie("sessionid=a; csrftoken=b"), "sessionid=a; csrftoken=b")
+
     def test_salta_conversaciones_sin_anuncio_o_propias(self):
         sin = hilo("5670349", 1, False, "x"); sin["ad"] = {}
         mio = hilo("5363124", 2, False, "x"); mio["is_owner"] = True
