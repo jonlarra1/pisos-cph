@@ -248,6 +248,21 @@ class TestContactosYCorazon(Web):
         self.assertEqual(self.js("document.querySelector('#sheet a[href*=\"indbakke/t/\"]').href"),
                          "https://www.boligportal.dk/indbakke/t/37733843")
 
+    def test_solo_corazon_no_vacia_el_mapa_si_la_pi_no_responde_y_vale_para_propuestos(self):
+        self.js("CONT_OK=false; SOLO_COR=true; applyFilter(false)")
+        self.assertEqual(self.js("PISOS.filter(visible).length"), self.js("PISOS.filter(p=>!expired(p)).length"))
+        c = self.js("(()=>{CANDS.push({...CANDS[0],id:'7000003',st:'nuevo'}); return '7000003';})()") if self.js("CANDS.length") else None
+        self.js("applyContactos({contactos:{},favoritos:{}})")
+        self.assertEqual(self.js("PISOS.filter(visible).length"), 0)
+        if c: self.assertNotIn(c, self.js("document.getElementById('lares').innerHTML"))
+
+    def test_sin_cambios_no_se_redibuja(self):
+        self.js("applyContactos({contactos:{},favoritos:{}}); window.__c=CONT")
+        self.js("applyContactos({contactos:{},favoritos:{}})")
+        self.assertTrue(self.js("window.__c===CONT"), "con los mismos datos no se rehace nada")
+        self.js("applyContactos({contactos:{},favoritos:{x:{by:'jon',ts:1}}})")
+        self.assertFalse(self.js("window.__c===CONT"))
+
     def test_corazon_se_guarda_en_la_pi_y_filtro_solo_corazon(self):
         self.js("localStorage.setItem('yo','jon'); YO='jon'")
         pid = self.js("ranked.filter(inMain)[0].id")

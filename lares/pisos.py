@@ -28,6 +28,7 @@ API = os.environ.get("PISOS_API", "https://raspberrypi.tail9f1069.ts.net:8443")
 MAPA = "https://jonlarra1.github.io/pisos-cph/"
 CLAVE_ARCHIVO = Path(__file__).resolve().parent.parent / ".pisos_api_key"
 CHATS_ARCHIVO = Path(__file__).resolve().parent.parent / "chats_boligportal.json"  # privado (600), solo del perfil
+HILO = "https://www.boligportal.dk/indbakke/t/{}"  # una conversación de la bandeja
 MARCAS = {
     "respondido": "💬 contestado",
     "sin_respuesta": "⏳ sin respuesta",
@@ -47,7 +48,9 @@ PATRONES = (  # los mismos que backend/portales.py
 
 
 class Error(Exception):
-    pass
+    def __init__(self, msg, codigo=None):
+        super().__init__(msg)
+        self.codigo = codigo  # código HTTP de la API, si lo hubo
 
 
 def clave():
@@ -81,7 +84,7 @@ def llamar(metodo, ruta, cuerpo=None):
             msg = json.loads(e.read()).get("error", "")
         except ValueError:
             msg = ""
-        raise Error(f"la API respondió {e.code}: {msg or e.reason}") from None
+        raise Error(f"la API respondió {e.code}: {msg or e.reason}", e.code) from None
     except (urllib.error.URLError, TimeoutError) as e:
         raise Error(f"no se puede llegar a la API ({type(e).__name__}); prueba en un rato") from None
 
@@ -163,7 +166,8 @@ def chats(filtro=""):
             f" · {(c.get('fecha') or '')[:16]} ({quien})"
         )
         print(f"  {' '.join((c.get('texto') or '(sin texto: adjunto)').split())[:500]}")
-        print(f"  https://www.boligportal.dk/indbakke/t/{c.get('hilo')}")
+        if c.get("hilo"):
+            print("  " + HILO.format(c["hilo"]))
 
 
 def main(args):

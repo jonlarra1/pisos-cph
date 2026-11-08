@@ -34,6 +34,11 @@ class TestModelo(unittest.TestCase):
         self.assertNotIn("texto", C.listar(self.con)["contactos"]["5670349"])
         self.assertNotIn("12345678", str(self.con.execute("SELECT * FROM contacto").fetchall()))
 
+    def test_anuncio_repetido_en_el_lote_vale_el_primero(self):
+        self.assertEqual(C.guardar_contactos(self.con, [contacto(marca="visita"), contacto(marca="sin_respuesta")]), 1)
+        self.assertEqual(C.listar(self.con)["contactos"]["5670349"]["marca"], "visita")
+        self.assertEqual(C.guardar_contactos(self.con, [contacto(marca="visita"), contacto(marca="sin_respuesta")]), 0)
+
     def test_favorito_no_se_borra(self):
         C.poner_favorito(self.con, "jl1644", True, "jon")
         self.assertIn("jl1644", C.listar(self.con)["favoritos"])

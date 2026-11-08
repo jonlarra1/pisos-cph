@@ -36,7 +36,7 @@ def crear_tablas(con):
 
 def guardar_contactos(con, lista, ahora=None):
     """Sustituye el contacto de cada anuncio de la lista (lo que no viene se queda como estaba). Devuelve cuántos
-    cambiaron. Valida todo: lo que no encaja se rechaza entero (NoValido)."""
+    cambiaron. Valida todo: lo que no encaja se rechaza entero (NoValido). Un anuncio repetido: vale el primero."""
     if not isinstance(lista, list) or len(lista) > MAX_CONTACTOS:
         raise NoValido("contactos: lista no válida")
     ahora, filas = ahora or int(time.time()), []
@@ -51,8 +51,11 @@ def guardar_contactos(con, lista, ahora=None):
         if hilo is not None and not (isinstance(hilo, int) and not isinstance(hilo, bool) and 0 < hilo < 10**12):
             raise NoValido(f"conversación no válida ({pid})")
         filas.append((pid, hilo, marca, int(c["es_mio"]), fecha[:25] or None))
-    n = 0
+    n, hechos = 0, set()
     for pid, hilo, marca, es_mio, fecha in filas:
+        if pid in hechos:
+            continue
+        hechos.add(pid)
         previo = con.execute("SELECT hilo, marca, es_mio, fecha FROM contacto WHERE pid=?", (pid,)).fetchone()
         if previo and tuple(previo) == (hilo, marca, es_mio, fecha):
             continue

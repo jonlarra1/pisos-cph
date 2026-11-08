@@ -90,3 +90,27 @@ class TestHerramientaLares(BaseV2):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestChats(unittest.TestCase):
+    def test_lista_filtra_y_no_inventa_enlaces(self):
+        import json, tempfile
+        from pathlib import Path
+        from unittest import mock
+        with tempfile.TemporaryDirectory() as d:
+            f = Path(d) / "chats_boligportal.json"
+            f.write_text(json.dumps({"leido": 1794120000, "chats": [
+                {"pid": "5670349", "hilo": 37733843, "marca": "visita", "es_mio": False, "fecha": "2026-11-07T18:00", "texto": "Fremvisning onsdag", "calle": "Jyllingevej 1, 2720, Vanløse"},
+                {"pid": "5363124", "hilo": None, "marca": "sin_respuesta", "es_mio": True, "fecha": "2026-11-01T10:00", "texto": "", "calle": "Havdrupvej 3"}]}))
+            out = io.StringIO()
+            with mock.patch.object(H, "CHATS_ARCHIVO", f), contextlib.redirect_stdout(out):
+                H.main(["chats"])
+            self.assertIn("📅 visita", out.getvalue()); self.assertIn("(sin texto: adjunto)", out.getvalue())
+            self.assertIn(H.HILO.format(37733843), out.getvalue()); self.assertNotIn("/t/None", out.getvalue())
+            self.assertLess(out.getvalue().index("Jyllingevej"), out.getvalue().index("Havdrupvej"), "lo más reciente primero")
+            out = io.StringIO()
+            with mock.patch.object(H, "CHATS_ARCHIVO", f), contextlib.redirect_stdout(out):
+                H.main(["chats", "havdrup"])
+            self.assertIn("1 conversaciones", out.getvalue()); self.assertNotIn("Jyllingevej", out.getvalue())
+        with mock.patch.object(H, "CHATS_ARCHIVO", Path("/no/existe")), self.assertRaises(H.Error):
+            H.chats()

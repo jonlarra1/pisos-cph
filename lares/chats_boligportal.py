@@ -11,12 +11,14 @@ sortea la siguiente entre 3 y 5 h después (y nunca de 00 a 08 h, hora de Copenh
 - Texto completo de los mensajes: SOLO en `chats_boligportal.json` (600) del perfil, para `pisos.py chats`.
 - A la API v2 (POST /api/v2/contactos, clave de Lares) solo va: anuncio, conversación, marca, si el último es
   nuestro y su fecha.
-- Conversación de un anuncio que no está en la base: lo añade por su enlace y lo pone en «contactado» (≤3 por lectura).
+- Conversación de un anuncio que no está en la base, o que está «propuesto» o «rechazado»: queda en «contactado»
+  (≤3 por lectura). Gusta, contactado, descartado y retirado no se tocan.
 - Buzón: `pisos-bridge/chats_estado.json` (sesión, conversaciones, error; sin textos) para el check «chats» del panel.
 - Salida (despierta a Lares solo si hay algo): «RESPUESTA | …» por cada mensaje nuevo del casero y, como mucho una vez
   al día, «[aviso] … renovar la cookie».
 """
 
+import http.client
 import json
 import os
 import re
@@ -38,7 +40,6 @@ ESTADO = PERFIL / ".chats_estado.json"  # próxima lectura, último aviso y lo y
 PRIVADO = PERFIL / "chats_boligportal.json"  # texto de los mensajes: solo aquí
 BRIDGE = Path(os.environ.get("PISOS_BRIDGE", "/opt/data/vault/Vivienda/pisos-bridge"))
 BANDEJA = "https://www.boligportal.dk/api/messaging/?offset={}&limit=20&search=&show_archived=true"
-HILO = "https://www.boligportal.dk/indbakke/t/{}"
 ANUNCIO = "https://www.boligportal.dk/lejligheder/bolig/lejlighed-id-{}"
 UA = "Mozilla/5.0 (X11; Linux aarch64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0 Safari/537.36"
 CPH = ZoneInfo("Europe/Copenhagen")
@@ -47,6 +48,7 @@ NOCHE = range(0, 8)  # horas sin leer
 MAX_PAGINAS = 3
 MAX_NUEVOS = 3  # anuncios añadidos a la base por lectura (Lares tiene un tope de cambios por hora)
 MAX_BYTES = 2_000_000
+A_CONTACTADO = (None, "propuesto", "rechazado")  # estado en la base (None = no está) que pasa a «contactado»
 AVISO_CADA = 24 * 3600
 VISITA_RE = re.compile(r"fremvis|besøg|besigtig|viewing|visit", re.I)
 ALQUILADO_RE = re.compile(r"lejemålet er udlejet|samtalen er deaktiveret|er blevet udlejet", re.I)
@@ -130,13 +132,16 @@ def clasificar(h):
 
 
 def resumir(hilos):
-    """Lo de cada conversación con anuncio: lo público (para la API) y lo privado (texto, para el perfil)."""
-    out = []
+    """Lo de cada conversación con anuncio: lo público (para la API) y lo privado (texto, para el perfil).
+    Si un anuncio tiene varias (p. ej. una archivada), vale la del mensaje más reciente."""
+    out, vistos = [], set()
+    hilos = sorted(hilos, key=lambda h: str((h.get("last_message") or {}).get("sent_date") or ""), reverse=True)
     for h in hilos:
         ad, ult = h.get("ad") or {}, h.get("last_message") or {}
         pid, hilo = str(ad.get("id") or ""), ult.get("thread_id") or h.get("id")
-        if not re.fullmatch(r"\d{4,10}", pid) or h.get("is_owner"):
+        if not re.fullmatch(r"\d{4,10}", pid) or h.get("is_owner") or pid in vistos:
             continue
+        vistos.add(pid)
         calle = ", ".join(str(x) for x in (ad.get("street_name"), ad.get("postal_code"), ad.get("city")) if x)
         out.append(
             {
@@ -165,20 +170,34 @@ def entregar(chats):
     return pisos.llamar("POST", "/api/v2/contactos", {"contactos": publico}).get("cambiados", 0)
 
 
-def anadir_nuevos(chats, no_anadir):
-    """Conversaciones de anuncios que no están en la base: se añaden y quedan en «contactado» (sin tocar los demás).
-    Lo que el backend no puede añadir (p. ej. ya no está publicado) va a `no_anadir` y no se vuelve a intentar."""
-    en_base = {a.get("pid") for a in pisos.llamar("GET", "/api/v2/anuncios").get("anuncios") or []}
+def a_contactado(chats, no_anadir):
+    """Con conversación = contactado: añade lo que no está en la base y pasa a «contactado» lo propuesto o rechazado.
+    Solo un 400 (anuncio no válido o ya no publicado) va a `no_anadir`; un fallo pasajero se reintenta."""
+    base = {
+        a.get("pid"): a
+        for a in pisos.llamar("GET", "/api/v2/anuncios").get("anuncios") or []
+        if a.get("portal", "Boligportal") == "Boligportal"
+    }
+    pendientes = [
+        c
+        for c in chats
+        if c["marca"] != "alquilado"
+        and c["pid"] not in no_anadir
+        and (base.get(c["pid"]) or {}).get("estado") in A_CONTACTADO
+    ]
     hechos = []
-    for c in [c for c in chats if c["pid"] not in en_base | no_anadir and c["marca"] != "alquilado"][:MAX_NUEVOS]:
+    for c in pendientes[:MAX_NUEVOS]:
         try:
-            a = pisos.llamar("POST", "/api/v2/enlaces", {"url": ANUNCIO.format(c["pid"]), "quien": "lares"})
-            if a.get("estado") == "propuesto":
+            a = base.get(c["pid"]) or pisos.llamar(
+                "POST", "/api/v2/enlaces", {"url": ANUNCIO.format(c["pid"]), "quien": "lares"}
+            )
+            if a.get("estado") in A_CONTACTADO:
                 pisos.llamar("POST", pisos.ruta_uid(a["uid"]) + "/estado", {"estado": "contactado", "quien": "lares"})
             hechos.append(c["pid"])
         except pisos.Error as e:
-            no_anadir.add(c["pid"])
-            print(f"[aviso] no se pudo añadir {c['pid']}: {e}", file=sys.stderr)
+            if e.codigo == 400:
+                no_anadir.add(c["pid"])
+            print(f"[aviso] no se pudo pasar {c['pid']} a contactado: {e}", file=sys.stderr)
     return hechos
 
 
@@ -208,20 +227,26 @@ def pasada(ahora=None, pausa=time.sleep):
     info = {"ts": ahora, "proximo": estado["proximo"], "sesion": "ok"}
     try:
         chats = resumir(leer_bandeja(COOKIE.read_text(encoding="utf-8").strip(), pausa))
+        alquilados = set(estado.get("alquilados") or [])  # lo que el casero dio por alquilado lo sigue estando
+        for c in chats:
+            if c["pid"] in alquilados:
+                c["marca"] = "alquilado"
+        estado["alquilados"] = sorted(alquilados | {c["pid"] for c in chats if c["marca"] == "alquilado"})
         info["conversaciones"] = len(chats)
         nuevas = respuestas_nuevas(chats, estado.get("vistos") or {})
         info["cambiados"] = entregar(chats)
         no_anadir = set(estado.get("no_anadir") or [])
-        info["anadidos"] = anadir_nuevos(chats, no_anadir)
+        info["anadidos"] = a_contactado(chats, no_anadir)
         estado["no_anadir"] = sorted(no_anadir)
         estado["vistos"] = {c["pid"]: c["msg"] for c in chats}
         escribir_privado(PRIVADO, {"leido": ahora, "chats": chats})
         for c in nuevas:
-            print(f"RESPUESTA | {c['calle'] or c['pid']} | {c['marca']} | {c['fecha'][:16]} | {HILO.format(c['hilo'])}")
+            enlace = pisos.HILO.format(c["hilo"]) if c["hilo"] else ANUNCIO.format(c["pid"])
+            print(f"RESPUESTA | {c['calle'] or c['pid']} | {c['marca']} | {c['fecha'][:16]} | {enlace}")
     except Caducada as e:
         info["sesion"] = "caducada"
         aviso_caducada(estado, ahora, e)
-    except (RuntimeError, pisos.Error, urllib.error.URLError, TimeoutError, ValueError) as e:
+    except (RuntimeError, pisos.Error, OSError, http.client.HTTPException, ValueError) as e:  # OSError: red y disco
         info["error"] = str(e)[:200] or type(e).__name__
     escribir_privado(ESTADO, estado)
     guardar_estado_buzon(info)

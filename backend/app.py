@@ -1481,17 +1481,23 @@ def check_anuncios():
     )
 
 
+CHATS_MAX_H = 16
+
+
 def check_chats():
     """Chats de Boligportal: la última lectura de Lares (pisos-bridge/chats_estado.json, sin textos) y lo guardado.
-    Sesión caducada o error = fallo; sin cookie todavía = bien (no configurado)."""
+    Sesión caducada, error o lectura demasiado vieja = fallo; sin cookie todavía = bien (no configurado)."""
     try:
         ch = json.loads(_txt(os.path.join(BRIDGE, "chats_estado.json")))
     except (FileNotFoundError, ValueError):
         ch = {}
     with db() as c:
         r = contactos.resumen(c)
-    ok = ch.get("sesion") != "caducada" and not ch.get("error")
-    cuando = f"hace {(time.time() - ch['ts']) / 3600:.1f} h" if ch.get("ts") else "nunca"
+    horas = (time.time() - ch["ts"]) / 3600 if ch.get("ts") else None
+    # lee cada 3–5 h y nunca de 00 a 08 h: más de CHATS_MAX_H sin leer = la tarea boligportal-chats no corre
+    viejo = horas is not None and horas > CHATS_MAX_H
+    ok = ch.get("sesion") != "caducada" and not ch.get("error") and not viejo
+    cuando = f"hace {horas:.1f} h" + (" (¿tarea parada?)" if viejo else "") if horas is not None else "nunca"
     return ok, (
         f"sesión {ch.get('sesion', 'sin datos')} · última lectura {cuando}"
         + f" · {ch.get('conversaciones', 0)} conversaciones"

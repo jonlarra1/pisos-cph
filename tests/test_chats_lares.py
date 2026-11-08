@@ -118,6 +118,27 @@ class TestPasada(BaseV2):
         self.assertFalse(ok)
         self.assertEqual(self.correr(CB.Caducada("401"), MEDIODIA + 6 * 3600), "", "el aviso no se repite en el día")
 
+    def test_lo_alquilado_sigue_alquilado_aunque_contestemos(self):
+        CB.COOKIE.write_text(COOKIE)
+        self.correr([{"threads": [hilo("5670349", 1, False, "Lejemålet er udlejet")], "count": 1}])
+        self.correr([{"threads": [hilo("5670349", 2, True, "Ok, tak")], "count": 1}], MEDIODIA + 6 * 3600)
+        self.assertEqual(pedir("/api/v2/contactos")[2]["contactos"]["5670349"]["marca"], "alquilado")
+
+    def test_respuesta_sin_conversacion_enlaza_al_anuncio(self):
+        CB.COOKIE.write_text(COOKIE)
+        sin = hilo("5670349", 1, True, "Hej"); sin["id"] = None; sin["last_message"]["thread_id"] = None
+        self.correr([{"threads": [sin], "count": 1}])
+        sin["last_message"].update(id=2, is_me=False, body="Tak")
+        salida = self.correr([{"threads": [sin], "count": 1}], MEDIODIA + 6 * 3600)
+        self.assertNotIn("None", salida)
+        self.assertIn(CB.ANUNCIO.format("5670349"), salida)
+
+    def test_check_falla_si_la_tarea_deja_de_leer(self):
+        CB.BRIDGE.mkdir(parents=True, exist_ok=True)
+        (CB.BRIDGE / "chats_estado.json").write_text(json.dumps({"ts": 1, "sesion": "ok"}))
+        ok, txt = app.check_chats()
+        self.assertFalse(ok); self.assertIn("¿tarea parada?", txt)
+
     def test_conversacion_nueva_entra_como_contactado(self):
         CB.COOKIE.write_text(COOKIE)
         nuevo = {"threads": [hilo("5456969", 3, True, "Kære udlejer")], "count": 1}
@@ -130,6 +151,44 @@ class TestPasada(BaseV2):
             with mock.patch.object(CB.pisos, "llamar", wraps=CB.pisos.llamar) as ll:
                 self.correr([nuevo], MEDIODIA + 6 * 3600)
             self.assertNotIn("/api/v2/enlaces", [c.args[1] for c in ll.call_args_list])
+
+
+class TestAContactado(unittest.TestCase):
+    """Con conversación = contactado (sin tocar lo decidido) y qué se reintenta."""
+    def llamadas(self, base, falla=None):
+        hechas = []
+        def llamar(metodo, ruta, cuerpo=None):
+            hechas.append((metodo, ruta, cuerpo))
+            if ruta == "/api/v2/anuncios": return {"anuncios": base}
+            if falla: raise CB.pisos.Error("la API respondió x", falla)
+            if ruta == "/api/v2/enlaces": return {"uid": "Boligportal:" + cuerpo["url"].rsplit("-", 1)[1], "estado": "rechazado"}
+            return {}
+        return hechas, llamar
+
+    def chats(self, *pids):
+        return CB.resumir([hilo(p, 1, True, "Kære udlejer") for p in pids])
+
+    def test_propuesto_rechazado_y_nuevo_pasan_a_contactado_y_lo_decidido_no_se_toca(self):
+        base = [{"uid": f"Boligportal:{p}", "pid": p, "portal": "Boligportal", "estado": e}
+                for p, e in (("1111111", "propuesto"), ("2222222", "rechazado"), ("3333333", "descartado"), ("4444444", "gusta"))]
+        hechas, llamar = self.llamadas(base)
+        with mock.patch.object(CB.pisos, "llamar", llamar):
+            CB.a_contactado(self.chats("1111111", "2222222", "3333333", "4444444", "5555555"), set())
+        estados = sorted(r for m, r, c in hechas if r.endswith("/estado"))
+        self.assertEqual(estados, [f"/api/v2/anuncios/Boligportal%3A{p}/estado" for p in ("1111111", "2222222", "5555555")])
+        self.assertIn(("POST", "/api/v2/enlaces", {"url": CB.ANUNCIO.format("5555555"), "quien": "lares"}), hechas)
+
+    def test_solo_un_400_se_da_por_imposible(self):
+        for codigo, guardado in ((400, {"5555555"}), (502, set()), (429, set()), (None, set())):
+            no = set(); _, llamar = self.llamadas([], falla=codigo)
+            with mock.patch.object(CB.pisos, "llamar", llamar), contextlib.redirect_stderr(io.StringIO()):
+                CB.a_contactado(self.chats("5555555"), no)
+            self.assertEqual(no, guardado, codigo)
+
+    def test_de_dos_conversaciones_del_mismo_anuncio_vale_la_mas_nueva(self):
+        vieja = hilo("5670349", 1, True, "Kære udlejer", t=1); vieja["last_message"]["sent_date"] = "2026-10-01T10:00:00Z"
+        nueva = hilo("5670349", 2, False, "Fremvisning?", t=2)
+        self.assertEqual([(c["hilo"], c["marca"]) for c in CB.resumir([vieja, nueva])], [(2, "visita")])
 
 
 if __name__ == "__main__":
