@@ -258,54 +258,7 @@ def leer(ctx, path):
 def escribir(ctx, path, cliente, cuerpo):
     """POST de un cliente ya identificado. Devuelve (código, objeto). Las excepciones de anuncios.* se traducen aquí."""
     try:
-        if not isinstance(cuerpo, dict):
-            return 400, {"error": "json no válido"}
-        if ctx.limitado(f"v2:{cliente}", ESCRITURAS_MIN.get(cliente, 30), "v2:*", 1500):
-            return 429, {"error": "demasiadas peticiones"}
-        quien = str(cuerpo.get("quien") or cliente).lower()
-        if not QUIEN_RE.match(quien) or (cliente == "web" and quien not in ("jon", "unai", "web")):
-            return 400, {"error": "quien no válido"}
-        if path == "/api/v2/enlaces":
-            A.permitir(cliente, "entregar_enlace")
-            return _anadir_enlace(ctx, cuerpo.get("url"), cliente, quien)
-        if path in ("/api/v2/contactos", "/api/v2/favoritos"):
-            return _contactos(ctx, path, cliente, quien, cuerpo)
-        if path == "/api/v2/anuncios":
-            A.permitir(cliente, "entregar")
-            d = _con_zona(limpiar_datos(cuerpo.get("datos")))
-            if not d["precio"]:
-                return 400, {"error": "falta el precio"}
-            ubic = (d["lat"], d["lon"], "exacta") if d["lat"] is not None else None
-            with ctx.db() as con:
-                a = A.entregar(con, d, "vigilante", "vigilante", ctx.filtros(), ctx.zonas(), ubic)
-            ESTADO["entregas"] += 1
-            if a["nuevo"]:  # solo los nuevos: el vigilante reenvía cientos en cada pasada
-                ESTADO["entregas_nuevas"] += 1
-                ctx.log("events", level="info", src="vigilante", msg=f"{a['uid']} nuevo -> {a['estado']}")
-            if a["estado"] == "propuesto" and not a["datos"].get("ficha_leida"):
-                encolar_ficha(a["uid"], a["datos"]["link"])
-            return 200, {"uid": a["uid"], "estado": a["estado"], "motivo": a["motivo"]}
-        m = re.fullmatch(r"/api/v2/anuncios/([^/]+)/(estado|comprobacion|nota|dormitorios)", path)
-        if not m or not UID_RE.match(urllib.parse.unquote(m.group(1))):
-            return 404, {"error": "not found"}
-        uid = urllib.parse.unquote(m.group(1))
-        with ctx.db() as con:
-            if m.group(2) == "estado":
-                a = A.cambiar_estado(con, uid, cuerpo.get("estado"), cliente, quien, _txt(cuerpo.get("motivo"), 300))
-            elif m.group(2) == "nota":
-                a = A.anotar(con, uid, _txt(cuerpo.get("texto"), 300), cliente, quien)
-            elif m.group(2) == "dormitorios":
-                a = A.fijar_dormitorios(con, uid, cuerpo.get("dorm"), cliente, quien, ctx.filtros(), ctx.zonas())
-            else:
-                A.permitir(cliente, "comprobar")
-                a = A.comprobar(con, uid, cuerpo.get("resultado"), _txt(cuerpo.get("motivo"), 200) or "")
-        ctx.log(
-            "events", level="info", src="anuncios", msg=f"{uid} {m.group(2)} -> {a['estado']}", by=f"{cliente}:{quien}"
-        )
-        ctx.avisar("anuncios", {"uid": uid, "estado": a["estado"]})
-        if ctx.al_cambiar and m.group(2) == "estado":
-            ctx.al_cambiar(a, cliente, quien, "estado")
-        return 200, _para_lista(a)
+        return _escribir(ctx, path, cliente, cuerpo)
     except A.Prohibido as e:  # clave buena pero acción no permitida: se registra (posible abuso)
         ESTADO["prohibido"] += 1
         ctx.log("events", level="warn", src="permisos", msg=f"{cliente}: {e}", path=path[:120])
@@ -315,6 +268,66 @@ def escribir(ctx, path, cliente, cuerpo):
         return 429, {"error": str(e)}
     except (A.NoValido, P.AnuncioNoValido, C.NoValido) as e:
         return 400, {"error": str(e)}
+
+
+ACCION_RE = re.compile(r"/api/v2/anuncios/([^/]+)/(estado|comprobacion|nota|dormitorios)")
+
+
+def _escribir(ctx, path, cliente, cuerpo):
+    if not isinstance(cuerpo, dict):
+        return 400, {"error": "json no válido"}
+    if ctx.limitado(f"v2:{cliente}", ESCRITURAS_MIN.get(cliente, 30), "v2:*", 1500):
+        return 429, {"error": "demasiadas peticiones"}
+    quien = str(cuerpo.get("quien") or cliente).lower()
+    if not QUIEN_RE.match(quien) or (cliente == "web" and quien not in ("jon", "unai", "web")):
+        return 400, {"error": "quien no válido"}
+    if path == "/api/v2/enlaces":
+        A.permitir(cliente, "entregar_enlace")
+        return _anadir_enlace(ctx, cuerpo.get("url"), cliente, quien)
+    if path in ("/api/v2/contactos", "/api/v2/favoritos"):
+        return _contactos(ctx, path, cliente, quien, cuerpo)
+    if path == "/api/v2/anuncios":
+        return _entrega_vigilante(ctx, cliente, cuerpo)
+    m = ACCION_RE.fullmatch(path)
+    if not m or not UID_RE.match(urllib.parse.unquote(m.group(1))):
+        return 404, {"error": "not found"}
+    return _accion(ctx, urllib.parse.unquote(m.group(1)), m.group(2), cliente, quien, cuerpo)
+
+
+def _entrega_vigilante(ctx, cliente, cuerpo):
+    A.permitir(cliente, "entregar")
+    d = _con_zona(limpiar_datos(cuerpo.get("datos")))
+    if not d["precio"]:
+        return 400, {"error": "falta el precio"}
+    ubic = (d["lat"], d["lon"], "exacta") if d["lat"] is not None else None
+    with ctx.db() as con:
+        a = A.entregar(con, d, "vigilante", "vigilante", ctx.filtros(), ctx.zonas(), ubic)
+    ESTADO["entregas"] += 1
+    if a["nuevo"]:  # solo los nuevos: el vigilante reenvía cientos en cada pasada
+        ESTADO["entregas_nuevas"] += 1
+        ctx.log("events", level="info", src="vigilante", msg=f"{a['uid']} nuevo -> {a['estado']}")
+    if a["estado"] == "propuesto" and not a["datos"].get("ficha_leida"):
+        encolar_ficha(a["uid"], a["datos"]["link"])
+    return 200, {"uid": a["uid"], "estado": a["estado"], "motivo": a["motivo"]}
+
+
+def _accion(ctx, uid, accion, cliente, quien, cuerpo):
+    """estado | nota | dormitorios | comprobacion sobre UN anuncio."""
+    with ctx.db() as con:
+        if accion == "estado":
+            a = A.cambiar_estado(con, uid, cuerpo.get("estado"), cliente, quien, _txt(cuerpo.get("motivo"), 300))
+        elif accion == "nota":
+            a = A.anotar(con, uid, _txt(cuerpo.get("texto"), 300), cliente, quien)
+        elif accion == "dormitorios":
+            a = A.fijar_dormitorios(con, uid, cuerpo.get("dorm"), cliente, quien, ctx.filtros(), ctx.zonas())
+        else:
+            A.permitir(cliente, "comprobar")
+            a = A.comprobar(con, uid, cuerpo.get("resultado"), _txt(cuerpo.get("motivo"), 200) or "")
+    ctx.log("events", level="info", src="anuncios", msg=f"{uid} {accion} -> {a['estado']}", by=f"{cliente}:{quien}")
+    ctx.avisar("anuncios", {"uid": uid, "estado": a["estado"]})
+    if ctx.al_cambiar and accion == "estado":
+        ctx.al_cambiar(a, cliente, quien, "estado")
+    return 200, _para_lista(a)
 
 
 def _contactos(ctx, path, cliente, quien, cuerpo):
