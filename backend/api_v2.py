@@ -9,6 +9,9 @@
     POST /api/v2/anuncios/<uid>/comprobacion {resultado, motivo?}                 comprobador
     POST /api/v2/anuncios/<uid>/nota    {texto, quien?}                           web, lares
     POST /api/v2/anuncios/<uid>/dormitorios {dorm, quien?}  (p. ej. del plano)    web, lares
+    GET  /api/v2/contactos                        contactos (chats) y ❤️, sin textos  público
+    POST /api/v2/contactos      {contactos: [{pid, hilo, marca, es_mio, fecha}]}   lares
+    POST /api/v2/favoritos      {id, activo, quien?}  ❤️ «nos encanta»            web, lares
 
 Clientes: «web» = la clave pública de la página (API_KEY) + Origin permitido; «lares», «vigilante» y «comprobador» =
 claves secretas propias (CLAVE_LARES, CLAVE_VIGILANTE, CLAVE_COMPROBADOR), solo en la Pi. No hay operación de borrar.
@@ -26,9 +29,13 @@ from dataclasses import dataclass
 from typing import Callable
 
 import anuncios as A
+import contactos as C
 import portales as P
 
-MAX_CUERPO = {"/api/v2/anuncios": 64_000}  # el vigilante manda el texto del anuncio; lo demás es pequeño
+MAX_CUERPO = {
+    "/api/v2/anuncios": 64_000,
+    "/api/v2/contactos": 100_000,
+}  # el vigilante manda el texto del anuncio; lo demás es pequeño
 MAX_CUERPO_DEFECTO = 2_000
 UID_RE = re.compile(r"^(?:(?:Lejebolig|Boligportal|EDC):\d{4,10}|Juli:jl\d{1,8})$")
 QUIEN_RE = re.compile(r"^[a-z]{2,12}$")
@@ -231,6 +238,9 @@ def leer(ctx, path):
                 "ahora": int(time.time()),
                 "anuncios": [_para_lista(a) for a in A.listar(con, estados or None, int(desde))],
             }
+    if u.path == "/api/v2/contactos":
+        with ctx.db() as con:
+            return 200, C.listar(con)
     if u.path == "/api/v2/resumen":
         with ctx.db() as con:
             return 200, {"estados": A.contar(con), "cola_fichas": cola()}
@@ -258,6 +268,8 @@ def escribir(ctx, path, cliente, cuerpo):
         if path == "/api/v2/enlaces":
             A.permitir(cliente, "entregar_enlace")
             return _anadir_enlace(ctx, cuerpo.get("url"), cliente, quien)
+        if path in ("/api/v2/contactos", "/api/v2/favoritos"):
+            return _contactos(ctx, path, cliente, quien, cuerpo)
         if path == "/api/v2/anuncios":
             A.permitir(cliente, "entregar")
             d = _con_zona(limpiar_datos(cuerpo.get("datos")))
@@ -301,8 +313,26 @@ def escribir(ctx, path, cliente, cuerpo):
     except A.Tope as e:
         ctx.log("events", level="warn", src="anuncios", msg=f"tope: {e}")
         return 429, {"error": str(e)}
-    except (A.NoValido, P.AnuncioNoValido) as e:
+    except (A.NoValido, P.AnuncioNoValido, C.NoValido) as e:
         return 400, {"error": str(e)}
+
+
+def _contactos(ctx, path, cliente, quien, cuerpo):
+    """Contactos de los chats (Lares) y ❤️ (web, Lares)."""
+    if path == "/api/v2/contactos":
+        A.permitir(cliente, "contactos")
+        with ctx.db() as con:
+            n = C.guardar_contactos(con, cuerpo.get("contactos"))
+        if n:
+            ctx.log("events", level="info", src="chats", msg=f"{n} contactos cambiados", by=f"{cliente}:{quien}")
+            ctx.avisar("contactos", {"cambiados": n})
+        return 200, {"cambiados": n}
+    A.permitir(cliente, "favorito")
+    with ctx.db() as con:
+        C.poner_favorito(con, cuerpo.get("id"), cuerpo.get("activo"), quien)
+    ctx.log("events", level="info", src="favoritos", msg=f"{cuerpo.get('id')} ❤️ {cuerpo.get('activo')}", by=quien)
+    ctx.avisar("contactos", {"favorito": cuerpo.get("id")})
+    return 200, {"id": cuerpo.get("id"), "activo": cuerpo.get("activo")}
 
 
 def _anadir_enlace(ctx, url, cliente, quien):

@@ -24,6 +24,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 import anuncios
 import api_v2
+import contactos
 import destinos
 import precalculo
 import puente
@@ -303,6 +304,7 @@ def init():
         )
         c.execute("CREATE TABLE IF NOT EXISTS ajustes (k TEXT PRIMARY KEY, v TEXT NOT NULL, by TEXT, ts INTEGER)")
         anuncios.crear_tablas(c)
+        contactos.crear_tablas(c)
         arreglados = anuncios.arreglar_enlaces(c)
         destinos.crear_tabla(c)
         for z, v in ZONAS_DEFAULT.items():
@@ -1479,6 +1481,26 @@ def check_anuncios():
     )
 
 
+def check_chats():
+    """Chats de Boligportal: la última lectura de Lares (pisos-bridge/chats_estado.json, sin textos) y lo guardado.
+    Sesión caducada o error = fallo; sin cookie todavía = bien (no configurado)."""
+    try:
+        ch = json.loads(_txt(os.path.join(BRIDGE, "chats_estado.json")))
+    except (FileNotFoundError, ValueError):
+        ch = {}
+    with db() as c:
+        r = contactos.resumen(c)
+    ok = ch.get("sesion") != "caducada" and not ch.get("error")
+    cuando = f"hace {(time.time() - ch['ts']) / 3600:.1f} h" if ch.get("ts") else "nunca"
+    return ok, (
+        f"sesión {ch.get('sesion', 'sin datos')} · última lectura {cuando}"
+        + f" · {ch.get('conversaciones', 0)} conversaciones"
+        + (f" · error: {ch['error']}" if ch.get("error") else "")
+        + f" · guardados: {', '.join(f'{k} {v}' for k, v in sorted(r['marcas'].items())) or 'ninguno'}"
+        + f" · ❤️ {r['favoritos']}"
+    )
+
+
 def check_destinos():
     """Destinos compartidos: cuántos hay, cambios desde el arranque y peticiones rechazadas."""
     with db() as c:
@@ -1499,6 +1521,7 @@ CHECKS_LISTA = (
     ("motor_rutas", check_rutas),
     ("anuncios", check_anuncios),
     ("destinos", check_destinos),
+    ("chats", check_chats),
 )
 
 

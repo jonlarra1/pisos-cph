@@ -16,6 +16,7 @@ fotos, logs, checks y panel privado. Python stdlib + SQLite (WAL), en Docker. C�
 - `portales.py` — lee la ficha de un anuncio de Boligportal, EDC, Lejebolig o Juli Living a partir de su enlace
   (Juli: uid `Juli:jl<n>`; su estado sale de su lista JSON, porque su ficha responde 200 aunque la vivienda ya no exista).
 - `puente.py` — une la base única con lo que la web lee hoy (`/api/candidatos`, tabla `estado`). Se borra en el paso D del plan.
+- `contactos.py` — marcas de los chats de Boligportal por anuncio (sin el texto) y ❤️ «nos encanta» (no se borra: se desactiva).
 - `destinos.py` — destinos compartidos. `precalculo.py` — rutas previas de los destinos y freno del motor. `routing.py` — motor de rutas (GTFS).
 
 ## Endpoints
