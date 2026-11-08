@@ -9,7 +9,8 @@ RAIZ = pathlib.Path(__file__).resolve().parent.parent
 CODIGO = sorted([*RAIZ.glob("backend/*.py"), *RAIZ.glob("lares/*.py")])
 VENV = RAIZ / ".venv" / "bin"
 
-# Deuda conocida (26-oct): funciones largas que ya existían. No añadir más; si se arregla una, quitarla de aquí.
+# Deuda conocida: `evaluar` del vigilante (copia de las reglas del backend; se borra en el paso C de
+# docs/arquitectura.md). No añadir más; la del backend ya está partida en reglas (anuncios.REGLAS).
 COMPLEJAS_CONOCIDAS = {"evaluar"}
 MAX_COMPLEJIDAD = 40          # radon: por encima es grado F
 MAX_LINEAS_FUNCION = 120

@@ -122,15 +122,14 @@ SHORT = re.compile(
 )
 
 
-def evaluar(d, filtros, zonas):
-    """(motivos, avisos): motivos = por qué NO pasa (vacío = pasa); avisos = lo que falta confirmar.
-    Se devuelven todos los motivos, no solo el primero: si el anuncio lo añade una persona, los ve todos."""
-    F, motivos, avisos = filtros, [], []
-    texto = d.get("texto") or ""
+def _regla_tipo_y_precio(d, F, zonas, motivos, avisos):
     if BAD_TITLE.search(d.get("titulo") or ""):
         motivos.append("es una habitación / residencia")
     if d.get("precio") and d["precio"] > F["precio_max"]:
         motivos.append(f"precio {d['precio']} > {F['precio_max']}")
+
+
+def _regla_dormitorios(d, F, zonas, motivos, avisos):
     dmin = int(F.get("dorm_min", 3))
     if isinstance(d.get("dorm"), int):
         if d["dorm"] < dmin:
@@ -139,11 +138,17 @@ def evaluar(d, filtros, zonas):
         motivos.append(f"{d['vaer']} værelser (< {dmin + 1}: menos de {dmin} dormitorios)")
     elif d.get("vaer") is None:
         avisos.append("værelser sin dato")
+
+
+def _regla_zona(d, F, zonas, motivos, avisos):
     z = d.get("zona")
     if z is None:
         motivos.append("zona no reconocida")
     elif not zonas.get(z, False):
         motivos.append(f"zona excluida: {z}")
+
+
+def _regla_fecha(d, F, zonas, motivos, avisos):
     disp = d.get("disp")
     if disp == "ya":
         motivos.append("libre ya (no hacia la fecha buscada)")
@@ -151,22 +156,58 @@ def evaluar(d, filtros, zonas):
         motivos.append(f"libre el {disp} (fuera de {F['disp_desde']}..{F['disp_hasta']})")
     elif not disp:
         avisos.append("fecha de entrada sin confirmar")
+
+
+def _regla_contrato(d, F, zonas, motivos, avisos):
     cm = d.get("contrato_meses")
-    if F.get("contrato_largo", True) and ((cm and 0 < cm <= 12) or SHORT.search(texto)):
+    if F.get("contrato_largo", True) and ((cm and 0 < cm <= 12) or SHORT.search(d.get("texto") or "")):
         motivos.append(f"contrato corto ({cm or '≤12'} meses)")
-    if F.get("compartir", True):
-        if d.get("compartible") is False or NO_SHARE.search(texto):
-            motivos.append("no permite compartir")
-        elif d.get("compartible") is not True and not YES_SHARE.search(texto):
-            avisos.append("compartir sin confirmar")
+
+
+def _regla_compartir(d, F, zonas, motivos, avisos):
+    if not F.get("compartir", True):
+        return
+    texto = d.get("texto") or ""
+    if d.get("compartible") is False or NO_SHARE.search(texto):
+        motivos.append("no permite compartir")
+    elif d.get("compartible") is not True and not YES_SHARE.search(texto):
+        avisos.append("compartir sin confirmar")
+
+
+def _regla_amueblado(d, F, zonas, motivos, avisos):
     quiere, am = F.get("amueblado", "igual"), d.get("amueblado")
-    if quiere in ("si", "no"):
-        if am is not None and am != (quiere == "si"):
-            motivos.append("amueblado" if am else "sin amueblar")
-        elif am is None:
-            avisos.append("amueblado sin confirmar")
+    if quiere not in ("si", "no"):
+        return
+    if am is not None and am != (quiere == "si"):
+        motivos.append("amueblado" if am else "sin amueblar")
+    elif am is None:
+        avisos.append("amueblado sin confirmar")
+
+
+def _regla_plano(d, F, zonas, motivos, avisos):
     if not isinstance(d.get("dorm"), int):
-        avisos.append(f"{dmin} dormitorios por confirmar (plano)")
+        avisos.append(f"{int(F.get('dorm_min', 3))} dormitorios por confirmar (plano)")
+
+
+# En este orden salen los motivos y los avisos.
+REGLAS = (
+    _regla_tipo_y_precio,
+    _regla_dormitorios,
+    _regla_zona,
+    _regla_fecha,
+    _regla_contrato,
+    _regla_compartir,
+    _regla_amueblado,
+    _regla_plano,
+)
+
+
+def evaluar(d, filtros, zonas):
+    """(motivos, avisos): motivos = por qué NO pasa (vacío = pasa); avisos = lo que falta confirmar.
+    Se devuelven todos los motivos, no solo el primero: si el anuncio lo añade una persona, los ve todos."""
+    motivos, avisos = [], []
+    for regla in REGLAS:
+        regla(d, filtros, zonas, motivos, avisos)
     return motivos, avisos
 
 
