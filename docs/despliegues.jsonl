@@ -26,3 +26,5 @@
 {"ts": "2026-11-07T22:15:03Z", "pieza": "lares", "commit": "fdd45746d799622cffb062c44d456126c7ee9297", "resultado": "ok", "nota": "comprobador con enlaces de Boligportal que abren el anuncio"}
 {"ts": "2026-11-08T07:38:48Z", "pieza": "backend", "commit": "af62edd926f601320a738f7f3f1f474d6c369408", "resultado": "ok", "nota": "backup-20261108-083756"}
 {"ts": "2026-11-08T07:40:49Z", "pieza": "lares", "commit": "af62edd926f601320a738f7f3f1f474d6c369408", "resultado": "ok", "nota": "chats_boligportal.py + tarea boligportal-chats, pisos.py chats, SOUL/skill"}
+{"ts": "2026-11-08T07:59:47Z", "pieza": "backend", "commit": "6e730796a585768c7d49bc95f8e8e8ccbf1c6285", "resultado": "ok", "nota": "backup-20261108-085855"}
+{"ts": "2026-11-08T08:01:06Z", "pieza": "lares", "commit": "6e730796a585768c7d49bc95f8e8e8ccbf1c6285", "resultado": "ok", "nota": "arreglos de la revisión del lector de chats + cookie pegada de cualquier forma"}
