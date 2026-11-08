@@ -35,6 +35,8 @@ td,th{padding:5px 9px;border-bottom:1px solid var(--line);text-align:left;vertic
 .cnt b{display:block;font:700 20px system-ui;font-variant-numeric:tabular-nums}.cnt span{font-size:12px;color:var(--muted)}
 #chart{width:100%;height:auto;display:block;color:var(--fg)}#chart text{font:500 10.5px system-ui;fill:var(--muted)}
 tr.err td{color:var(--bad)}tr.warn td{color:var(--warn)}.wrap{overflow-x:auto}
+.mod td:first-child{width:14px}.mod i{display:inline-block;width:10px;height:10px;border-radius:50%;background:var(--c)}
+.mod th.g{background:transparent;color:var(--fg);font-size:12px;padding-top:10px}.mod small{color:var(--muted)}
 </style></head><body><main>
 <div class="top"><div><h1>Estado del sistema · Pisos CPH</h1><p class="sub" id="sub">Cargando…</p></div>
 <div><span class="global" id="global">…</span> <button id="now">Comprobar ahora</button></div></div>
@@ -50,6 +52,8 @@ tr.err td{color:var(--bad)}tr.warn td{color:var(--warn)}.wrap{overflow-x:auto}
 </div>
 <div class="legend"><span><i style="background:var(--ok)"></i>funciona</span><span><i style="background:var(--bad)"></i>caído / error</span><span><i style="background:var(--warn)"></i>sin datos aún</span><span id="frate"></span></div>
 
+<h2 style="font-size:16px;margin-top:22px">Estado por módulo</h2>
+<div class="wrap"><table class="mod" id="mod"></table></div>
 <h2 style="font-size:16px;margin-top:22px">Pisos</h2>
 <div class="cnt" id="cnt"></div>
 <figure><svg id="chart" viewBox="0 0 1080 220" role="img" aria-label="Anuncios nuevos que Lares ve cada día: los que pasan los filtros y los que rechaza, con la media diaria."></svg>
@@ -72,17 +76,17 @@ const N={
  gh:[95,330,"GitHub Pages","web estática"],      nav:[95,180,"Navegador","Jon · Unai · amigos"],
  funnel:[315,180,"Tailscale Funnel",":8443 público"], api:[535,180,"pisos-api","contenedor en la Pi"],
  db:[535,330,"SQLite","estados · anuncios · destinos"], img:[755,180,"Caché de fotos","/api/img"],
- portal:[975,180,"Portales","Boligportal · EDC"], bridge:[755,330,"Buzón compartido","vault/pisos-bridge"],
- lares:[975,330,"Lares","cron cada 3 h"]};
+ portal:[975,180,"Portales","Boligportal · EDC · Juli"], bridge:[755,330,"Buzón compartido","vault/pisos-bridge"],
+ lares:[975,330,"Lares","vigilante · chats"]};
 const E=[ // [desde, hasta, etiqueta]
  ["gh","nav","descarga la web"],["nav","funnel","HTTPS"],["funnel","api","proxy"],["api","db","lee / guarda"],
  ["api","img","fotos"],["img","portal","si no está"],["lares","portal","lee anuncios"],["lares","bridge","deja pisos"],
  ["bridge","api","config / candidatos"]];
-const CHK={funnel:["funnel_publico"],gh:["web_github"],api:["api_errores","almacenamiento","aislamiento_red","motor_rutas"],db:["api_errores","anuncios","destinos"],img:["fotos"],bridge:["buzon_compartido"],lares:["lares_pasadas","lares_cron"]};
+const CHK={funnel:["funnel_publico"],gh:["web_github"],api:["api_errores","almacenamiento","aislamiento_red","motor_rutas"],db:["api_errores","anuncios","destinos"],img:["fotos"],bridge:["buzon_compartido"],lares:["lares_pasadas","lares_portales","lares_barrido","lares_comprobador","chats","lares_cron"]};
 const svg=document.getElementById("fsvg"), NS="http://www.w3.org/2000/svg";
 const el=(t,a,p)=>{const e=document.createElementNS(NS,t);for(const k in a)e.setAttribute(k,a[k]);(p||svg).appendChild(e);return e;};
 // carriles
-[["MONITOR · comprueba cada 5 min",10,28],["PETICIONES DE LA WEB",10,136],["LARES · busca pisos cada 3 h",905,385]].forEach(([t,x,y])=>{const e=el("text",{x,y,class:"lane"});e.textContent=t;});
+[["MONITOR · comprueba cada 5 min",10,28],["PETICIONES DE LA WEB",10,136],["LARES · busca pisos cada 3 h · lee los chats cada 3–5 h",760,385]].forEach(([t,x,y])=>{const e=el("text",{x,y,class:"lane"});e.textContent=t;});
 const gE=el("g",{}), gL=el("g",{}), gN=el("g",{}), gD=el("g",{}), gM=el("g",{});
 // borde de la caja: punto donde la línea centro->centro sale del rectángulo
 function clip(a,b){const dx=b[0]-a[0],dy=b[1]-a[1]; const s=Math.min(dx?(W/2+4)/Math.abs(dx):1e9, dy?(H/2+4)/Math.abs(dy):1e9); return [a[0]+dx*s,a[1]+dy*s];}
@@ -98,12 +102,31 @@ Object.entries(N).forEach(([k,[x,y,t,sub]])=>{LOG[k]=[];
   const tt=el("text",{x:12,y:22,class:"t"},g); tt.textContent=t; const ss=el("text",{x:12,y:40,class:"s"},g); ss.textContent=sub;
   nodeEl[k]={g}; g.addEventListener("click",()=>showNode(k));});
 // barra del monitor: una ficha por comprobación
-const MONCHIPS=[["funnel_publico","Funnel"],["web_github","GitHub"],["api_errores","API"],["fotos","Fotos"],["buzon_compartido","Buzón"],["lares_pasadas","Lares busca"],["lares_cron","Lares cron"],["almacenamiento","Disco"],["aislamiento_red","Aislam."],["motor_rutas","Rutas"],["anuncios","Anuncios"],["destinos","Destinos"]];
+const MONCHIPS=[["funnel_publico","Funnel"],["web_github","GitHub"],["api_errores","API"],["fotos","Fotos"],["buzon_compartido","Buzón"],["lares_pasadas","Lares busca"],["lares_cron","Lares cron"],["chats","Chats"],["almacenamiento","Disco"],["aislamiento_red","Aislam."],["motor_rutas","Rutas"],["anuncios","Anuncios"],["destinos","Destinos"]];
 const MONW=Math.floor(1064/MONCHIPS.length);   /* el ancho de cada ficha se reparte según cuántas haya */
 const monEl={}; MONCHIPS.forEach(([k,lab],i)=>{const x=8+i*MONW, g=el("g",{transform:`translate(${x},40)`},gM);
   el("rect",{width:MONW-6,height:26,rx:13,fill:"none",stroke:"currentColor","stroke-opacity":".25"},g); const c=el("circle",{cx:15,cy:13,r:5,fill:"var(--warn)"},g);
   const t=el("text",{x:27,y:17,class:"chip",fill:"currentColor"},g); t.textContent=lab; monEl[k]=c;});
 
+/* módulos del panel «Estado por módulo»: [check, nombre, para qué sirve], por grupos */
+const MODULOS=[["Lares (agente en la Pi)",[
+  ["lares_pasadas","Vigilante","busca pisos cada 3 h (sin IA)"],
+  ["lares_portales","Búsqueda por portal","Boligportal, EDC y Juli Living en la última pasada"],
+  ["lares_barrido","Barrido diario","recorre Boligportal entero una vez al día"],
+  ["lares_comprobador","Comprobador","mira si los anuncios del mapa siguen publicados"],
+  ["chats","Chats de Boligportal","lee la bandeja cada 3–5 h y guarda las conversaciones"],
+  ["lares_cron","Tareas de Lares","piso-watch-cph y boligportal-chats en marcha"]]],
+ ["Backend (pisos-api)",[
+  ["api_errores","API","errores 5xx de las peticiones"],["anuncios","Anuncios (API v2)","base única, lector de fichas y permisos"],
+  ["destinos","Destinos","destinos compartidos y sus rutas previas"],["motor_rutas","Motor de rutas","horarios GTFS y búsquedas"],
+  ["fotos","Fotos","proxy y caché de fotos de los portales"],["buzon_compartido","Buzón","archivos compartidos con Lares"]]],
+ ["Web y red",[
+  ["web_github","Web publicada","GitHub Pages: datos, rutas, CSP y SRI"],["funnel_publico","Funnel","acceso público por Tailscale"],
+  ["aislamiento_red","Aislamiento","el contenedor no llega a la LAN ni a la Pi"],["almacenamiento","Disco","logs, base y caché"]]]];
+const MODNOM=Object.fromEntries(MODULOS.flatMap(([,ms])=>ms.map(([k,n,d])=>[k,[n,d]])));
+function drawModulos(ch){document.getElementById("mod").innerHTML=MODULOS.map(([g,ms])=>`<tr><th class="g" colspan="4">${esc(g)}</th></tr>`+
+  ms.map(([k,n,d])=>{const c=ch[k]; return `<tr class="${c&&!c.ok?"err":""}"><td><i style="--c:${stCol(c)}"></i></td><td><b>${esc(n)}</b><br><small>${esc(d)}</small></td>
+    <td>${c?esc(c.detail):"<small>sin datos aún</small>"}</td><td><small>${c?esc((c.at||"").slice(11,16)):""}</small></td></tr>`;}).join("")).join("");}
 let lastChecks={}, selNode=null;
 const stCol=c=>!c?"var(--warn)":c.ok?"var(--ok)":"var(--bad)";
 const portalSt={};
@@ -116,7 +139,7 @@ function colorNodes(ch){lastChecks=ch;
 function showNode(k){selNode=k; Object.values(nodeEl).forEach(n=>n.g.classList.remove("sel")); nodeEl[k].g.classList.add("sel");
   const cs=(CHK[k]||[]).map(x=>lastChecks[x]).filter(Boolean);
   document.getElementById("fside").innerHTML=`<b>${esc(N[k][2])}</b><p class="d">${esc(N[k][3])}</p>`+
-   cs.map(c=>`<p class="d" style="color:${c.ok?"var(--ok)":"var(--bad)"}">${c.ok?"✓":"✗"} ${esc(c.detail)}<br><small>comprobado ${esc((c.at||"").slice(11,19))}</small></p>`).join("")+
+   cs.map(c=>`<p class="d" style="color:${c.ok?"var(--ok)":"var(--bad)"}">${c.ok?"✓":"✗"} <b>${esc(MODNOM[c.name]?.[0]||c.name)}</b>: ${esc(c.detail)}<br><small>comprobado ${esc((c.at||"").slice(11,19))}</small></p>`).join("")+
    (k==="portal"&&portalSt.txt?`<p class="d">${esc(portalSt.txt)}</p>`:"")+
    `<ul>${LOG[k].slice(-20).reverse().map(x=>`<li style="color:${x.bad?"var(--bad)":"inherit"}">${esc(x.txt)}</li>`).join("")||"<li>Sin actividad reciente</li>"}</ul>`;}
 function note(k,txt,bad){LOG[k].push({txt,bad}); if(LOG[k].length>60)LOG[k].shift();}
@@ -131,7 +154,7 @@ function pathOf(it){
     return [...via,"api"];}
   if(it.k==="lares")return ["lares","portal","lares","bridge"];
   return [];}
-const CHKNODE={funnel_publico:"funnel",web_github:"gh",api_errores:"api",fotos:"img",buzon_compartido:"bridge",lares_pasadas:"lares",lares_cron:"lares",almacenamiento:"api",aislamiento_red:"api",motor_rutas:"api",anuncios:"db",destinos:"db"};
+const CHKNODE={funnel_publico:"funnel",web_github:"gh",api_errores:"api",fotos:"img",buzon_compartido:"bridge",lares_pasadas:"lares",lares_cron:"lares",lares_portales:"lares",lares_barrido:"lares",lares_comprobador:"lares",chats:"lares",almacenamiento:"api",aislamiento_red:"api",motor_rutas:"api",anuncios:"db",destinos:"db"};
 function describe(it){
   if(it.k==="api")return `${hhmm(it.t)} ${it.m} ${it.path} → ${it.code} (${it.ms} ms)${it.note?" · "+it.note:""}${it.via?" · vía "+it.via:""}`;
   if(it.k==="check")return `${hhmm(it.t)} monitor · ${it.name}: ${it.ok?"OK":"FALLO"} — ${String(it.detail).slice(0,100)}`;
@@ -142,7 +165,7 @@ function pulse(k,color){const [x,y]=N[k]; const r=el("rect",{class:"ring",x:x-W/
   r.animate([{opacity:1},{opacity:0}],{duration:1200,easing:"ease-out"}).onfinish=()=>r.remove();}
 function animate(it,delay){const bad=isBad(it), txt=describe(it);
   if(it.k==="check"){const k=CHKNODE[it.name]; if(k){note(k,txt,bad); setTimeout(()=>pulse(k,bad?"var(--bad)":"var(--mon)"),delay);} return;}
-  if(it.k==="lares"){const l=it.leidos||{}; portalSt.bad=!(l.Boligportal>0); portalSt.txt=`Última pasada de Lares: Boligportal ${l.Boligportal||0} anuncios · EDC ${l.EDC||0} anuncios (Lejebolig ya no se busca)`;}
+  if(it.k==="lares"){const l=it.leidos||{}; portalSt.bad=!(l.Boligportal>0); portalSt.txt=`Última pasada de Lares: Boligportal ${l.Boligportal||0} anuncios · EDC ${l.EDC||0} · Juli Living ${l.Juli||0} (Lejebolig ya no se busca)`;}
   if(it.k==="api"&&String(it.note||"").startsWith("portal:")){portalSt.bad=bad;}
   const path=pathOf(it); if(path.length<2){path.forEach(k=>note(k,txt,bad));return;}
   [...new Set(path)].forEach(k=>note(k,txt,bad));
@@ -171,7 +194,7 @@ async function load(){
   const g=document.getElementById("global"); g.style.background=!ch.length?"var(--warn)":bad.length?"var(--bad)":"var(--ok)";
   g.textContent=!ch.length?"Comprobando…":bad.length?`⚠ ${bad.length} con problemas: ${bad.map(c=>c.name).join(", ")}`:"✓ Todo funciona";
   const rt=st.tiempo_real; document.getElementById("sub").textContent=`Backend en marcha desde hace ${st.uptime_h} h · ${st.usuario||""}`+(rt?` · tiempo real: ${rt.abiertas}/${rt.max} conexiones abiertas (${rt.desde_arranque} desde el arranque${rt.rechazadas?`, ${rt.rechazadas} rechazadas por estar lleno`:""})`:"")+` · actualizado ${new Date().toLocaleTimeString()}`;
-  drawListas(st.listas);
+  drawListas(st.listas); drawModulos(st.checks||{});
   const rows=(id,head,list,fn)=>{document.getElementById(id).innerHTML=`<tr>${head.map(h=>`<th>${h}</th>`).join("")}</tr>`+(list.length?list.map(fn).join(""):`<tr><td colspan="${head.length}" style="color:var(--muted)">Sin datos</td></tr>`);};
   rows("ev",["Hora","Origen","Nivel","Mensaje"],st.eventos,e=>`<tr class="${e.level==="error"?"err":e.level==="warn"?"warn":""}"><td>${esc((e.ts||"").slice(5,19).replace("T"," "))}</td><td>${esc(e.src)}</td><td>${esc(e.level)}</td><td>${esc(e.msg)}${e.by?` · ${esc(e.by)}`:""}</td></tr>`);
   rows("lr",["Hora","Duración","Anuncios leídos","Candidatos","Nuevos","Errores"],st.lares,r=>`<tr class="${(r.errores||[]).length||r.ok===false?"err":""}"><td>${esc((r.ts||"").slice(5,16).replace("T"," "))} <small>(${ago(r.t)})</small></td><td>${r.seg??""} s</td><td>${esc(JSON.stringify(r.leidos||{}))}</td><td>${r.candidatos??""}</td><td>${r.nuevos??""}</td><td>${esc((r.errores||[]).join(", ")||(r.ok===false?r.msg:""))}</td></tr>`);

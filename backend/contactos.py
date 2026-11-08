@@ -2,8 +2,7 @@
 
 - contacto: lo escribe Lares (clave CLAVE_LARES) tras leer la bandeja de la cuenta compartida. Por anuncio de
   Boligportal: la marca (respondido | sin_respuesta | visita | alquilado), si el último mensaje es nuestro, su fecha
-  y el número de la conversación (para el botón «Abrir conversación»).
-  NO se guarda el texto de los mensajes: la API se lee sin clave.
+  y el número de la conversación (para el botón «Abrir conversación»). Sin texto: GET /api/v2/contactos es público.
 - favorito: ❤️ por piso (id de la web), compartido entre Jon y Unai. Quitarla no borra nada: la deja inactiva.
 - mensaje: el texto de cada mensaje de las conversaciones (lo escribe Lares). Es PRIVADO: la API solo lo da con la clave
   de lectura de Jon o de Unai (api_v2.lector_de). No se borra nunca.

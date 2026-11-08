@@ -99,9 +99,35 @@ class TestMensajesRutas(BaseV2):
         _, h, _ = pedir("/api/v2/mensajes?pid=5670349", method="OPTIONS")
         self.assertIn("X-Pisos-Lectura", h.get("Access-Control-Allow-Headers", ""))
 
-    def test_clave_mala_repetida_se_corta(self):
-        codes = [pedir("/api/v2/mensajes?pid=5670349", headers={"X-Pisos-Lectura": "mala-mala-mala-mala"})[0] for _ in range(7)]
+    def test_clave_mala_repetida_se_corta_sin_llenar_el_log(self):
+        antes = sum(1 for e in app.tail("events", 500) if e.get("msg") == "clave de lectura no válida")
+        codes = [pedir("/api/v2/mensajes?pid=5670349", headers={"X-Pisos-Lectura": "mala-mala-mala-mala"})[0] for _ in range(9)]
         self.assertIn(429, codes)
+        despues = sum(1 for e in app.tail("events", 500) if e.get("msg") == "clave de lectura no válida")
+        self.assertLessEqual(despues - antes, 5)
+
+    def test_el_texto_no_se_guarda_en_la_cache_del_navegador(self):
+        post("/api/v2/mensajes", {"mensajes": [mensaje(1)]}, LARES)
+        _, h, _ = pedir("/api/v2/mensajes?pid=5670349", headers={"X-Pisos-Lectura": LECTURA})
+        self.assertEqual(h.get("Cache-Control"), "no-store"); self.assertIsNone(h.get("ETag"))
+
+    def test_una_clave_de_lectura_igual_a_otra_no_vale(self):
+        viejo = dict(api_v2.LECTORES)
+        try:
+            api_v2.configurar({"API_KEY": "clave-publica-de-la-web-123", "CLAVE_LECTURA_JON": "clave-publica-de-la-web-123",
+                               "CLAVE_LECTURA_UNAI": "otra-clave-de-unai-12345"})
+            self.assertEqual(api_v2.LECTORES, {"otra-clave-de-unai-12345": "unai"})
+            api_v2.configurar({"CLAVE_LECTURA_JON": "misma-clave-para-los-dos", "CLAVE_LECTURA_UNAI": "misma-clave-para-los-dos"})
+            self.assertEqual(api_v2.LECTORES, {"misma-clave-para-los-dos": "jon"})
+        finally:
+            api_v2.configurar(app.os.environ); api_v2.LECTORES.update(viejo)
+
+    def test_compose_pasa_todas_las_claves_al_contenedor(self):
+        import inspect, pathlib
+        compose = (pathlib.Path(app.__file__).parent / "compose.yml").read_text()
+        for var in ["API_KEY", "CLAVE_LARES", "CLAVE_LECTURA_JON", "CLAVE_LECTURA_UNAI"]:
+            self.assertRegex(compose, rf"\n\s+{var}:", var)
+        self.assertIn("CLAVE_LECTURA_", inspect.getsource(api_v2.configurar))
 
 
 class TestRutas(BaseV2):

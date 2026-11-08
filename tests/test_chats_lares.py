@@ -148,10 +148,44 @@ class TestPasada(BaseV2):
         pedidas = []
         chats = CB.resumir([hilo(str(5000000 + i), i + 1, False, "Tak") for i in range(8)])
         leidas = {}
-        with mock.patch.object(CB, "leer_conversacion", lambda c, h: pedidas.append(h) or []):
-            self.assertEqual(CB.guardar_conversaciones("c", chats, leidas, lambda s: None), 5)
-            CB.guardar_conversaciones("c", chats, leidas, lambda s: None)
+        un_mensaje = lambda c, h: pedidas.append(h) or [{"id": h, "hilo": h, "es_mio": False, "fecha": "2026-11-07T18:00:00Z",
+                                                        "texto": "Tak", "adjuntos": 0}]
+        with mock.patch.object(CB, "leer_conversacion", un_mensaje), mock.patch.object(CB.pisos, "llamar", lambda *a: {}):
+            self.assertEqual(CB.guardar_conversaciones("c", chats, leidas, {}, lambda s: None), (5, []))
+            CB.guardar_conversaciones("c", chats, leidas, {}, lambda s: None)
         self.assertEqual(len(pedidas), 8, "las que faltaban entran en la siguiente")
+
+    def test_una_conversacion_rota_no_bloquea_a_las_demas(self):
+        chats = CB.resumir([hilo("5000001", 1, False, "Tak", t=1), hilo("5000002", 2, False, "Tak", t=2)])
+        def leer(c, h):
+            if h == 2: raise ValueError("JSON cortado")
+            return [{"id": 9, "hilo": h, "es_mio": False, "fecha": "2026-11-07T18:00:00Z", "texto": "x", "adjuntos": 0}]
+        leidas, intentos = {}, {}
+        with mock.patch.object(CB, "leer_conversacion", leer), mock.patch.object(CB.pisos, "llamar", lambda *a: {}):
+            for vez in range(3):
+                g, f = CB.guardar_conversaciones("c", chats, leidas, intentos, lambda s: None)
+                self.assertEqual(len(f), 1, vez)
+        self.assertEqual(leidas, {"1": 1, "2": 2}, "tras 3 fallos se salta hasta el próximo mensaje")
+        self.assertEqual(intentos, {})
+
+    def test_un_429_de_boligportal_para_la_lectura(self):
+        chats = CB.resumir([hilo("5000001", 1, False, "Tak", t=1)])
+        def leer(c, h): raise RuntimeError("Boligportal respondió 429")
+        with mock.patch.object(CB, "leer_conversacion", leer), self.assertRaises(RuntimeError):
+            CB.guardar_conversaciones("c", chats, {}, {}, lambda s: None)
+
+    def test_lee_la_forma_real_de_una_conversacion(self):
+        real = {"ad": {"id": 5670349}, "messages": [
+            {"id": 11, "sent_date": "2026-11-01 10:00:00+01:00", "body": "Kære udlejer", "thread_id": 37733843, "is_me": True,
+             "is_read_by_me": True, "type": 1, "author_id": 1, "author": None, "read_by": [1], "attachments": [], "num_attachments": None},
+            {"id": 12, "sent_date": "2026-11-07T18:00:00+01:00", "body": None, "thread_id": 37733843, "is_me": False,
+             "attachments": [{"x": 1}]}], "is_archived": False}
+        with mock.patch.object(CB, "pedir_json", lambda c, url: real if url == CB.CONVERSACION.format(37733843) else {}):
+            ms = CB.leer_conversacion("c", 37733843)
+        self.assertEqual(ms[0], {"id": 11, "hilo": 37733843, "es_mio": True, "fecha": "2026-11-01T10:00:00+01:00",
+                                 "texto": "Kære udlejer", "adjuntos": 0})
+        self.assertEqual((ms[1]["texto"], ms[1]["adjuntos"]), ("", 1))
+        self.assertIn("mark_read=0", CB.CONVERSACION, "abrirla no la marca como leída")
 
     def test_lo_alquilado_sigue_alquilado_aunque_contestemos(self):
         CB.COOKIE.write_text(COOKIE)

@@ -45,6 +45,7 @@ BRIDGE = Path(os.environ.get("PISOS_BRIDGE", "/opt/data/vault/Vivienda/pisos-bri
 BANDEJA = "https://www.boligportal.dk/api/messaging/?offset={}&limit=20&search=&show_archived=true"
 CONVERSACION = "https://www.boligportal.dk/api/messaging/threads/{}?mark_read=0"
 MAX_CONVERSACIONES = 5  # conversaciones abiertas por lectura
+INTENTOS = 3  # una conversación que falla tantas veces seguidas se salta hasta que llegue un mensaje nuevo
 ANUNCIO = "https://www.boligportal.dk/lejligheder/bolig/lejlighed-id-{}"
 UA = "Mozilla/5.0 (X11; Linux aarch64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0 Safari/537.36"
 CPH = ZoneInfo("Europe/Copenhagen")
@@ -138,6 +139,11 @@ def leer_bandeja(cookie, pausa=time.sleep):
     return hilos
 
 
+def fecha_iso(v):
+    """«2026-11-07 18:00:00+01:00» o «…T…» → ISO con T, como mucho 25 caracteres (lo que acepta la API)."""
+    return str(v or "").strip().replace(" ", "T", 1)[:25]
+
+
 def leer_conversacion(cookie, hilo):
     """Mensajes de una conversación, listos para POST /api/v2/mensajes (sin el pid, que pone quien llama)."""
     out = []
@@ -148,7 +154,7 @@ def leer_conversacion(cookie, hilo):
                     "id": m["id"],
                     "hilo": hilo,
                     "es_mio": bool(m.get("is_me")),
-                    "fecha": str(m["sent_date"])[:25],
+                    "fecha": fecha_iso(m["sent_date"]),
                     "texto": str(m.get("body") or "")[:5000],
                     "adjuntos": min(len(m.get("attachments") or []), 50),
                 }
@@ -156,19 +162,40 @@ def leer_conversacion(cookie, hilo):
     return out
 
 
-def guardar_conversaciones(cookie, chats, leidas, pausa):
+def guardar_conversaciones(cookie, chats, leidas, intentos, pausa):
     """Abre las conversaciones cuyo último mensaje aún no está guardado (≤ MAX_CONVERSACIONES, con pausas) y manda
-    sus mensajes a la API. `leidas`: {hilo: id del último mensaje guardado}. Devuelve cuántas se guardaron."""
+    sus mensajes a la API. `leidas`: {hilo: id del último mensaje guardado}. Una conversación que falla o sale vacía se
+    reintenta como mucho INTENTOS veces (`intentos`: {hilo: n}) y luego se salta hasta que llegue un mensaje nuevo,
+    para que no bloquee a las demás. Sesión caducada o 429 de Boligportal: se para todo (lo lanza fuera).
+    Devuelve (guardadas, fallidas)."""
     pendientes = [c for c in chats if c["hilo"] and c["msg"] and leidas.get(str(c["hilo"])) != c["msg"]]
-    n = 0
+    guardadas, fallidas = 0, []
     for c in pendientes[:MAX_CONVERSACIONES]:
+        h = str(c["hilo"])
         pausa(AZAR.uniform(2, 6))
-        mensajes = [{**m, "pid": c["pid"]} for m in leer_conversacion(cookie, c["hilo"])]
-        if mensajes:
-            pisos.llamar("POST", "/api/v2/mensajes", {"mensajes": mensajes})
-        leidas[str(c["hilo"])] = c["msg"]
-        n += 1
-    return n
+        try:
+            mensajes = [{**m, "pid": c["pid"]} for m in leer_conversacion(cookie, c["hilo"])]
+            if not mensajes:
+                raise ValueError("sin mensajes")
+            for i in range(0, len(mensajes), 500):
+                pisos.llamar("POST", "/api/v2/mensajes", {"mensajes": mensajes[i : i + 500]})
+        except RuntimeError as e:
+            if "429" in str(e):
+                raise
+            fallo = e
+        except (pisos.Error, ValueError, OSError, http.client.HTTPException) as e:
+            fallo = e
+        else:
+            leidas[h] = c["msg"]
+            intentos.pop(h, None)
+            guardadas += 1
+            continue
+        intentos[h] = intentos.get(h, 0) + 1
+        fallidas.append(f"{h}: {str(fallo)[:80]}")
+        if intentos[h] >= INTENTOS:
+            leidas[h] = c["msg"]  # se salta hasta el próximo mensaje
+            intentos.pop(h)
+    return guardadas, fallidas
 
 
 def clasificar(h):
@@ -200,7 +227,7 @@ def resumir(hilos):
                 "hilo": hilo if isinstance(hilo, int) else None,
                 "marca": clasificar(h),
                 "es_mio": bool(ult.get("is_me")),
-                "fecha": str(ult.get("sent_date") or "")[:25],
+                "fecha": fecha_iso(ult.get("sent_date")),
                 "msg": ult.get("id"),
                 "texto": (ult.get("body") or "")[:4000],
                 "calle": calle[:120],
@@ -295,8 +322,10 @@ def pasada(ahora=None, pausa=time.sleep):
         for c in nuevas:
             enlace = pisos.HILO.format(c["hilo"]) if c["hilo"] else ANUNCIO.format(c["pid"])
             print(f"RESPUESTA | {c['calle'] or c['pid']} | {c['marca']} | {c['fecha'][:16]} | {enlace}")
-        estado.setdefault("leidas", {})
-        info["conversaciones_guardadas"] = guardar_conversaciones(cookie, chats, estado["leidas"], pausa)
+        leidas, intentos = estado.setdefault("leidas", {}), estado.setdefault("intentos", {})
+        info["conversaciones_guardadas"], fallidas = guardar_conversaciones(cookie, chats, leidas, intentos, pausa)
+        if fallidas:
+            info["conversaciones_con_error"] = fallidas[:5]
     except Caducada as e:
         info["sesion"] = "caducada"
         aviso_caducada(estado, ahora, e)

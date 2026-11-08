@@ -194,6 +194,10 @@ class TestCheckLaresCron(Base):
     def test_el_vigilante_en_pausa_si_es_fallo(self):
         self.escribe([{"name": "piso-watch-cph", "enabled": False, "last_status": "ok"}])
         self.assertFalse(app.check_lares_cron()[0])
+    def test_la_tarea_de_chats_cuenta(self):
+        self.escribe([{"name": "piso-watch-cph", "enabled": True, "last_status": "ok"},
+                      {"name": "boligportal-chats", "enabled": True, "last_status": "error"}])
+        ok, msg = app.check_lares_cron(); self.assertFalse(ok); self.assertIn("boligportal-chats: error", msg)
     def test_el_vigilante_fallando_es_fallo(self):
         self.escribe([{"name": "piso-watch-cph", "enabled": True, "last_status": "error"}])
         self.assertFalse(app.check_lares_cron()[0])
@@ -519,6 +523,43 @@ class TestComprobaciones(Base):
         self.assertFalse(app.check_lares_runs()[0])
         with open(p, "w") as f: f.write(json.dumps({"t": time.time(), "leidos": {}, "candidatos": 2}) + "\n")
         self.assertTrue(app.check_lares_runs()[0])
+
+
+class TestLaresPorModulo(Base):
+    """Checks de cada rutina de Lares a partir de sus pasadas (lares_runs.jsonl)."""
+    def pasadas(self, *rs):
+        with open(os.path.join(os.environ["BRIDGE_DIR"], "lares_runs.jsonl"), "w") as f:
+            for r in rs: f.write(json.dumps({"t": time.time(), **r}) + "\n")
+    def tearDown(self):
+        self.pasadas({"t": time.time(), "leidos": {}, "candidatos": 0})
+        super().tearDown()
+
+    def test_portales_uno_a_uno(self):
+        self.pasadas({"leidos": {"Boligportal": 60, "EDC": 40}, "errores": [], "comprobados": 8})
+        ok, det = app.check_lares_portales(); self.assertTrue(ok, det); self.assertIn("✓ Juli: 0", det)
+        self.pasadas({"leidos": {"Boligportal": 60}, "errores": ["edc: URLError"]})
+        ok, det = app.check_lares_portales(); self.assertFalse(ok); self.assertIn("✗ EDC: 0 (URLError)", det)
+        self.assertIn("✓ Boligportal: 60", det)
+        self.pasadas({"leidos": {}, "errores": ["boligportal: X"], "sin_conexion": True})
+        self.assertIn("sin internet", app.check_lares_portales()[1])
+
+    def test_barrido_y_comprobador(self):
+        self.pasadas({"t": time.time() - 30 * 3600, "paginas": {"barrido": 25}}, {"paginas": {"boligportal": 3}, "comprobados": 8,
+                     "retirados_nuevos": 1, "retirados": 40})
+        ok, det = app.check_lares_barrido(); self.assertFalse(ok); self.assertIn("25 páginas", det)
+        self.pasadas({"paginas": {"barrido": 24}})
+        self.assertTrue(app.check_lares_barrido()[0])
+        self.pasadas({"paginas": {}})
+        self.assertFalse(app.check_lares_barrido()[0], "sin ningún barrido reciente")
+        self.assertFalse(app.check_lares_comprobador()[0])
+        self.pasadas({"comprobados": 8, "retirados_nuevos": 1, "retirados": 40})
+        ok, det = app.check_lares_comprobador(); self.assertTrue(ok); self.assertIn("8 anuncios comprobados · 1 retirados nuevos", det)
+
+    def test_los_modulos_estan_en_el_monitor_y_en_el_panel(self):
+        nombres = [n for n, _ in app.CHECKS_LISTA]
+        panel = open(os.path.join(os.path.dirname(app.__file__), "admin.html"), encoding="utf-8").read()
+        for n in ("lares_portales", "lares_barrido", "lares_comprobador", "chats", "lares_cron", "lares_pasadas"):
+            self.assertIn(n, nombres); self.assertIn(f'["{n}",', panel)
 
 
 class TestRutaDirecta(unittest.TestCase):

@@ -14,6 +14,8 @@ services:
       ALLOWED_ORIGINS: "https://jonlarra1.github.io,http://localhost:8000"
       API_KEY: "${API_KEY}"
       CLAVE_LARES: "${CLAVE_LARES}"   # chat de Lares (lares/pisos.py); vacía = no se acepta
+      CLAVE_LECTURA_JON: "${CLAVE_LECTURA_JON:-}"    # leer el texto de los chats en la web (vacía = nadie)
+      CLAVE_LECTURA_UNAI: "${CLAVE_LECTURA_UNAI:-}"
       ADMIN_USERS: "larrabajojon@"    # Tailscale login(s) allowed to open the status panel
     read_only: true
     tmpfs: [/tmp]

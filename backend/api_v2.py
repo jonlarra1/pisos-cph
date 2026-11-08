@@ -92,7 +92,7 @@ def configurar(env=os.environ):
     LECTORES.clear()
     for persona in ("jon", "unai"):
         k = env.get(f"CLAVE_LECTURA_{persona.upper()}", "")
-        if len(k) >= 16:
+        if len(k) >= 16 and k not in CLAVES and k not in LECTORES:  # nunca igual a otra clave (la web es pública)
             LECTORES[k] = persona
 
 

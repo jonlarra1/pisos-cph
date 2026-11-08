@@ -1752,7 +1752,7 @@ function liveStart(){if(!window.EventSource||TREAL.es||document.hidden)return;
   es.addEventListener("candidatos",()=>{TREAL.lastC=Date.now(); pullCandidatos();});
   es.addEventListener("ajustes",()=>{pullZonas(); if(typeof pullBusq==="function")pullBusq();});
   es.addEventListener("destinos",()=>pullDestinos());
-  es.addEventListener("contactos",()=>pullContactos());
+  es.addEventListener("contactos",e=>{pullContactos(); try{if(JSON.parse(e.data||"{}").mensajes)cargarChat(true);}catch(_){}});
   es.onmessage=()=>{TREAL.last=Date.now();};
   es.onerror=()=>{TREAL.on=false; if(es.readyState===2){liveStop(); if(++TREAL.fallos<6)TREAL.timer=setTimeout(liveStart,Math.min(600000,30000*2**TREAL.fallos));}};}
 function liveStop(){if(TREAL.es){TREAL.es.close(); TREAL.es=null;} TREAL.on=false;}
@@ -1795,18 +1795,21 @@ document.getElementById("cor-ck").addEventListener("change",e=>{SOLO_COR=e.targe
 /* ---------- conversación con el casero en la ficha: el texto es privado, solo con la clave de lectura de cada uno
    (GET /api/v2/mensajes con la cabecera X-Pisos-Lectura; la clave se guarda solo en este navegador) ---------- */
 let CLAVE_LECT=""; try{CLAVE_LECT=localStorage.getItem("claveLectura")||"";}catch(_){}
-const CHAT_CACHE={};
+const CHAT_CACHE={}, CHAT_T={};   // conversación por anuncio y cuándo se pidió (se vuelve a pedir pasado 1 min)
 const chatSec=p=>contOf(p)?`<div class="sec"><h4>💬 Conversación con el casero</h4><div id="chat-b" data-pid="${esc(bpPid(p))}">${CLAVE_LECT?'<p class="it-s">Cargando la conversación…</p>':'<p class="it-s">🔒 Para leerla aquí, pon tu clave de lectura en Configuración.</p>'}</div></div>`:"";
 function chatHtml(ms){if(!ms.length)return '<p class="it-s">Lares aún no ha guardado esta conversación (entran poco a poco: como mucho 5 en cada lectura).</p>';
   return `<div class="chat">${ms.map(m=>`<div class="bur ${m.es_mio?"yo":"el"}">${m.texto?esc(m.texto):"<i>(sin texto)</i>"}${m.adjuntos?` 📎 ${m.adjuntos}`:""}<small>${m.es_mio?"Nosotros":"Casero"} · ${esc(String(m.fecha).slice(0,16).replace("T"," "))}</small></div>`).join("")}</div>`;}
-function pintarChat(pid,html){const b=document.getElementById("chat-b"); if(b&&b.dataset.pid===pid){b.innerHTML=html; const c=b.querySelector(".chat"); if(c)c.scrollTop=c.scrollHeight;}}
-async function cargarChat(){const b=document.getElementById("chat-b"); if(!b||!CLAVE_LECT)return; const pid=b.dataset.pid;
+function pintarChat(pid,html){const b=document.getElementById("chat-b"); if(!b||b.dataset.pid!==pid||b.dataset.html===html)return;
+  b.innerHTML=html; b.dataset.html=html; const c=b.querySelector(".chat"); if(c)c.scrollTop=c.scrollHeight;}
+async function cargarChat(forzar){const b=document.getElementById("chat-b"); if(!b||!CLAVE_LECT)return; const pid=b.dataset.pid;
   if(CHAT_CACHE[pid])pintarChat(pid,chatHtml(CHAT_CACHE[pid]));
+  if(!forzar&&Date.now()-(CHAT_T[pid]||0)<60000)return;   /* la ficha se redibuja a menudo: no se pide cada vez */
+  CHAT_T[pid]=Date.now();
   try{const r=await fetch(API+"/api/v2/mensajes?pid="+encodeURIComponent(pid),{headers:{"X-Pisos-Lectura":CLAVE_LECT},cache:"no-cache"});
     if(r.status===401||r.status===429)return pintarChat(pid,'<p class="it-s">🔒 La clave de lectura no vale. Revísala en Configuración.</p>');
     if(!r.ok)throw 0; CHAT_CACHE[pid]=(await r.json()).mensajes||[]; pintarChat(pid,chatHtml(CHAT_CACHE[pid]));}
   catch(e){if(!CHAT_CACHE[pid])pintarChat(pid,'<p class="it-s">No se pudo cargar la conversación (sin conexión con la Raspberry Pi).</p>');}}
-function ponerClaveLectura(k){CLAVE_LECT=k; for(const x in CHAT_CACHE)delete CHAT_CACHE[x];
+function ponerClaveLectura(k){CLAVE_LECT=k; for(const x in CHAT_CACHE)delete CHAT_CACHE[x]; for(const x in CHAT_T)delete CHAT_T[x];
   try{k?localStorage.setItem("claveLectura",k):localStorage.removeItem("claveLectura");}catch(_){}
   renderWalk(); if(sheet.classList.contains("open"))openSheet(sheet.dataset.id);}
 function popupHtml(p){

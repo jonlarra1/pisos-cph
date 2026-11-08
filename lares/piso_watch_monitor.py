@@ -128,6 +128,7 @@ DEFAULT_FILTROS = {"precio_max": 23000, "vaer_min": 4, "disp_desde": "2026-12-18
 BASE.mkdir(parents=True, exist_ok=True)
 BRIDGE.mkdir(parents=True, exist_ok=True)
 STATS = {}  # resumen de la pasada para lares_runs.jsonl
+TAREAS = ("piso", "boligportal-chats")  # tareas de pisos que se copian al buzón (lares_cron.json) para el panel
 
 # Texto -> zona del mapa. Las claves más largas se prueban primero.
 ZONA_ALIAS = {
@@ -1179,7 +1180,7 @@ def historial(con, now):
 
 
 def cron_status():
-    """Copia al buzón el estado de las tareas de pisos de Lares (solo piso-*), para el panel.
+    """Copia al buzón el estado de las tareas de pisos de Lares (piso-* y boligportal-chats), para el panel.
     Así el backend no necesita leer la carpeta cron de Lares."""
     try:
         jobs = json.loads(Path("/opt/data/profiles/lares/cron/jobs.json").read_text(encoding="utf-8"))
@@ -1195,7 +1196,7 @@ def cron_status():
             "last_delivery_error",
             "schedule_display",
         )
-        out = [{k: j.get(k) for k in keep} for j in jobs if str(j.get("name", "")).startswith("piso")]
+        out = [{k: j.get(k) for k in keep} for j in jobs if str(j.get("name", "")).startswith(TAREAS)]
         write_json(
             BRIDGE / "lares_cron.json",
             {"copiado": datetime.now(timezone.utc).isoformat(timespec="seconds"), "jobs": out},

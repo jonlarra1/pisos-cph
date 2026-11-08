@@ -525,6 +525,20 @@ def img_proxy(u):
     return data, ctype, "portal:" + IMG_PORTAL[pu.hostname]
 
 
+_LECTURAS = {}  # (persona, ruta) -> última vez que se apuntó en el log
+
+
+def _primera_lectura(persona, ruta, cada=600):
+    """¿Apuntar esta lectura? Una vez cada 10 min por persona y conversación (la ficha se redibuja a menudo)."""
+    ahora, k = time.time(), (persona, ruta)
+    if ahora - _LECTURAS.get(k, 0) < cada:
+        return False
+    if len(_LECTURAS) > 500:
+        _LECTURAS.clear()
+    _LECTURAS[k] = ahora
+    return True
+
+
 _rl_logged = {}
 
 
@@ -699,10 +713,12 @@ class H(BaseHTTPRequestHandler):
             self.send_header("Vary", "Origin")
             self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
             self.send_header("Access-Control-Allow-Headers", "Content-Type, X-Pisos-Key, X-Pisos-Lectura")
+            self.send_header("Access-Control-Max-Age", "600")  # el navegador no repite la consulta previa en 10 min
 
-    def reply(self, code, obj):
+    def reply(self, code, obj, privado=False):
+        """privado=True: sin ETag y con «no-store», para que el navegador no guarde el texto en su caché."""
         b = json.dumps(obj, ensure_ascii=False).encode()
-        tag = etag(b) if code == 200 and self.command == "GET" else None
+        tag = etag(b) if code == 200 and self.command == "GET" and not privado else None
         if tag and self.headers.get("If-None-Match") == tag:  # la web ya lo tiene: «sin cambios», sin cuerpo
             self.send_response(304)
             self.cors()
@@ -800,13 +816,14 @@ class H(BaseHTTPRequestHandler):
         lector = api_v2.lector_de(clave)
         if clave and not lector:
             ip = self.client_ip()
-            log("events", level="warn", src="permisos", msg="clave de lectura no válida", ip=ip, path=self.path[:80])
-            if limited("lect:" + ip, 5):
+            if limited("lect:" + ip, 5):  # se corta antes de escribir en el log: insistir no lo llena
                 return self.reply(429, {"error": "too many requests"})
+            log("events", level="warn", src="permisos", msg="clave de lectura no válida", ip=ip, path=self.path[:80])
         code, obj = api_v2.leer(CTX, self.path, lector)
-        if lector and code == 200 and self.path.startswith("/api/v2/mensajes"):
+        privado = self.path.startswith("/api/v2/mensajes")
+        if lector and code == 200 and privado and _primera_lectura(lector, self.path):
             log("events", level="info", src="mensajes", msg=f"{lector} lee la conversación", path=self.path[:80])
-        return self.reply(code, obj)
+        return self.reply(code, obj, privado=privado)
 
     def v2_post(self):
         """Escrituras de la API v2: cliente por su clave, tamaño máximo, JSON → api_v2.escribir."""
@@ -1409,7 +1426,56 @@ def check_lares_runs():
     )
 
 
+# ------------------------------------------------------------------ Lares por módulo (de lares_runs.jsonl)
+PORTALES_LARES = (("Boligportal", "boligportal"), ("EDC", "edc"), ("Juli", "juli"))  # (en leidos, en errores)
+
+
+def check_lares_portales():
+    """Búsqueda del vigilante, portal a portal (última pasada): anuncios leídos y errores de cada uno.
+    Boligportal y EDC tienen que traer algo; Juli Living puede no tener nada libre en Vanløse."""
+    r = (_pasadas_lares(1) or [{}])[-1]
+    leidos, errores = r.get("leidos") or {}, [str(e) for e in r.get("errores") or []]
+    if r.get("sin_conexion"):
+        return False, "la última pasada no pudo leer ningún portal (¿la Pi sin internet?)"
+    ok, partes = True, []
+    for nombre, clave in PORTALES_LARES:
+        err = [e.split(":", 1)[1].strip() for e in errores if e.lower().startswith(clave + ":")]
+        mal = bool(err) or (nombre != "Juli" and not leidos.get(nombre))
+        ok = ok and not mal
+        partes.append(
+            f"{'✗' if mal else '✓'} {nombre}: {leidos.get(nombre, 0)}" + (f" ({', '.join(err)})" if err else "")
+        )
+    return ok, " · ".join(partes)
+
+
+def check_lares_barrido():
+    """Barrido completo de Boligportal: una vez al día. Falla si el último es de hace más de 26 h o si dio error."""
+    pasadas = _pasadas_lares(20)
+    hechos = [r for r in pasadas if (r.get("paginas") or {}).get("barrido")]
+    fallo = next((e for r in pasadas[-1:] for e in r.get("errores") or [] if str(e).startswith("barrido:")), None)
+    if not hechos:
+        return False, "sin barrido en las últimas 20 pasadas (~60 h)" + (f" · error: {fallo}" if fallo else "")
+    ult = hechos[-1]
+    horas = (time.time() - ult.get("t", 0)) / 3600
+    ok = horas <= 26 and not fallo
+    return ok, f"último hace {horas:.1f} h · {ult['paginas']['barrido']} páginas" + (
+        f" · error: {fallo}" if fallo else ""
+    )
+
+
+def check_lares_comprobador():
+    """Comprobador de anuncios retirados (dentro del vigilante): lo que miró en la última pasada."""
+    r = (_pasadas_lares(1) or [{}])[-1]
+    if "comprobados" not in r:
+        return False, "la última pasada no trae datos del comprobador"
+    return True, (
+        f"{r['comprobados']} anuncios comprobados · {r.get('retirados_nuevos', 0)} retirados nuevos"
+        + f" · {r.get('retirados', 0)} retirados en total"
+    )
+
+
 LARES_TAREA = "piso-watch-cph"  # la tarea del vigilante: si está en pausa, es un fallo
+TAREAS_LARES = ("piso", "boligportal-chats")  # tareas de pisos de Lares (por el principio del nombre)
 
 
 def check_lares_cron():
@@ -1418,7 +1484,7 @@ def check_lares_cron():
     jobs = d.get("jobs", [])
     out, ok = [], True
     for j in jobs:
-        if not str(j.get("name", "")).startswith("piso"):
+        if not str(j.get("name", "")).startswith(TAREAS_LARES):
             continue
         st, derr = j.get("last_status"), j.get("last_delivery_error")
         pausa = not j.get("enabled", True) or j.get("state") == "paused"
@@ -1578,6 +1644,9 @@ CHECKS_LISTA = (
     ("web_github", check_site),
     ("lares_pasadas", check_lares_runs),
     ("lares_cron", check_lares_cron),
+    ("lares_portales", check_lares_portales),
+    ("lares_barrido", check_lares_barrido),
+    ("lares_comprobador", check_lares_comprobador),
     ("buzon_compartido", check_bridge),
     ("api_errores", check_api_errors),
     ("fotos", check_img),
