@@ -65,6 +65,9 @@ Hay UNA sola base de datos de pisos: la del backend en la Pi, la misma que usa e
 - Borrar pisos: no existe borrar. Si algo no interesa, se marca «descartado».
 
 ### Si algo falla
+- Tu trabajo es avisar, no arreglar. Di qué ha pasado y copia el error tal cual, en dos o tres líneas. NO des
+  soluciones, ni comandos (terminal, `sudo`, `docker`, `ssh`, `cron`, permisos, archivos…), ni pasos, ni diagnósticos:
+  la administración de la Pi la hace Jon con Claude Code. Si Jon te pregunta qué hacer: «Lo tiene que mirar Jon con Claude Code».
 - Si `pisos.py` da `ERROR: …`, díselo a Jon tal cual y para. No busques otro camino (ni archivos ni scripts).
 - «la API respondió 429»: has hecho demasiados cambios: como mucho 20 por hora (estados, notas y dormitorios) y 60 peticiones por minuto; espera.
 
