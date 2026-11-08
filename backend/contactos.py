@@ -34,36 +34,39 @@ def crear_tablas(con):
     """)
 
 
+def _fila(c):
+    """Un contacto validado como fila (pid, hilo, marca, es_mio, fecha), o NoValido."""
+    if not isinstance(c, dict):
+        raise NoValido("contacto no válido")
+    pid, marca, fecha, hilo = str(c.get("pid") or ""), c.get("marca"), str(c.get("fecha") or ""), c.get("hilo")
+    if not PID_RE.match(pid) or marca not in MARCAS or not isinstance(c.get("es_mio"), bool):
+        raise NoValido(f"contacto no válido ({pid[:12]})")
+    if fecha and not FECHA_RE.match(fecha):
+        raise NoValido(f"fecha no válida ({pid})")
+    hilo_ok = isinstance(hilo, int) and not isinstance(hilo, bool) and 0 < hilo < 10**12
+    if hilo is not None and not hilo_ok:
+        raise NoValido(f"conversación no válida ({pid})")
+    return pid, hilo, marca, int(c["es_mio"]), fecha[:25] or None
+
+
 def guardar_contactos(con, lista, ahora=None):
     """Sustituye el contacto de cada anuncio de la lista (lo que no viene se queda como estaba). Devuelve cuántos
     cambiaron. Valida todo: lo que no encaja se rechaza entero (NoValido). Un anuncio repetido: vale el primero."""
     if not isinstance(lista, list) or len(lista) > MAX_CONTACTOS:
         raise NoValido("contactos: lista no válida")
-    ahora, filas = ahora or int(time.time()), []
-    for c in lista:
-        if not isinstance(c, dict):
-            raise NoValido("contacto no válido")
-        pid, marca, fecha, hilo = str(c.get("pid") or ""), c.get("marca"), str(c.get("fecha") or ""), c.get("hilo")
-        if not PID_RE.match(pid) or marca not in MARCAS or not isinstance(c.get("es_mio"), bool):
-            raise NoValido(f"contacto no válido ({pid[:12]})")
-        if fecha and not FECHA_RE.match(fecha):
-            raise NoValido(f"fecha no válida ({pid})")
-        if hilo is not None and not (isinstance(hilo, int) and not isinstance(hilo, bool) and 0 < hilo < 10**12):
-            raise NoValido(f"conversación no válida ({pid})")
-        filas.append((pid, hilo, marca, int(c["es_mio"]), fecha[:25] or None))
-    n, hechos = 0, set()
-    for pid, hilo, marca, es_mio, fecha in filas:
-        if pid in hechos:
-            continue
-        hechos.add(pid)
+    filas = {}
+    for fila in map(_fila, lista):
+        filas.setdefault(fila[0], fila)
+    ahora, n = ahora or int(time.time()), 0
+    for pid, *datos in filas.values():
         previo = con.execute("SELECT hilo, marca, es_mio, fecha FROM contacto WHERE pid=?", (pid,)).fetchone()
-        if previo and tuple(previo) == (hilo, marca, es_mio, fecha):
+        if previo and list(previo) == datos:
             continue
         con.execute(
             "INSERT INTO contacto (pid, hilo, marca, es_mio, fecha, actualizado) VALUES (?,?,?,?,?,?) "
             "ON CONFLICT(pid) DO UPDATE SET hilo=excluded.hilo, marca=excluded.marca, es_mio=excluded.es_mio, "
             "fecha=excluded.fecha, actualizado=excluded.actualizado",
-            (pid, hilo, marca, es_mio, fecha, ahora),
+            (pid, *datos, ahora),
         )
         n += 1
     return n

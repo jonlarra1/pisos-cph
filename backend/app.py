@@ -866,39 +866,55 @@ class H(BaseHTTPRequestHandler):
             return self.reply(code, obj)
         self.reply(404, {"error": "not found"})
 
+    POST_WEB = ("/api/estado", "/api/zona", "/api/filtros", "/api/destino")
+
     def do_POST(self):
         if self.path == "/api/clientlog":  # errores de la página de los usuarios
-            n = int(self.headers.get("Content-Length") or 0)
-            ip = self.client_ip()
-            o = self.headers.get("Origin", "")
-            if o and o not in ORIGINS:
-                return self.reply(403, {"error": "origin"})
-            if n <= 0 or n > 2048:
-                return self.reply(400, {"error": "bad size"})
-            if limited("log:" + ip):
-                return self.reply(429, {"error": "too many requests"})
-            try:
-                d = json.loads(self.rfile.read(n))
-            except Exception:
-                return self.reply(400, {"error": "bad json"})
-            log(
-                "client",
-                level=str(d.get("level", "error"))[:10],
-                msg=str(d.get("msg", ""))[:500],
-                where=str(d.get("where", ""))[:200],
-            )
-            return self.reply(200, {"ok": True})
+            return self.post_clientlog()
         if self.path.startswith("/api/v2/"):
             return self.v2_post()
-        if self.path not in ("/api/estado", "/api/zona", "/api/filtros", "/api/destino"):
+        if self.path not in self.POST_WEB:
             return self.reply(404, {"error": "not found"})
+        d = self.cuerpo_web()
+        if d is None:
+            return None  # cuerpo_web ya respondió
+        by = d["by"]
+        if self.path == "/api/destino":
+            return self.destino(d, by)
+        return {"/api/filtros": self.post_filtros, "/api/zona": self.post_zona, "/api/estado": self.post_estado}[
+            self.path
+        ](d, by)
+
+    def post_clientlog(self):
+        n = int(self.headers.get("Content-Length") or 0)
+        o = self.headers.get("Origin", "")
+        if o and o not in ORIGINS:
+            return self.reply(403, {"error": "origin"})
+        if n <= 0 or n > 2048:
+            return self.reply(400, {"error": "bad size"})
+        if limited("log:" + self.client_ip()):
+            return self.reply(429, {"error": "too many requests"})
+        try:
+            d = json.loads(self.rfile.read(n))
+        except Exception:
+            return self.reply(400, {"error": "bad json"})
+        log(
+            "client",
+            level=str(d.get("level", "error"))[:10],
+            msg=str(d.get("msg", ""))[:500],
+            where=str(d.get("where", ""))[:200],
+        )
+        return self.reply(200, {"ok": True})
+
+    def cuerpo_web(self):
+        """Clave, origen, límite y JSON de un POST de la web. Devuelve el cuerpo (con `by` en minúsculas y válido)
+        o None tras responder con el error."""
         if KEY and self.headers.get("X-Pisos-Key") != KEY:
             return self.reply(403, {"error": "forbidden"})
         o = self.headers.get("Origin", "")
         if o and o not in ORIGINS:
             return self.reply(403, {"error": "origin"})
-        ip = self.client_ip()
-        if limited("w:" + ip, 30, "w:*", 120):
+        if limited("w:" + self.client_ip(), 30, "w:*", 120):
             return self.reply(429, {"error": "too many requests"})
         n = int(self.headers.get("Content-Length") or 0)
         if n <= 0 or n > 1024:
@@ -909,46 +925,48 @@ class H(BaseHTTPRequestHandler):
             return self.reply(400, {"error": "bad json"})
         if not isinstance(d, dict):
             return self.reply(400, {"error": "bad json"})
-        by = str(d.get("by", "")).lower()
-        if by not in WHO:
+        d["by"] = str(d.get("by", "")).lower()
+        if d["by"] not in WHO:
             return self.reply(400, {"error": "bad data"})
-        if self.path == "/api/filtros":
-            f = validar_filtros(d)
-            if f is None:
-                return self.reply(400, {"error": "bad data"})
-            with lock, db() as c:
-                c.execute(
-                    "INSERT INTO ajustes (k, v, by, ts) VALUES ('filtros',?,?,?) ON CONFLICT(k) DO UPDATE SET "
-                    "v=excluded.v, by=excluded.by, ts=excluded.ts",
-                    (json.dumps(f), by, int(time.time())),
-                )
-            write_config()
-            log("events", level="info", src="filtros", msg=json.dumps(f, ensure_ascii=False), by=by)
-            avisar("ajustes", {})
-            reevaluar_anuncios(by, "filtros")
-            return self.reply(200, filtros())
-        if self.path == "/api/destino":
-            return self.destino(d, by)
-        if self.path == "/api/zona":
-            z, ok = str(d.get("zona", "")).strip(), d.get("permitida")
-            if not ZONA_RE.match(z) or not isinstance(ok, bool):
-                return self.reply(400, {"error": "bad data"})
-            with lock, db() as c:
-                c.execute(
-                    "INSERT INTO zonas (zona, permitida, by, ts) VALUES (?,?,?,?) ON CONFLICT(zona) DO UPDATE SET "
-                    "permitida=excluded.permitida, by=excluded.by, ts=excluded.ts",
-                    (z, int(ok), by, int(time.time())),
-                )
-            write_config()
-            log("events", level="info", src="zonas", msg=f"{z} -> {'permitida' if ok else 'excluida'}", by=by)
-            avisar("ajustes", {})
-            reevaluar_anuncios(by, f"zona {z}")
-            return self.reply(200, all_zonas())
+        return d
+
+    def post_filtros(self, d, by):
+        f = validar_filtros(d)
+        if f is None:
+            return self.reply(400, {"error": "bad data"})
+        with lock, db() as c:
+            c.execute(
+                "INSERT INTO ajustes (k, v, by, ts) VALUES ('filtros',?,?,?) ON CONFLICT(k) DO UPDATE SET "
+                "v=excluded.v, by=excluded.by, ts=excluded.ts",
+                (json.dumps(f), by, int(time.time())),
+            )
+        write_config()
+        log("events", level="info", src="filtros", msg=json.dumps(f, ensure_ascii=False), by=by)
+        avisar("ajustes", {})
+        reevaluar_anuncios(by, "filtros")
+        return self.reply(200, filtros())
+
+    def post_zona(self, d, by):
+        z, ok = str(d.get("zona", "")).strip(), d.get("permitida")
+        if not ZONA_RE.match(z) or not isinstance(ok, bool):
+            return self.reply(400, {"error": "bad data"})
+        with lock, db() as c:
+            c.execute(
+                "INSERT INTO zonas (zona, permitida, by, ts) VALUES (?,?,?,?) ON CONFLICT(zona) DO UPDATE SET "
+                "permitida=excluded.permitida, by=excluded.by, ts=excluded.ts",
+                (z, int(ok), by, int(time.time())),
+            )
+        write_config()
+        log("events", level="info", src="zonas", msg=f"{z} -> {'permitida' if ok else 'excluida'}", by=by)
+        avisar("ajustes", {})
+        reevaluar_anuncios(by, f"zona {z}")
+        return self.reply(200, all_zonas())
+
+    def post_estado(self, d, by):
         pid, st = str(d.get("id", "")), d.get("st")
-        stF = time.strftime("%Y-%m-%d")
-        if not ID_RE.match(pid) or st not in ESTADOS or by not in WHO:
+        if not ID_RE.match(pid) or st not in ESTADOS:
             return self.reply(400, {"error": "bad data"})
-        ts = int(time.time())
+        stF, ts = time.strftime("%Y-%m-%d"), int(time.time())
         with lock, db() as c:
             c.execute(
                 "INSERT INTO estado (id, st, stF, by, ts, motivo) VALUES (?,?,?,?,?,NULL) ON CONFLICT(id) DO UPDATE "
@@ -961,10 +979,9 @@ class H(BaseHTTPRequestHandler):
         _estado_a_v2(pid, st, by)
         est = all_estados()
         avisar("estados", est)
-        self.reply(200, est)
+        return self.reply(200, est)
 
 
-# ------------------------------------------------------------------ comprobaciones
 # ------------------------------------------------------------------ motor de rutas (horarios GTFS de Rejseplanen)
 GTFS_DIR = os.environ.get("GTFS_DIR", os.path.join(os.path.dirname(DB) or "/data", "gtfs"))
 GTFS_URL = os.environ.get("GTFS_URL", "https://www.rejseplanen.info/labs/GTFS.zip")
