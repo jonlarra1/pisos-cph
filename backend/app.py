@@ -1082,9 +1082,31 @@ def _f(q, k, lo, hi):
     return v
 
 
+def _ruta_params(q, bbox):
+    """Parámetros de /api/ruta ya comprobados (ValueError, KeyError o IndexError si alguno no vale)."""
+    B = bbox
+    olat, olon = _f(q, "olat", B[0], B[1]), _f(q, "olon", B[2], B[3])
+    dlat, dlon = _f(q, "dlat", B[0], B[1]), _f(q, "dlon", B[2], B[3])
+    fecha, hora = q["fecha"][0], q["hora"][0]
+    modo, perfil = q.get("modo", ["llegar"])[0], q.get("perfil", ["foot"])[0]
+    if (
+        not re.fullmatch(r"20\d\d-[01]\d-[0-3]\d", fecha)
+        or not re.fullmatch(r"[0-2]\d:[0-5]\d", hora)
+        or int(hora[:2]) > 23
+    ):
+        raise ValueError("fecha/hora")
+    datetime.date.fromisoformat(fecha)
+    if modo not in ("llegar", "salir") or perfil not in ("foot", "bike"):
+        raise ValueError("modo/perfil")
+    lim = _f(q, "lim", 3, 30) if "lim" in q else 10
+    vw = _f(q, "vw", 3, 7) if "vw" in q else 5
+    vb = _f(q, "vb", 8, 35) if "vb" in q else 20
+    dname = re.sub(r"[^\w .,·\-/]", "", q.get("dname", ["Destino"])[0], flags=re.U)[:60] or "Destino"
+    return olat, olon, dlat, dlon, fecha, hora, modo, perfil, lim, vw, vb, dname
+
+
 def ruta(qs, previo=False):
-    """GET "
-    "/api/ruta?olat&olon&dlat&dlon&dname&fecha=YYYY-MM-DD&hora=HH:MM&modo=llegar|salir&perfil=foot|bike&lim&vw&vb
+    """GET /api/ruta?olat&olon&dlat&dlon&dname&fecha=YYYY-MM-DD&hora=HH:MM&modo=llegar|salir&perfil=foot|bike&lim&vw&vb
     previo=True: cálculo previo de la cola (no pasa por el freno de la web y se guarda 24 h)."""
     import routing
 
@@ -1092,27 +1114,8 @@ def ruta(qs, previo=False):
     M = MOTOR["m"]
     if M is None:
         return 503, {"error": "motor de rutas no disponible", "detalle": MOTOR["error"]}
-    B = routing.BBOX
     try:
-        olat, olon = _f(q, "olat", B[0], B[1]), _f(q, "olon", B[2], B[3])
-        dlat, dlon = _f(q, "dlat", B[0], B[1]), _f(q, "dlon", B[2], B[3])
-        fecha = q["fecha"][0]
-        hora = q["hora"][0]
-        modo = q.get("modo", ["llegar"])[0]
-        perfil = q.get("perfil", ["foot"])[0]
-        if (
-            not re.fullmatch(r"20\d\d-[01]\d-[0-3]\d", fecha)
-            or not re.fullmatch(r"[0-2]\d:[0-5]\d", hora)
-            or int(hora[:2]) > 23
-        ):
-            raise ValueError("fecha/hora")
-        datetime.date.fromisoformat(fecha)
-        if modo not in ("llegar", "salir") or perfil not in ("foot", "bike"):
-            raise ValueError("modo/perfil")
-        lim = _f(q, "lim", 3, 30) if "lim" in q else 10
-        vw = _f(q, "vw", 3, 7) if "vw" in q else 5
-        vb = _f(q, "vb", 8, 35) if "vb" in q else 20
-        dname = re.sub(r"[^\w .,·\-/]", "", q.get("dname", ["Destino"])[0], flags=re.U)[:60] or "Destino"
+        olat, olon, dlat, dlon, fecha, hora, modo, perfil, lim, vw, vb, dname = _ruta_params(q, routing.BBOX)
     except (KeyError, ValueError, IndexError) as e:
         return 400, {"error": f"parámetros no válidos ({e})"}
     ymd = fecha.replace("-", "")
