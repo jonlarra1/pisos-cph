@@ -1617,62 +1617,64 @@ class Admin(BaseHTTPRequestHandler):
             )
             return self.send(403, "forbidden", "text/plain")
         if self.path.startswith("/status"):
-            st = {
-                "ahora": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
-                "uptime_h": round((time.time() - STARTED) / 3600, 2),
-                "checks": CHECKS,
-                "eventos": tail("events", 60)[::-1],
-                "api": tail("api", 80)[::-1],
-                "cliente": tail("client", 30)[::-1],
-                "lares": [
-                    json.loads(x)
-                    for x in (
-                        _txt(os.path.join(BRIDGE, "lares_runs.jsonl")).splitlines()[-15:]
-                        if os.path.exists(os.path.join(BRIDGE, "lares_runs.jsonl"))
-                        else []
-                    )
-                    if x.strip()
-                ][::-1],
-                "listas": listas(),
-                "tiempo_real": {
-                    "abiertas": SSE["n"],
-                    "max": SSE_MAX,
-                    "desde_arranque": SSE["total"],
-                    "rechazadas": SSE["rechazadas"],
-                },
-                "usuario": self.headers.get("Tailscale-User-Login", "") or "acceso por IP de Tailscale",
-            }
-            return self.send(200, json.dumps(st, ensure_ascii=False), "application/json; charset=utf-8")
+            return self.json(self.estado())
         if self.path in ("/", "/index.html"):
             return self.send(
-                200,
-                open(os.path.join(os.path.dirname(__file__), "admin.html"), encoding="utf-8").read(),
-                "text/html; charset=utf-8",
+                200, _txt(os.path.join(os.path.dirname(__file__), "admin.html")), "text/html; charset=utf-8"
             )
         if self.path.startswith("/flow"):
             q = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
-            since = float(q.get("since", ["0"])[0] or 0)
-            items = [{"k": "api", **r} for r in tail("api", 300) if r.get("t", 0) > since]
-            items += [{"k": "check", **r} for h in CHECK_HIST.values() for r in h if r.get("t", 0) > since]
-            lp = os.path.join(BRIDGE, "lares_runs.jsonl")
-            if os.path.exists(lp):
-                for x in _txt(lp).splitlines()[-20:]:
-                    try:
-                        r = json.loads(x)
-                        if r.get("t", 0) > since:
-                            items.append({"k": "lares", **r})
-                    except Exception:
-                        pass
-            items.sort(key=lambda r: r.get("t", 0))
-            return self.send(
-                200,
-                json.dumps({"now": time.time(), "checks": CHECKS, "items": items[-400:]}, ensure_ascii=False),
-                "application/json; charset=utf-8",
-            )
+            items = _flujo(float(q.get("since", ["0"])[0] or 0))
+            return self.json({"now": time.time(), "checks": CHECKS, "items": items[-400:]})
         if self.path == "/checknow":
             threading.Thread(target=lambda: [chk(n, f) for n, f in CHECKS_LISTA], daemon=True).start()
             return self.send(200, '{"ok":true}', "application/json")
         self.send(404, "not found", "text/plain")
+
+    def json(self, obj):
+        return self.send(200, json.dumps(obj, ensure_ascii=False), "application/json; charset=utf-8")
+
+    def estado(self):
+        """/status: checks, últimos eventos y peticiones, pasadas de Lares, listas y tiempo real."""
+        return {
+            "ahora": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
+            "uptime_h": round((time.time() - STARTED) / 3600, 2),
+            "checks": CHECKS,
+            "eventos": tail("events", 60)[::-1],
+            "api": tail("api", 80)[::-1],
+            "cliente": tail("client", 30)[::-1],
+            "lares": _pasadas_lares(15)[::-1],
+            "listas": listas(),
+            "tiempo_real": {
+                "abiertas": SSE["n"],
+                "max": SSE_MAX,
+                "desde_arranque": SSE["total"],
+                "rechazadas": SSE["rechazadas"],
+            },
+            "usuario": self.headers.get("Tailscale-User-Login", "") or "acceso por IP de Tailscale",
+        }
+
+
+def _pasadas_lares(n):
+    """Las últimas `n` líneas de lares_runs.jsonl (las que no se puedan leer se saltan)."""
+    path = os.path.join(BRIDGE, "lares_runs.jsonl")
+    if not os.path.exists(path):
+        return []
+    out = []
+    for x in _txt(path).splitlines()[-n:]:
+        try:
+            out.append(json.loads(x))
+        except ValueError:
+            pass
+    return out
+
+
+def _flujo(since):
+    """/flow: peticiones, cambios de los checks y pasadas de Lares posteriores a `since`, en orden."""
+    items = [{"k": "api", **r} for r in tail("api", 300) if r.get("t", 0) > since]
+    items += [{"k": "check", **r} for h in CHECK_HIST.values() for r in h if r.get("t", 0) > since]
+    items += [{"k": "lares", **r} for r in _pasadas_lares(20) if r.get("t", 0) > since]
+    return sorted(items, key=lambda r: r.get("t", 0))
 
 
 def _db_filas():
