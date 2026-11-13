@@ -62,6 +62,33 @@ class Base(unittest.TestCase):
         app.hits.clear(); app._rl_logged.clear()       # cada test empieza sin límites de peticiones
 
 
+class TestLaresEnPausa(unittest.TestCase):
+    def test_check_de_lares_en_pausa_da_ok_con_su_dato(self):
+        f = app.en_pausa("lares_pasadas", lambda: (False, "última pasada hace 9.0 h"))
+        self.assertEqual(f(), (True, f"en pausa desde {app.LARES_PAUSA} · última pasada hace 9.0 h"))
+
+    def test_sin_datos_tampoco_falla(self):
+        def roto():
+            raise FileNotFoundError("lares_cron.json")
+        self.assertTrue(app.en_pausa("lares_cron", roto)()[0])
+
+    def test_los_demas_checks_no_cambian(self):
+        fn = lambda: (False, "x")  # noqa: E731
+        self.assertIs(app.en_pausa("api_errores", fn), fn)
+
+    def test_sin_pausa_vuelven_a_fallar(self):
+        fn = lambda: (False, "x")  # noqa: E731
+        viejo, app.LARES_PAUSA = app.LARES_PAUSA, ""
+        try:
+            self.assertIs(app.en_pausa("lares_pasadas", fn), fn)
+        finally:
+            app.LARES_PAUSA = viejo
+
+    def test_todos_los_de_lares_existen(self):
+        nombres = [n for n, _ in app.CHECKS_LISTA]
+        self.assertTrue(set(app.CHECKS_DE_LARES) <= set(nombres))
+
+
 class TestValidarFiltros(Base):
     OK = {"precio_max": 23000, "dorm_min": 3, "disp_desde": "2026-12-18", "disp_hasta": "2027-01-15", "compartir": True, "contrato_largo": False}
     def test_validos(self):

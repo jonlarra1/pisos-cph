@@ -1674,6 +1674,35 @@ def check_calles():
         return calles.resumen(c)
 
 
+# Tareas de pisos de Lares en pausa (decisión de Jon, 13-nov: piso encontrado). Mientras tenga fecha, los checks que
+# dependen de que Lares pase dan OK con «en pausa» y el último dato. Vacío ("") = vuelven a fallar si Lares no pasa.
+LARES_PAUSA = "2026-11-13"
+CHECKS_DE_LARES = (
+    "lares_pasadas",
+    "lares_cron",
+    "lares_portales",
+    "lares_barrido",
+    "lares_comprobador",
+    "buzon_compartido",
+    "chats",
+)
+
+
+def en_pausa(name, fn):
+    """El check `fn` tal cual, o, con LARES_PAUSA y si depende de Lares, siempre OK con su último dato."""
+    if not LARES_PAUSA or name not in CHECKS_DE_LARES:
+        return fn
+
+    def pausado():
+        try:
+            det = fn()[1]
+        except Exception as e:  # sin datos de Lares (archivo que falta): no es un fallo mientras esté en pausa
+            det = f"{type(e).__name__}: {e}"
+        return True, f"en pausa desde {LARES_PAUSA} · {det}"
+
+    return pausado
+
+
 CHECKS_LISTA = (
     ("funnel_publico", check_funnel),
     ("web_github", check_site),
@@ -1693,6 +1722,7 @@ CHECKS_LISTA = (
     ("destinos", check_destinos),
     ("chats", check_chats),
 )
+CHECKS_LISTA = tuple((n, en_pausa(n, f)) for n, f in CHECKS_LISTA)
 
 
 def monitor():
